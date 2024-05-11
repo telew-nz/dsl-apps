@@ -1,0 +1,59 @@
+class Estimation {
+  field min: UDuration[minute]
+  compute minHour: UDuration[hour] {
+    label = "Best case"
+    value = (min/60).as[UDuration[hour]]
+    update = {min = new*60}
+  }
+  compute minTime: Time {
+    label = "Best case"
+    value = min.toDate
+    update = {
+      min =? new.toDuration.to[UDuration[minute]]
+    }
+  }
+  field val: UDuration[minute] {
+    validate = if (val < min) "Most likely value should more or equal to best case"
+  }
+  compute valTime: Time {
+    label = "Most likely"
+    value = val.toDate
+    update = {
+      val =? new.toDuration.to[UDuration[minute]]
+    }
+  }
+  compute valHour: UDuration[hour] {
+    label = "Most likely"
+    value = (val/60).as[UDuration[hour]]
+    update = {val = new*60}
+  }
+  field max: UDuration[minute] {
+    validate = if (max < val) "Worst case should more or equal to most likely value"
+  }
+  compute maxTime: Time {
+    label = "Worst case"
+    value = max.toDate
+    update = {
+      max =? new.toDuration.to[UDuration[minute]]
+    }
+  }
+  compute maxHour: UDuration[hour] {
+    label = "Worst case"
+    value = (max/60).as[UDuration[hour]]
+    update = {max = new*60}
+  }
+  impl view form = grid {
+    row {minHour valHour maxHour}
+  }
+  
+  func sd = (max - min).as[UDuration[minute, 4]]/6 
+  func e = (min + 4*val + max).as[UDuration[minute, 4]]/6
+  func e95: UDuration[minute] = (e + sd*2).as[UDuration[minute]]
+  
+  object func avg(es: [Estimation]): Estimation = {
+    Estimation(min = es*.min.min, val = es*.val.avg!, max = es*.max.max)
+  }
+  object func sum(es: [Estimation]): Estimation = {
+    Estimation(min = es*.min.sum!, val = es*.val.sum!, max = es*.max.sum!)
+  }
+}

@@ -1,0 +1,27 @@
+entity ContactUsMessage {
+  ref field name: String
+  field email: Email
+  field phone: Phone?
+  field message: Text
+  impl func title = name
+  view submit = grid(labels = Top, margin = None){
+    name
+    email
+    phone
+    message
+  }
+  impl event onSave = {
+    if (created) {
+      let karl <- User.all.find(name == "Karl Nazer").result
+      karl!.join(this)*.notify()
+    }
+  }
+}
+
+extend access Public {
+  entity ContactUsMessage {
+    read = false
+    write = created
+  }
+}
+

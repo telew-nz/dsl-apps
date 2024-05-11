@@ -1,0 +1,5 @@
+extend role BusAdmin {
+
+	entity Stocktake = readWrite
+
+}

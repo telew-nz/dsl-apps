@@ -1,0 +1,18 @@
+entity UserSelection {
+
+    impl func title = "User Selection"
+    
+    report Report {
+    	impl view list = Person.all
+        	.unionFuture(CWUtils.getAllPersons.as[Future[[Person]?]])
+            .sortBy(name).map{(_, try? company.map(_.title))} >> nav(canAdd = false) {
+        	table { 
+            	#0.name
+            	#0.user.map(login) >> field(label = "Login")
+                #1 >> field(label = "Company")
+                #0.user.map(roles) >> field(label = "Roles", width = 1)
+            }
+        }
+    }
+    
+}

@@ -38,7 +38,12 @@ entity HelpArticle extends HasN {
   impl func canRead = true
   report Report {
     generateFilters = false
-    impl view list = HelpArticle.all.union(HelpArticle.all.inWorkspace(1260)).distinct
+    impl view list = HelpArticle.all.union(HelpArticle.all.inWorkspaceFullWid(
+      // We can't propagate the cluster id here the same way we propagate position id
+      // due to the DSL parser bug with this parameter, so for now it's to be hardcoded here
+      17,
+      Config.publicHelpArticlesWorkspacePositionId
+    )).distinct
       .groupBy(topic = topic.title, number = topic.number)
     >> nav{
       subtotal {
@@ -87,7 +92,7 @@ trait ISupportUnitReg extends AnyEntity {
         }
         label(Workspace.current.supportUnits + " Units", color = "white")
         button("About units", icon = "info-circle") {
-          UI.openUrl("https://flow2b.com/pricing/")
+          UI.openUrl(Config.pricingURL)
         }
       }
   }

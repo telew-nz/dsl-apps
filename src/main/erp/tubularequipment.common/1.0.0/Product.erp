@@ -1,0 +1,58 @@
+trait WalkingFrameSuperProduct extends ISuperProduct with IWeightSize with RefEntity {
+  field allowSeatSelection: Bool = true
+  field allowTopSelection: Bool = true
+
+  field sizeCategory: WFSize
+  field sizeVariation: WFSizeVariation?
+  field base: WFBase {
+  	update = {
+    	if (base == Rehab_Steel_) {
+        	seat = null
+            allowSeatSelection = false
+            allowTopSelection = true
+        }
+        else {
+        	top = null
+        	allowSeatSelection = true
+            allowTopSelection = false
+        }
+    }
+  }
+  field top: WFTop?
+  field feet: WFFeet
+  field folding: WFFolding
+  field seat: WFSeat?
+  field brakes: WFBrakes
+  
+  impl field lengthUnit: LengthUnit = Millimetre
+  impl func weightUnit: WeightUnit = Kilogram
+  impl field weight: UQty[weightUnit] {canEditUnit}
+  field minimumWidth: UQty[lengthUnit] {
+  	canEditUnit
+    validate = {
+    	if (maximumWidth < minimumWidth) throw "Maximum width can't be less then minimum width"
+    }
+    update = {
+    	width = minimumWidth
+    }
+  }
+  field maximumWidth: UQty[lengthUnit] {canEditUnit}
+  impl field width: UQty[lengthUnit] {
+  	canEditUnit
+    update = {
+    	if (top != ForearmTroughs) {
+    		minimumWidth = width
+        	maximumWidth = width
+        }
+    }
+  }
+  field minimumHeight: UQty[lengthUnit] {
+  	canEditUnit
+    validate = {
+    	if (maximumHeight < minimumHeight) throw "Maximum height can't be less then minimum height"
+    }
+  }
+  field maximumHeight: UQty[lengthUnit] {canEditUnit}
+  impl func height: UQty[lengthUnit] = minimumHeight
+  impl field depth: UQty[lengthUnit] {canEditUnit} 
+}

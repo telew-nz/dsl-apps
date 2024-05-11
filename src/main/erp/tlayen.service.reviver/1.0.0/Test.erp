@@ -1,0 +1,33 @@
+extend trait SystemService {
+
+	field autoReviveService: Bool {
+    	default = false
+    }
+    
+    impl event onSave = {
+    	if (updated(serviceState) && serviceState == Disabled && autoReviveService) {
+        	ActivateService(targetService = this).enqueue(5_second)
+        }
+    }
+
+}
+
+
+object ServiceReviver extends SystemService {
+  impl func title = "Service Reviver"
+  impl func roles: [Role]? = [Admin]
+  impl view form = nav{grid(labels = Top){
+   issuesView
+   serviceState
+  }}
+}
+
+
+class ActivateService extends SystemJob {
+	impl func service = PublicService
+    field targetService: SystemService
+    impl func do: Future[Void] = {
+    	targetService.serviceState = Active
+        targetService.save
+    }
+}

@@ -1,0 +1,46 @@
+extend role StoreOperative {
+  extend view menu = menu("Inventory") {
+    ISuperProduct >> item(fastSearch)
+    IProdMove
+    StockCorrection >> item(fastAdd)
+    StockReport
+    ProdMovement
+    ProdAvailability
+    extension("Inventory")
+  }
+  //Draft
+  extend view dashboard = 
+    IProdMoveIn.all.filter(isProdMoveIn && moveInState.active && moveInState != Draft && moveInDate < Date.now.end(day))
+      .map{
+        let in: IProdMoveIn? = _
+        (item = AvailableList[IProdMove](v = _), date = moveInDate, in, out = null[IProdMoveOut])
+      }
+  .union(
+    IProdMoveOut.all.filter(isProdMoveOut && moveOutState.active && moveOutState != Draft && moveOutDate < Date.now.end(day))
+      .map{
+        let out: IProdMoveOut? = _
+        (item = AvailableList(v = _), date = moveOutDate, in = null[IProdMoveIn], out)
+      }
+   ).sortBy(date)
+
+   >> nav (label = "Today's deliveries", icon = "truck", background = "#2e8e67") {
+    list(action = item.v.form.open){
+      grid(labels = None, width = 1.3) {
+        row{
+          y(width = 0.3, align = Right) {
+            x { 
+              label(icon = "arrow-right" color = "#090" visible = in, stretch = 1)
+              label(icon = "arrow-left" color = "#c00" visible = out, stretch = 1)
+              item.v.dslType.singular >> field(fontStyle = Label)
+            }
+            item.v.itemImage >> field(miniature = List)
+          }
+          y (spacing = false) {
+            in!.dashIn 
+            out!.dashOut
+          }
+        }
+      }
+    }
+  }
+}

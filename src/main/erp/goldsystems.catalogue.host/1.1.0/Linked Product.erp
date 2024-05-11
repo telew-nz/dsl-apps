@@ -1,0 +1,63 @@
+entity LinkedBullionProduct extends CatalogueItem with CatalogueItemIssue {
+    
+    impl func canRead = true
+    
+    field linkedEntityTitle: String
+    field linkedEntityDeleted: Bool {
+    	default = false
+    }
+    
+    compute getPhotos: Future[[Image]?] = {
+        let wid = LongIdDb(linkedEntityId)
+        let photo_ids <- linkedEntity.map(photos.map(_.id))
+        if (wid.workspaceCluster == 17) {
+        	let imgs <- Image.all.inWorkspaceFullWid(17, wid.workspacePosition).result
+            imgs.filter(img => photo_ids.exists(pid => pid == img.id))
+        }
+        else {
+        	let imgs <- Image.all.inWorkspaceFullWid(18, wid.workspacePosition).result
+            imgs.filter(img => photo_ids.exists(pid => pid == img.id))
+        }
+    }
+    
+	impl compute title = linkedEntityTitle
+    
+    impl event onLoad = {
+    	if (let e = try? linkedEntityId) {
+        	let l <- linkedEntity
+            linkedEntityTitle = l.title
+            if (l.deleted && !linkedEntityDeleted) {
+                linkedEntityDeleted = true
+            }
+            if (!l.deleted && linkedEntityDeleted) {
+                linkedEntityDeleted = false
+            }
+        	save
+        }
+        else {
+        	UI.back
+        }
+    }
+    
+    impl view form = nav { linkedEntity.map(_.as[StandardBullionProduct]!) >> tabs {
+        grid (labels = None, label = "Main") {
+          x{ "Approval Status:" approval >> field(editMode = Original) }
+          getPhotos >> field(height = 10, label = "")
+          statusView
+          title >> field(label = "", fontStyle = H2)
+          row {sku refNums trackItems}
+          goldView
+          baseMainView
+        }
+        superProductTabView
+        subProductTabView
+        extension("tabs")
+        grid (labels = Top, label = "More") {
+          unitsView
+          barcodes
+          extension
+        }
+      }
+    }
+    
+}

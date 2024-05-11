@@ -1,0 +1,9 @@
+trait WebPage extends Entity {
+  background = "#a73e6c"
+  field description: Text?
+  field seoDescription: Text? {
+    validate = if (seoDescription && seoDescription.length > 160) "SEO Description should be less than 160 symbols"
+    label = "SEO Description (one line less but close to 160 symbols)"
+  }
+  compute seoCount = seoDescription.length
+}

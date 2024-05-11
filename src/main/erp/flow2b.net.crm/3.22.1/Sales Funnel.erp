@@ -1,0 +1,3 @@
+//report SOFunnel {
+//  view list = UFunnel.select(SalesOpportunity, SalesOpportunityStage)
+//}

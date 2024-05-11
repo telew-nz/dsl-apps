@@ -1,0 +1,40 @@
+/* Not yet applicable for Walking Frames?
+
+entity TubularSupplierPricing extends IStaticPriceModel {
+  ref impl field start: Date = now
+  impl field end: Date?
+  impl func title = "TSP $vendor $start"
+  func doContains(superProduct: ISuperProduct): Bool  = products.exists(i => i.product == superProduct)
+  field products: [TubuliarSupplierProductPrice]? inline by pricing
+  impl func doPrice(level: IPriceLevel, type: PriceType, product: IBaseProduct) = if (type == Sales) {
+    products.find(i => i.superProduct == product)
+  }
+  impl view form = nav{grid{
+    row{start end}
+    currency
+    vendor
+    products >> table {
+      product >> field(width = 0.4) percentMargin >> field(width = 0.2) fixedMargin >> field(width = 0.2) salesPrice >> field(width = 0.2)
+    }
+  }}
+}
+  
+inline entity TubularSupplierProductPrice extends IStaticPrice with IPriceSales {
+  impl func model = pricing
+  func superProduct = product.superProduct
+  system field pricing: TubularSupplierPricing inline by products
+  field percentMargin: Percent?
+  field fixedMargin: Money[currency]?
+  impl func levels = model.levels
+  
+  impl func salesPrice(request: PriceRequest): Future[SalesPrice] = {
+    let metalPrice <- product.superProduct.as[BullionSuperProduct]?.metalCost.to[UMoney[request.currency]](now)
+    let fm <- fixedMargin.to[UMoney[request.currency]](now)
+    let p = (metalPrice + metalPrice*percentMargin + fm).positive
+    SalesPrice(currency = currency, current = p, regular = p)
+  }
+  impl event onSave = product.touch
+    
+}
+
+*/

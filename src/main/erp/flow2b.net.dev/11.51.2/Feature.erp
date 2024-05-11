@@ -1,0 +1,87 @@
+entity Feature {
+  background = "#545790"
+  object field generator: Int?
+  const system ref field num: Int =? increment(generator)
+  compute number: String = "F" + num    
+  impl func title = number + " " + name
+    
+  impl func canRead = products.all(_.canRead)
+
+  ref field name: String {label = "Title"}
+  ref field roadmap: Roadmap  {
+    update = {
+      this.products =? new.oneProduct.toSeq
+    }  
+  }
+  ref field status: FeatureStatus = (Entered)
+  field products: [DevProduct] {
+    default =? try? roadmap?.oneProduct.toSeq!
+    by = features
+    from = roadmap.products
+  }
+  ref field effort: Effort?
+  field stories: [BacklogIssue]? read by feature {
+    init = {
+      new.product = products.first
+    }
+  }
+ 
+  field role: ProductRole {
+    by = features
+    label = "As a"
+  }
+  field goal: Text {
+    label = "I want"
+  }
+  field benefit: Text {
+    label = "so that"
+  }
+  field additionalInfo: Text?
+  
+  impl view form = nav {
+    grid {
+      number
+      name
+      roadmap 
+      products
+      status
+      effort
+      role >> field(label = "As a", placeholder = "role")
+      goal >> field(label = "I want", placeholder = "goal")
+      benefit >> field(label = "so that", placeholder = "benefit")
+      additionalInfo >> field(label = "Additional Information")
+      stories
+    }
+  }
+}
+
+enum FeatureStatus(active: Bool, backlog: Bool, canChoose: Bool) {
+  case Draft(active = false, backlog = false, canChoose = false) {
+    background = "#999"
+  }
+  case Entered(active = true, backlog = true, canChoose = false) {
+    background = "#ed9"
+  }
+  case Approved(active = true, backlog = true, canChoose = true) {
+    background = "#ccf"
+  }
+  case Planned(active = true, backlog = true, canChoose = true) {
+    background = "#bde"
+  }
+  case Canceled(active = false, backlog = false, canChoose = false) {
+    background = "#999"
+  }
+  case Postponed(active = false, backlog = false, canChoose = false) {
+    background = "#ecd"
+  }
+  case Duplicate(active = false, backlog = false, canChoose = false) {
+    background = "#999"
+  }
+  case InProgress(active = true, backlog = true, canChoose = true) {
+    background = "#8bf"
+  }
+  case Done(active = false, backlog = false, canChoose = true) {
+    color = "white"
+    background = "#090"
+  }
+}

@@ -3,6 +3,8 @@ entity Workspace {
   object native current: Workspace
   object native crossId: UInt?
   object native currentId: UInt
+  object native getAllIds: Future[[String]?]
+  object native getEveryWorkspaceInfo: Future[[String]?]
 
   system field supportUnits: Int?
   impl func canRead = true
@@ -17,6 +19,7 @@ entity Workspace {
   field timeZone: String {
     default = "Pacific/Auckland"
   }
+  field outsideUsersCanJoin: Bool = false
 
   system const field authId: String
   system field dashboards: [Dashboard]? inline by workspace
@@ -45,6 +48,7 @@ entity Workspace {
         title >> field(label = "Workspace Title")
         countryCode
         timeZone
+        outsideUsersCanJoin
         extension("main")
       }
       grid(label = "Role Contacts") {

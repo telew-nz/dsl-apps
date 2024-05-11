@@ -1,0 +1,7 @@
+object Config {
+  native emailDomain: String
+  native pricingURL: String
+  native redirectURL: String
+  native publicHelpArticlesWorkspaceClusterId: UInt
+  native publicHelpArticlesWorkspacePositionId: UInt
+}

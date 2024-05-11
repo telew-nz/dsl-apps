@@ -180,7 +180,7 @@ trait IEmailContact extends Contact {
   impl func channel: CommChannel? = EMail
   func email: Email
   impl compute address: String = email
-  override func isAutoPublic: Bool = !(try? email).endsWith("@flow2b.com")
+  override func isAutoPublic: Bool = !(try? email).endsWith("@" + Config.emailDomain)
 
   back object func filterUser(address: String?): [IUser]? = {
     User.all.filter{u =>
@@ -219,7 +219,7 @@ object Flow2bSupport extends Entity with IEmailContact {
   searchWeight = 4
 
   impl func title = "Support"
-  impl func email: Email = "support@flow2b.com"
+  impl func email: Email = "support@" + Config.emailDomain
   override func isAutoPublic: Bool = false
 
   impl view obsRefView = label(icon = "question-circle", "Support", fontStyle = Normal)

@@ -368,3 +368,9 @@ interface DslLayoutYProps[T, R] extends DslLayoutProps[T, R] {
   compute start: R
   compute end: R
 }
+
+interface DslLayoutIframeProps[T, R] extends DslLayoutProps[T, R] {
+  compute src: String
+  compute widthCss: String
+  compute heightCss: String
+}

@@ -206,7 +206,7 @@ entity User extends PseudoEntity with IUser {
 
   impl event onSave = {
     if (created || updated(roles)) {
-      subjects*.subject*.touch
+      try? subjects*.subject*.touch
     }
   }
   impl compute ourContacts: [IContact]? {

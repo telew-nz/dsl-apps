@@ -1,0 +1,10 @@
+extend role Salesperson {
+  entity SalesOpportunity = readWrite
+  entity ContactUsMessage = readWrite
+  extend view menu = extend("Sales") {
+    ContactUsMessage
+    Article >> item(fastSearch)
+  }
+  
+}
+

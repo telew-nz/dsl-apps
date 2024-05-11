@@ -1,9 +1,0 @@
-extend entity Kit {
-  object impl view list = Kit.all >> nav{list{grid(labels = None){title}}}
-}  
-
-extend trait IShipping {
-  extend field detached: Bool {
-    default = true
-  }
-}

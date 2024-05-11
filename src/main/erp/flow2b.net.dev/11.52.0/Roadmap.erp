@@ -1,0 +1,41 @@
+entity Roadmap {
+  background = "#545790"
+  ref field name: String? {views = []}
+  system field features: [Feature]? read by roadmap {views = []}
+  field products: [DevProduct]? by roadmap
+  impl ref compute title = name.alt(products.first!.title)
+  ref compute oneProduct: DevProduct? {
+    value = if (products.count == 1) products.first else null
+    views = []
+  }
+  compute roadmap: [Feature]? {
+    value = features.filter(_.status.backlog)
+    update = {
+      features = features.filter{_.status == Done} + new + features.filter{_.status != Done && !_.status.backlog}
+    }
+    init = {new.roadmap = _}
+  }
+  view roadmapView = roadmap >> list(editMode = AlwaysRefRead) {
+    x{
+      button("↑") {
+        roadmap.features = _ + roadmap.features.filter(i => i != _)
+        roadmap.save
+      }
+      button("↓") {
+        roadmap.features = roadmap.features.filter(i => i != _) + _
+        roadmap.save
+      }
+      effort status _ 
+    }
+  } 
+  impl func canRead = true
+  
+  impl view form = nav{grid {
+    name
+    products
+    roadmapView >> field(label = "Roadmap")    
+  }}
+  impl object view list = Roadmap.all >> nav{list{
+    title
+  }}
+}

@@ -1,0 +1,16 @@
+extend entity Customer {
+  stored compute payingState: PayingState {
+    views = []
+    value <- back{
+      if (salesOrders.exists{(state == InProgress || state == Closed) && items*.as[ISalesItemWithDelivery].exists{
+        deliveryItem.as[IDlvProgressItem]?.product?.superProduct?.categories.first?.name == "Flow2b" 
+      }}) PayingState.Paying else PayingState.NonPaying
+    }
+  }
+  extend view stateView = extend("state"){payingState}
+}
+
+enum PayingState {
+  case Paying {background = "#dea"}
+  case NonPaying {background = "#ed9"}
+}

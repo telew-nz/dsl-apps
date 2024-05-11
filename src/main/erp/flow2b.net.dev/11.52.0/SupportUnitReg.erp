@@ -1,0 +1,140 @@
+extend entity Service {
+  field supportUnits: UInt? {views = []}
+  extend view mainView = supportUnits
+}
+
+trait ISupportUnitItem extends AnyEntity {
+  func spuDoc: RefEntity
+  func spuRefUrl: Url? = ""
+  func spuComment: Text? = ""
+}
+
+register SupportUnitReg extends ISupportUnitReg {
+  plural = "Support Units Usage"
+  key field customer: Customer
+  
+  impl order field date: Date
+  system field item: ISupportUnitItem
+  impl func doc: RefEntity = item.spuDoc
+  impl func refUrl: Url? = item.spuRefUrl
+  impl func comment: Text? = item.spuComment
+  impl func actor = customer.legalEntity
+  impl field delta: Int?
+  impl stored compute balance: Int? = prev?.balance + delta  
+  
+  impl func canRead = !Workspace.crossId || (customer.legalEntity.actorWorkspaceId == Workspace.crossId)
+  impl event onSave = {
+    if (Workspace.currentId == 1 && !next let wid = customer.legalEntity.actorWorkspaceId) {
+      Query(balance).inWorkspace(wid.toString.split("_").apply(2).toNum!.abs).foreach{b =>
+        Workspace.current.supportUnits = b
+        Workspace.current.touch.save
+        b
+      }.result
+    }
+  }
+  
+  report Report {
+    generateFilters = false
+    field customer: Customer
+    field changesOnly = true
+    impl view list = SupportUnitReg.all
+      .filter(i => i.customer == customer && (!changesOnly || i.delta))
+      .sortBy(date.desc)
+      .map(date, customer, doc, comment, delta, balance)
+    >> nav{
+      table (action = doc.form.open) {
+        balance >> field(width = 0.1) delta >> field(showPlus, width = 0.1, label = "Change") 
+        y(label = "Document", width = 0.6, fontSize = 0.8){
+          doc comment
+        } date >> field (fontSize = 0.7 , width = 0.23)
+      }
+      add("Write Down") {
+        SupportUnitWriteDown.incomplete().form.open
+      }
+      add("Write Up") {
+        SupportUnitWriteDown.incomplete().form.open
+      }
+    }
+  }
+}
+
+
+extend trait Issue {
+  func customer: Customer? = product.as[PersonalProject]?.actor?.as[LegalEntity]?.customer
+  field spuUses: [IssueSpuUsage]? inline by issue {
+    label = "Support Units Usage"
+    default = if (let i = this.as[Incident]) {
+      if ((try? i.product)?.customerState in [Deployment, Preparation]) {
+        [IssueSpuUsage(issue = this, amount = 0, noChargeReason = Deployment)]
+      }
+    }
+    visible = customer
+    validate = if (this.is[Incident] && customer && !spuUses && (!status.active || status in [Pending]) ) {
+      "Support units usage cannot be empty"
+    }
+  }
+}
+
+inline entity IssueSpuUsage extends ISupportUnitItem {
+  field date: Date = now
+  field issue: Issue by spuUses
+  field amount: UInt? {
+    default = 1
+    label = "Used Amount of Units"
+  }
+  field comment: Text? {
+    label = "Comment for the customer"
+  }
+  field noChargeReason: SpuNoChargeReason? {
+    visible = !amount
+    validate = if (!amount && !noChargeReason) "Reason for no charge should be set"
+    from = {
+      if (issue.product.as[PersonalProject]?.customerState in [Deployment, Preparation] || noChargeReason == Deployment) {
+        SpuNoChargeReason.all.toSet
+      } else {
+        (SpuNoChargeReason.all - Deployment).toSet
+      }
+    }
+  }
+  
+  impl func spuDoc = issue
+  impl func spuRefUrl: Url? = issue.as[Incident]?.urls.first
+  impl func spuComment: Text? = (if (let noChargeReason) "<p>No charge because of $noChargeReason</p>".as[Text]) + comment
+  register spuReg = SupportUnitReg(
+    customer = issue.customer!
+    date = date, item = this, delta = -amount
+  )
+  impl view form = y{
+    x{noChargeReason >> field(label = "Reason") amount date >> field (noTab, stretch = 1, fontStyle = Label)}
+    comment
+  }
+}
+
+trait SupportUnitMove extends Entity with ISupportUnitItem with HasN {
+  object field gen: Int?
+  field date: Date = now
+  ref field customer: Customer
+  ref field amount: UInt
+  func delta: Int
+  impl func spuDoc = this
+  impl func title = "$fullNum $customer $delta"
+  impl func nextN = increment(gen)
+  field comment: Text {
+    label = "Comment for the customer"
+  }
+  impl func spuComment = comment
+  register spuReg = SupportUnitReg(
+    customer = customer, date = date, item = this, delta = delta
+  )
+}
+
+entity SupportUnitWriteDown extends SupportUnitMove {
+  impl func delta: Int = -amount
+  impl func numPrefix = "SPUWD"
+}
+
+entity SupportUnitWriteUp extends SupportUnitMove {
+  impl func delta: Int = amount
+  impl func numPrefix = "SPUWU"
+}
+

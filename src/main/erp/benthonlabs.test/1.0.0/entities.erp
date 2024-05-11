@@ -1,0 +1,146 @@
+extend entity Person {
+    field role: Role
+}
+
+class TimeLog {
+    // impl field title: String
+    field start_time: Time
+    field logged_time: Time
+    field comment: String
+    field user: Person? = Person.current
+}
+
+class Comment {
+    field comment: String
+    field created_time: Date
+    field created_by: Person? = Person.current
+    field replyto_commentid: UInt? = 0
+    field followers: [User]?
+}
+
+class ProjectFile {
+    field file_path: String
+    field updated_by: Person
+    field comments: [Comment]?
+}
+
+class ChangeList {
+    field creator: Person
+    field create_time: Date
+    field comment:String
+    field files: [ProjectFile]?
+}
+
+entity Task {
+    impl field title: String
+    field description: Text?
+    field taskClassType: TaskClassType? = TASK
+    ref field createdBy : Person? = Person.current
+    field assigned_to : Person?
+    field created_at: Date = now
+    field status: TaskStatus? = OPEN
+    field task_list_type: TaskListType? = BACKLOG // Active/ backlog
+    field task_type: TaskType? = DEVELOPMENT// dev, test, bugfix
+    field sub_tasks: [Task]?
+    field project: Project?
+    field totalTime: UDuration? = 0.as[UDuration[hour]]
+    field required_time: UDuration? = 0.as[UDuration[hour]]
+    field comments: [Comment]?
+    field timelogs: [TimeLog]?
+    field changelists: [ChangeList]?
+    field users: [Person]?
+    
+    func update_total_time = {
+      var total = sub_tasks?.map(t => t.totalTime).sum
+      totalTime = total + required_time
+      project?.update_total_time
+   }
+    
+    impl event onSave: Future[Any] = {
+      update_total_time
+      onActivity
+      onSaveOrDelete
+    }
+    
+    impl object view list = Task.all >> nav (label = "All Tasks"){
+      table{id, title, description, createdBy, created_at >> field(label = "Created On"), totalTime, project}
+    }
+
+    impl view form {
+      default layout = nav{grid(labels = Top){
+         title
+         description
+         assigned_to
+         task_type
+         status
+         users
+         project
+         required_time
+         totalTime >> field (visible = true, editMode = AlwaysRead)
+      }
+    }
+    }
+}
+
+entity Project {
+  impl field title: String
+  ref field description: String?
+  field createdBy : Person?  = Person.current
+  field createdAt: Date? = now
+  field assigned_to : Person?
+  field status: TaskStatus? = OPEN
+  field taskType: TaskType? = DEVELOPMENT
+  field users: [Person]?
+  ref field totalTime: UDuration? = 0.as[UDuration[hour]]
+  field required_time: UDuration? = 0.as[UDuration[hour]]
+  field comments: [Comment]?
+  field tasks: [Task]? by project
+  func update_total_time = {
+    var total = tasks.map(t => t.totalTime).sum
+    totalTime = total + required_time
+  }
+  
+  impl object view list = Project.all >> nav(label = "All Projects") {
+    table{id, title, description, createdBy, createdAt >> field(label = "Created On"), totalTime}
+  }
+  
+  impl event onSave: Future[Any] = {
+    update_total_time
+    onActivity
+    onSaveOrDelete
+  }
+  
+  impl event onLoad: Future[Any] = {
+  }
+
+  impl event preDelete: Void = {
+  	tasks.foreach( t => t.project = null )
+  }
+  
+  impl event onActivity: Void = {
+  }
+
+  impl event onDelete: Future[Any] = {
+    onActivity
+    onSaveOrDelete
+  }
+  
+  impl event onSaveOrDelete: Future[Any] = {
+  }
+
+  impl view form {
+    default layout = nav{
+      grid(labels = Top){
+       title
+       description
+       assigned_to
+       taskType
+       status
+       users
+       tasks
+       required_time >> field (visible = true,label = "Time for project specific tasks")
+       totalTime >> field (visible = true, editMode = AlwaysRead)
+    }}
+  }
+
+}

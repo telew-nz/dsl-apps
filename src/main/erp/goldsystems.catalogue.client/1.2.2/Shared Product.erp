@@ -1,0 +1,88 @@
+entity SharedProduct extends SharedItem with SharedProductIssue with IBasicProduct with IProductInv with BullionSuperProduct {
+
+	impl field status: ProductStatus
+    
+    impl ref compute title = calcTitle
+    
+    override func gstRate(vendor: LegalEntity?): UPercent[2]?? = if (isPure || (vendor && !vendor!.hasGst)) null else 0.15
+    
+    compute getPhotos: Future[[Image]?] = {
+        let ogProduct <- linkedEntity
+        let wid = LongIdDb(ogProduct.id.toString!)
+        let photo_ids = ogProduct.photos.map(_.id)
+        if (wid.workspaceCluster == 17) {
+        	let imgs <- Image.all.inWorkspaceFullWid(17, wid.workspacePosition).result
+            imgs.filter(img => photo_ids.exists(pid => pid == img.id))
+        }
+        else {
+        	let imgs <- Image.all.inWorkspaceFullWid(18, wid.workspacePosition).result
+            imgs.filter(img => photo_ids.exists(pid => pid == img.id))
+        }
+    }
+    
+    compute getPhoto: Future[Image?] = {
+    	let photos <- getPhotos
+        photos.first
+    }
+    
+    impl event onLoad = {
+    	if (!deleted) {
+            if (let e = try? linkedEntity) {
+                let p <- linkedEntity
+                let cap <- getCatalogueApproval
+                catalogueApproval = cap
+                metalType = p.metalType
+                purity = p.purity
+                if (!refNums.exists(_ == p.sku)) refNums += [p.sku]
+                UI.save(this)
+            }
+            else {
+                UI.back
+            }
+        }
+    }
+    
+    override view traitItem = grid(labels = None){
+    	row{
+            getPhoto >> field(miniature = List, align = Center, width = 0.2)
+            y(width = 0.8) {
+                statusView
+                x{
+                    title >> field(stretch = 1)
+                    y(margin = None) {
+                        salesPrice >> field(frame = false)
+                        rentPrices >> field(frame = false)
+                    }
+                }
+                extension
+            }
+        }
+    }
+    
+    override view form = nav(onBarcode = if (ui.edit) addBarcode(barcode)){
+        tabs {
+            grid (labels = None, label = "Main") {
+                getPhotos >> field(height = 10, label = "")
+                statusView
+                title >> field(label = "", fontStyle = H2)
+                row {sku refNums trackItems}
+                goldView
+                linkedEntity >> x{ baseMainView }
+            }
+            superProductTabView
+            subProductTabView
+            extension("tabs")
+            grid (labels = Top, label = "More") {
+                unitsView
+                barcodes
+                extension
+            }
+        }
+        superProductNavView
+        productNavView
+        extension("nav")
+    }
+    
+    impl func mainView = form
+    
+}

@@ -1,0 +1,31 @@
+object MarketplaceService extends SystemService {
+    impl func title = "Marketplace Service"
+    impl func roles: [Role]? = [Admin]
+    override func isPublic: Bool = true
+    impl view form = nav{grid(labels = Top){
+       issuesView
+       serviceState
+       errorsCount >> field(editMode = AlwaysRead)
+    }}
+    impl func defaultDebug = true
+}
+
+
+class RejectProjectJob extends SystemJob {
+  	impl field service = MarketplaceService
+  	
+    field project: DeveloperProject
+    field dev: User
+    field rejectionReason: Text?
+    
+    impl func do: Future[Any] = {
+      	project._devsRejected += dev
+        project.observers.filter(_.observer == dev).foreach(_.delete)
+        Activity.setMainEntity(project)
+        Activity.comment("Project rejected by ${dev.mention}. ${
+                    	if (let v = rejectionReason) "Reason: ${v}."
+                        else "No reason given."
+                    }")
+        project.save
+    }
+}

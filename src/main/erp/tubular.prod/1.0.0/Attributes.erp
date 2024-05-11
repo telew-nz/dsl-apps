@@ -1,0 +1,50 @@
+enum WFSize {
+	case Pediatric
+    case Standard
+    case HeavyDuty
+    case Bariatric
+}
+
+enum WFSizeVariation {
+	case Short
+    case Narrow
+    case Tall
+}
+
+enum WFBase {
+	case LightWeight_Aluminium_ = "Lightweight (Aluminium)"
+    case Rehab_Steel_ = "Rehab (Steel)"
+}
+
+enum WFTop {
+	case StandardHandles
+    case ForearmTroughs
+    case PulpitTop
+    case PramHandle
+}
+
+enum WFFeet {
+	case RubberFeet4 = "4 Rubber Feet"
+    case Wheels2_Fixed_RubberFeet2 = "2 Wheels (Fixed) / 2 Rubber Feet"
+    case Wheels2_Fixed_GlideFeet2 = "2 Wheels (Fixed) / 2 Glide Feet"
+    case Castors2_Swivel_RubberFeet2 = "2 Castors (Swivel) / 2 Rubber Feet"
+    case Castors2_Swivel_GlideFeet2 = "2 Castors (Swivel) / 2 Glide Feet"
+    case Castors2_Swivel_Wheels2_Fixed_ = "2 Castors (Swivel) / 2 Wheels (Fixed)"
+    case Castors8inch_Swivel_Wheels8inch_Fixed_ = "2 (8\") Castors (Swivel) / 2 (8\") Wheels (Fixed)"
+}
+
+enum WFFolding {
+	case Folding
+    case NonFolding
+}
+
+enum WFSeat {
+	case Seat
+    case NoSeat
+}
+
+enum WFBrakes {
+	case Brakes
+    case NoBrakes
+    case SingleLeverBrakes
+}

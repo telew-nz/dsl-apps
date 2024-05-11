@@ -1,5 +1,0 @@
-class Foo {
-  field foo: Int
-  field bar: Int
-}
-

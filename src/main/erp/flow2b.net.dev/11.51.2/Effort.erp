@@ -1,0 +1,61 @@
+enum Effort(value: UInt?, rank: UDec[2]) {
+  case E0(value = 0, rank = 2.00) = "0" {
+    background = "#f5ffe0"
+  }
+  case E1(value = 1, rank = 1.50) = "1" {
+    background = "#efd"
+  }
+  case E2(value = 2, rank = 1.30) = "2" {
+    background = "#dea"
+  }
+  case E3(value = 3, rank = 1.20) = "3" {
+    background = "#dd9"
+  }
+  case E5(value = 5, rank = 1.00) = "5" {
+    background = "#ed9"
+  }
+  case E8(value = 8, rank = 0.80) = "8" {
+    background = "#ea9"
+  }
+  case E13(value = 13, rank = 0.60) = "13" {
+    background = "#f99"
+  }
+  case E20(value = 20, rank = 0.40) = "20" {
+    color = "white"
+    background = "#c00"
+  }
+  case E33(value = 33, rank = 0.10) {
+    label = "33"
+    color = "white"
+    background = "#c00"
+  }
+  case E53(value = 53, rank = 0.10) {
+    label = "53"
+    color = "white"
+    background = "#c00"
+  }
+  case E86(value = 86, rank = 0.10) {
+    label = "86"
+    color = "white"
+    background = "#c00"
+  }
+  case Infinity(value = 10000000, rank = 0.10) = "∞" {
+    color = "white"
+    background = "#f00"
+  }
+  
+  object func fromValue(v: Int?): Effort = {
+    if (v < 1) E0
+    else if (v == 1) E1
+    else if (v == 2) E2
+    else if (v == 3) E3
+    else if (v <= 5) E5
+    else if (v <= 8) E8
+    else if (v <= 13) E13
+    else if (v <= 20) E20
+    else if (v <= 33) E33
+    else if (v <= 53) E53
+    else if (v <= 86) E86
+    else Infinity
+  }
+}

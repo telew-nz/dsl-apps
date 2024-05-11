@@ -1,0 +1,41 @@
+extend entity User {
+  
+    ref field developerRole: [DeveloperRole]? {
+        views = []
+        visible = is(Developer)
+    }
+    extend view form = extend {
+      	developerRole
+    }
+  
+    impl event onSave = {
+        if (created && roles.isEmpty) {
+			UpdateUserRolesJob(user = this, roles = [Developer, Stakeholder]).enqueue	
+        }
+    }
+
+}
+
+role Developer {
+	
+    entity DeveloperProject {
+    	read = true
+        write = updated(_._devsRejected) || (
+        	!updated(_.owner) && !updated(_.title) && !updated(_.description) 
+            && !updated(_.proposals) && !updated(_.developerRole)
+       	)
+    }
+    entity DeveloperRole = readWrite
+    entity Proposal = readWrite
+    
+}
+
+role Stakeholder {
+	entity DeveloperProject = readWrite
+	entity DeveloperRole = readWrite
+	entity Proposal = readOnly
+    
+	impl view menu = y{
+    	DeveloperProject >> item(fastAdd)
+    }
+}

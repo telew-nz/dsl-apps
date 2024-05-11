@@ -1,3 +1,0 @@
-extend trait ISubProduct {
-  extend override func isNew: Bool = if (let prodCondition) prodCondition.isNew else false
-} 

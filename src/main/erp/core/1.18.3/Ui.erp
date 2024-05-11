@@ -65,7 +65,7 @@ class NfcRecord(tnf: Int?, recordType: Data?, recordId: Data?, payload: Data?) {
     }
   }
   func item: Future[RefEntity]? = {
-    let pref = "https://rd.flow2b.com/r/"
+    let pref = Config.redirectURL
     if (let url where url.startsWith(pref)) {
       let path = url.dropPrefix(pref)
       let i = path.lastIndexOf("/")!

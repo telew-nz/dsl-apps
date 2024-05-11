@@ -1,0 +1,23 @@
+extend trait IOpportunity {
+  field projects: [PersonalProject]? read by opportunity 
+  func rank: UDec[2]? = {
+    if (state == Open) (readyToStart?.rank.alt(1.00)*probability.noUnit*probability.noUnit).as[UDec[2]]
+    else if (state == Won) ReadyToStart.Asap.rank
+  }
+}
+
+extend entity PersonalProject {
+  field opportunity: IOpportunity?
+  
+  extend event onSave = {
+    opportunity?.touch
+  }
+}
+
+extend trait Actor {
+  extend override compute rank: UDec[2] = {
+    if (our) ReadyToStart.Asap.rank
+    else if (legalEntities*.customer*.salesOrders.find(paymentState != Unpaid)) ReadyToStart.Asap.rank
+    else 0.10 + opportunities.map(rank).max
+  }
+}

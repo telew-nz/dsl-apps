@@ -1,0 +1,76 @@
+trait ProjectIssue extends Entity {
+
+	override func issueTypes = super.issueTypes + [ITMyProject, ITProjectToReview]
+
+	impl event onSave = {
+    	if (created) {
+        	joinAll(Developer)
+            observers*.touch
+        }
+    }
+
+}
+
+class FixWithTextField(text: String, fieldLabel: String?, 
+	fieldValue: String?, act: ActWithTextField) extends IFix {
+	
+    impl view form = x {
+        "• " + text
+      	act >> x (margin = None, flow = false, frame = false) {
+          	fieldValue >> field(label = fieldLabel, editMode = AlwaysEdit)
+          	button(visible = label, label = label, margin = LeftRight, icon = icon) {
+              	_.do(fieldValue)
+          	}
+       	}
+	}
+
+}
+
+class ActWithTextField(
+	label: String?, icon: String?, color: String?, 
+    front field do: (fieldValue: String?) => Future[Void] = {}
+)
+
+object ITMyProject extends IssueType[DeveloperProject] {
+  
+	impl func title = "Your projects"
+	impl func defaultLevel = Pin
+	impl func roles(item: DeveloperProject) = [Stakeholder]
+	impl func hasIssue(item: DeveloperProject) = true
+	impl func isForUser(item: DeveloperProject, user: User) = item.owner == user
+    impl func isVisible(item: Entity, user: User) = false
+
+}
+
+object ITProjectToReview extends IssueType[DeveloperProject] {
+  
+	impl func title = "Project to review"
+	impl func defaultLevel = ToDo
+	impl func roles(item: DeveloperProject) = [Developer]
+	impl func hasIssue(item: DeveloperProject) = true
+	impl func isForUser(item: DeveloperProject, user: User) = item.owner != user 
+    	&& !item.proposals.exists(_.owner == user) 
+        && !item._devsRejected.exists(_ == user)
+        && user.is(Developer)
+    
+    impl func fixes(item: DeveloperProject) = [
+        Fix(text = "Review the project", acts = [
+            Act(
+            	label = "Make a proposal", 
+                icon = "wrench", 
+                do = Proposal.incomplete(owner = User.current!, project = item).form.open
+            )
+        ]),
+        FixWithTextField(text = "Reject the project", fieldLabel = "Reason for rejection", fieldValue = "", 
+        	act = ActWithTextField(
+            	label = "Reject and remove from the dashboard", 
+                icon = "bell-slash",
+                do = {
+                	RejectProjectJob(project = item, dev = User.current!, rejectionReason = fieldValue).enqueue
+                    UI.back
+                }
+            )
+        )
+    ]
+
+}

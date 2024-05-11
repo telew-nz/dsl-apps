@@ -1,0 +1,65 @@
+entity BullionCatalogueService extends SystemService {
+
+  impl func title: String = "Bullion Catalogue Service"
+  impl func roles: [Role]? = [Admin]
+  impl func defaultDebug = true
+  override func isPublic: Bool = true
+  
+  system field syncCatalogueProductsJob: SyncCatalogueProductsJob inline by service
+  
+  impl event onSave = {
+  	SyncCatalogueProductsJob(service = this).enqueue
+  }
+  
+  impl view form = nav{grid(labels = Top){
+ 	issuesView
+   	serviceState
+   	errorsCount >> field(editMode = AlwaysRead)
+  }}
+  
+}
+
+inline entity SyncCatalogueProductsJob extends ScheduledJob {
+
+    impl field service: BullionCatalogueService by syncCatalogueProductsJob
+    impl func schedule = "0 42 * * * ?"
+    impl func do: Future[Any] = {
+        LinkedBullionProduct.search("something impossible").unionFuture({
+        	let sid = CatalogueConfig.catalogueWid
+        	if (sid.cluster == 17) LinkedBullionProduct.all.inWorkspaceTry(17, sid.position, true).result
+        	else if (sid.cluster == 18) LinkedBullionProduct.all.inWorkspaceTry(18, sid.position, true).result
+        	else Future([]).as[Future[[LinkedBullionProduct]?]]
+        })
+        	.filter(l => {
+        		let lid = LongIdDb(l.linkedEntityId)
+        		let sid = ShortIdDb(cluster=lid.workspaceCluster, position=lid.workspacePosition)
+        		(!sid.isEqual(ShortIdDb(Workspace.current.authId)))
+        	})
+        	.filter(approval == Approved)
+        	.map(l => {
+        		let sps <- SharedProduct.all.map(linkedEntityId).result
+        		if (sps.exists(id => id == l.id)) {
+        			[].as[[SharedProduct]?]
+        		}
+        		else {
+        			let ll <- l.linkedEntity.map(_.as[BullionSuperProduct]!)
+        			let n: BullionName <- BullionName.search(ll.name.title).result.map(n => {
+        				if (let f = n.first) {
+                        	if (f.title == ll.name.title) f
+                            else BullionName(title = ll.name.title)
+                        }
+        				else BullionName(title = ll.name.title)
+        			})
+                    n.save
+                    [SharedProduct(
+                    linkedEntityId = l.id.toString!, status = ll.status, name = n,
+                    productForm = ll.productForm, size = ll.size, sizeUnit = ll.sizeUnit,
+                    metalType = ll.metalType, purity = ll.purity
+                    )].as[[SharedProduct]?]
+        		}
+        	})
+        .flatMap(_)
+        .foreach(_.save)
+    }
+    
+}

@@ -1,6 +1,0 @@
-// Menu
-menu TaskMenu {
-  report ToDo
-  entity Support
-  entity Person  
-}

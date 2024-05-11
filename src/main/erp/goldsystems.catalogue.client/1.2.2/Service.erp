@@ -1,0 +1,99 @@
+extend entity BullionCatalogueService {
+
+    system field syncCatalogueProductsJob: SyncCatalogueProductsJob inline by service
+
+    impl event onSave = {
+      	SyncCatalogueProductsJob(service = this).enqueue
+    }
+    
+    extend view form = y{ 
+        y(visible = !id.toString.startsWith("-")){
+            button("Sync catalogue products") {
+                syncCatalogueProductsJob.enqueueFirst
+            }
+        }
+    }
+  
+}
+
+
+inline entity SyncCatalogueProductsJob extends ScheduledJob {
+
+    impl field service: BullionCatalogueService by syncCatalogueProductsJob
+    impl func schedule = "0 52 * * * ?"
+    impl func do: Future[Any] = {
+        let sid = CatalogueConfig.catalogueWid
+        if (sid.cluster == 17) {
+            let ents <- CatalogueItem.all.inWorkspaceTry(17, sid.position, true).map { linkedEntity }.result
+            let ents2 <- CatalogueItem.all.inWorkspaceTry(17, sid.position, true).map { [id, linkedEntityId, approval] }.result
+            ents.zip(ents2).map(z => z.#1 + z.#0.as[BullionSuperProduct])
+                .filter(l => {
+                    let lid = LongIdDb(l(2).as[Id].toString!)
+                    let sid = ShortIdDb(cluster=lid.workspaceCluster, position=lid.workspacePosition)
+                    (!sid.isEqual(ShortIdDb(Workspace.current.authId)))
+                })
+                .filter(_(3) == CatalogueApprovalStatus.Approved)
+                .map(l => {
+                    let sps <- SharedProduct.all.map(linkedEntityId).result
+                    if (sps.exists(id => id == l(2).as[Id])) {
+                        [].as[[SharedProduct]?]
+                    }
+                    else {
+                        let ll = l(4).as[BullionSuperProduct]!
+                        let n: BullionName <- BullionName.search(ll.name.title).result.map(n => {
+                            if (let f = n.first) {
+                                if (f.title == ll.name.title) f
+                                else BullionName(title = ll.name.title)
+                            }
+                            else BullionName(title = ll.name.title)
+                        })
+                        n.save
+                        [SharedProduct(
+                            catalogueLinkId = l(1).as[Id].toString!, linkedEntityId = l(2).as[Id].toString!,
+                            name = n, status = ll.status, productForm = ll.productForm, 
+                            size = ll.size, sizeUnit = ll.sizeUnit,
+                            metalType = ll.metalType, purity = ll.purity
+                        )].as[[SharedProduct]?]
+                    }
+                })
+                .oneByOne(_)
+                .map(r => r.flatMap(_))
+        } else if (sid.cluster == 18) {
+            let ents <- CatalogueItem.all.inWorkspaceTry(18, sid.position, true).map { linkedEntity }.result
+            let ents2 <- CatalogueItem.all.inWorkspaceTry(18, sid.position, true).map { [id, linkedEntityId, approval] }.result
+            ents.zip(ents2).map(z => z.#1 + z.#0.as[BullionSuperProduct])
+                .filter(l => {
+                    let lid = LongIdDb(l(2).as[Id].toString!)
+                    let sid = ShortIdDb(cluster=lid.workspaceCluster, position=lid.workspacePosition)
+                    (!sid.isEqual(ShortIdDb(Workspace.current.authId)))
+                })
+                .filter(_(3) == CatalogueApprovalStatus.Approved)
+                .map(l => {
+                    let sps <- SharedProduct.all.map(linkedEntityId).result
+                    if (sps.exists(id => id == l(2).as[Id])) {
+                        [].as[[SharedProduct]?]
+                    }
+                    else {
+                        let ll = l(4).as[BullionSuperProduct]!
+                        let n: BullionName <- BullionName.search(ll.name.title).result.map(n => {
+                            if (let f = n.first) {
+                                if (f.title == ll.name.title) f
+                                else BullionName(title = ll.name.title)
+                            }
+                            else BullionName(title = ll.name.title)
+                        })
+                        n.save
+                        [SharedProduct(
+                            catalogueLinkId = l(1).as[Id].toString!, linkedEntityId = l(2).as[Id].toString!,
+                            name = n, status = ll.status, productForm = ll.productForm, 
+                            size = ll.size, sizeUnit = ll.sizeUnit,
+                            metalType = ll.metalType, purity = ll.purity
+                        )].as[[SharedProduct]?]
+                    }
+                })
+                .oneByOne(_)
+                .map(r => r.flatMap(_))
+        }
+    }
+    
+}

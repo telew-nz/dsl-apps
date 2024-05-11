@@ -4,6 +4,8 @@ interface Query[T] {
   func delete: this
   object func apply(value: Any): Query1[Any]
   func inWorkspace(id: UInt): this
+  func inWorkspaceFullWid(clusterId: UInt, positionId: UInt?): this
+  func inWorkspaceTry(clusterId: UInt, positionId: UInt?, ignoreDslNoDeclaration: Bool): this
 }
 
 interface QueryN[T] extends Query[T] {

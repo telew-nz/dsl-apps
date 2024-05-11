@@ -1,0 +1,20 @@
+object MarketplaceClientUtilities {
+	
+    func getUsersToAdd: Future[[Tuple[String, String]]?] = {
+    	let marketplaceUserLogins <- User.all.inWorkspaceFullWid(17, 50).map(login).result
+        let usersToAdd <- User.all.filter(u => !marketplaceUserLogins.exists(_ == u.login)).map((person.name, login)).result
+        usersToAdd
+    }
+    
+    func addUserToMarketplace(name: String, login: String): Future[[String]?] = {
+    	Workspace.all.inWorkspaceFullWid(17, 50).map(_ => {
+            let p = Person(name = "Placeholder Person Name")
+            p.name = name
+            p.user = User(login = "placeholder_user_login")
+            p.user!.login = login
+            p.save
+            "Done saving user ${name}/${login}"
+		}).result
+    }
+    
+}

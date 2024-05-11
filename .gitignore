@@ -253,3 +253,10 @@ $RECYCLE.BIN/
 
 # Console history
 .orientdb_history
+
+### VSCode w/ metals ###
+.bloop
+.metals
+.vscode
+project
+target

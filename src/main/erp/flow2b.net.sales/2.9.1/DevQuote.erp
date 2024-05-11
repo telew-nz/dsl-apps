@@ -1,0 +1,188 @@
+enum QuoteState {
+  case Entered{background = "#ed9" icon = "play"}
+  case OrderCreated {
+    background = "#8bf"
+    icon = "file-invoice-dollar"
+  }
+  case OrderPaid {
+    color = "white"
+    icon = "check-circle"
+    background = "#090"
+  }
+  case Canceled {background = "#999" icon = "times-circle"}
+}
+
+entity DevQuote extends HasN {
+  singular = "Quote"
+  plural = "Quotes"
+  ref field date: Date = now
+  ref field customer: Customer by quotes
+  compute currency = customer.getCurrency
+  field cancelled: Bool
+  ref compute state: QuoteState {
+    value = if (cancelled) Canceled else calcState
+    update = {
+      cancelled = new == Canceled
+    }
+  }
+  func calcState: QuoteState = {
+    if (order?.paid) OrderPaid
+    else if (order) OrderCreated
+    else Entered
+  }
+  field items: [DevQuoteItem] inline by quote
+  impl func numPrefix = "DQ"
+  impl ref compute title = "$fullNum $customer"
+  ref compute total = items*.amount.sum
+  compute ready = items.all(ready)
+  field order: SalesOrder? by quotes {
+    available(Inline).for(Inline)
+    from = SalesOrder.all.filter(o => o.customer == customer)
+  }
+  compute estimation: Estimation? = if (let ess = items*.estimation) Estimation.sum(ess)
+  
+  impl func nextN = increment(Order.gen)
+  impl view form = nav{
+    grid{
+      x {state customer >> field(stretch = 1) number >> field(fontStyle = Label)}
+      x {total >> field(stretch = 1, fontStyle = Bold) date}
+      order >> field(noTab)
+      items
+      
+      estimation
+    }
+    button("Make Order", visible = ready) {
+      let _ <- UI.save(this)
+      let order <- back {
+        makeOrder
+      }
+      order.form.open
+    }
+  }
+  
+  back func makeOrder: SalesOrder = {
+    if (!ready) throw "Quote is not ready"
+    if (!order) {
+      order = SalesOrder(vendor = OurLegalEntity.onlyOne!, customer = customer, accepted = null)
+    }
+    items*.makeItem
+    order!
+  }
+  impl event onSave = {
+    if (order && updated(order) && ready) {
+      makeOrder
+    }
+  }
+  impl view ref = x{state fullNum >> field(fontStyle = Label) title total}
+  report Report {
+    impl view list = DevQuote.all >> nav{list{
+      ref
+    }}
+  }
+}
+
+extend entity SalesOrder {
+  const field quotes: [DevQuote]? by order
+}
+
+extend entity Customer {
+  field quotes: [DevQuote]? read by customer
+}
+ 
+entity DevQuoteItem extends PseudoEntity {
+  singular = "Issue"
+  
+  ref field quote: DevQuote
+  impl func mainEntity = quote
+  impl view ref = x{quote.state quote.fullNum >> field(fontStyle = Label) title quote.total}
+  
+  system field salesItem: SalesItem?
+  
+  field issues: [Issue]? by quotes {
+    available(Inline).for(Inline)
+  }
+  field adds: [DevQuoteItemAdd]? inline by item {
+    label = "Additional Charges"
+  }
+  func ready = (issues || adds) && issues.all(_.estimations || _.stdCharge) && adds.all(_.ready)
+  compute estimation: Estimation? = if (let estimations = issues*.estimation + adds*.estimation) Estimation.sum(estimations)
+  field margin: UPercent[2]? = 0.5
+  back func makeItem: Void = {
+    if (!salesItem || !salesItem!.active) {
+      let prod: ISubProduct = (issues*.devType + adds*.devType).distinct.onlyOne?.product
+        .alt(SalesSettings.one.product!)
+      salesItem = SalesItem(
+        order = quote.order! 
+        deliveryItem = DeliveryItem(
+          unit = prod.unit
+          product = prod
+          qty = 1
+        )
+      )
+    }
+    let si = salesItem!
+    si.amountNoGst = amount
+    si.desc = desc
+    si.save
+  }
+  
+  func amount: UMoney[quote.currency]? = {
+    let cost: UMoney? = (
+      issues.map(i => i.stdCharge.alt(i.devType.rate * i.estimation!.e95.as[UDec[8]]/60)).sum
+      +
+      adds.map(i => if (let dt = i.devType) dt.rate * i.estimation!.e95.as[UDec[8]]/60 * i.contribution).sum
+      +
+      adds*.charge.sum
+    )
+    let sp: UMoney? = cost / (1.00 - margin).positive.alt(1.00)
+    SalesSettings.one.rounding.apply(sp)
+  }
+  
+  impl view form = grid {
+    row {amount >> field(fontStyle = Bold, label = "") margin}
+    desc >> field(label = "")
+    issues
+    adds
+    
+  }
+  field _desc: Text? {
+    validate = if (!desc) "Description cannot be empty"
+  }
+  
+  compute desc {
+    label = "Description"
+    value = _desc.or(issues.first?.title)
+  }
+}
+
+trait DevQuoteItemAdd extends InlineEntity {
+  system field item: DevQuoteItem
+  func devType: DevType? = null
+  field desc: Text? {label = "Description"}
+  func ready: Bool = true
+  func estimation: Estimation? = null
+  field contribution: UPercent[2] = 1
+  func charge: UMoney[our]? = 0
+}
+inline entity DevQuoteItemAddEstimate extends DevQuoteItemAdd {
+  singular = "Estimate"
+  field type: DevType
+  impl func devType = type
+  field estimations: [Estimation]?
+  impl func ready: Bool = estimations
+  impl compute estimation: Estimation? = if (let estimations) Estimation.avg(estimations)
+  impl view form = grid {
+    row{type >> field(compact) contribution}
+    estimations >> list(frame = false, label = "")
+    desc >> field(label = "")
+  }
+}
+inline entity DevQuoteItemAddCharge extends DevQuoteItemAdd {
+  singular = "Charge"
+  impl field charge: UMoney[our]?
+  impl view form = grid {
+    x{charge >> field(compact) contribution}
+    desc >> field(label = "")
+  }
+}
+

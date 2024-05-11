@@ -1,0 +1,51 @@
+back class DownloadDeliveryMethodsJob extends SystemJob {
+  impl field service: WooCommerceIntegration
+  
+  impl func do: Future[Any] = {
+    let zones <- service.https("/shipping/zones").get
+    let _ <- zones.body!.parseJson[[ShippingZoneData]?].map {zone =>
+      let r <- service.https("/shipping/zones/$(zone.id)/methods").get
+      r.body!.parseJson[[ShippingZoneMethodData]?].filter(enabled)*.make(service)
+    }.allCompleted
+    
+    let response <- service.https("/shipping_methods").get
+    response.body!.parseJson[[DeliveryMethodData]?]*.make(service)
+  }
+}
+back class ShippingZoneData extends WooData {
+  extFieldNaming = Underscore
+  field id: Int?
+  field name: String
+  field order: Int?
+}
+
+back class ShippingZoneMethodData extends WooData {
+  extFieldNaming = Underscore
+  field instanceId: Int
+  field title: String
+  field order: Int?
+  field enabled: Bool
+  field methodId: String
+  field methodTitle: String
+  field methodDescription: PlainText?
+  
+  func make(service: WooCommerceIntegration): Void = {
+    service.updateDeliveryMethod("$methodId:$instanceId") {m =>
+      m.name = methodTitle
+    }
+  }
+}
+
+
+back class DeliveryMethodData extends WooData {
+  extFieldNaming = Underscore
+  field id: String
+  field title: String
+  field description: PlainText?
+  
+  func make(service: WooCommerceIntegration): Void = {
+    service.updateDeliveryMethod(id) {m =>
+      m.name = title
+    }
+  }
+}

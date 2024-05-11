@@ -1,0 +1,20 @@
+extend trait Actor {
+
+	field actorWorkspaceFullId: String? {label = "Workspace Id"}
+
+}
+
+
+/*
+extend entity Company {
+
+	extend view form = nav{
+    	tabs{
+        	grid(labels = Top, label = "Other") {
+            	actorWorkspaceFullId
+            }
+        }
+    }
+
+}
+*/

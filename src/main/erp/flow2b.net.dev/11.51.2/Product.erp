@@ -1,0 +1,110 @@
+enum ProductType {
+  case App {
+    background = "#ed9"
+  }
+  case Project {
+    background = "#efd"
+  }
+}
+
+enum ProductStatus {
+  case Entered {background = "#ed9"}
+  case Revision {background = "#fcc"}
+  case Approved {background = "#ccf"}
+  case Canceled {background = "#999"}
+  case InProgress {background = "#8bf"}
+  case Dormant {background = "#999"}
+  case Partner {background = "#ecd"}
+}
+
+enum DevType {
+  case ProdDev = "Product Development"
+  case WebDev = "Web Development"
+  case WebDesign = "Web Design"
+  case DataCleaning
+  case Support
+}
+
+
+
+trait DevProduct extends RefEntity { 
+  background = "#545790"
+  field files: [File]?
+  field description: Text?
+  func type: ProductType
+  field status: ProductStatus = Entered
+  field sandboxWorkspace: String?
+  func devType: DevType
+  func supportUnits: Int? = 0
+  
+  ref field milestones: [Milestone]? read by products {
+    available(All).for(All)
+  }
+  func milestonesSelection: [Milestone]? = milestones.sortBy(if (status == Closed) 1 else 0, title)
+  ref field features: [Feature]? read by products
+  ref compute activeMilestonesCount = milestones.filter(status.rankCount).count
+  field docs: [Article]? from Article.all.filter{parentArticle.isEmpty}
+  field packageDocs: [DocPackage]? by product
+  ref field backlog: Backlog? by products
+  field dependencies: [UniversalApp]? by dependants
+  
+  ref field roadmap: Roadmap? by products { 
+    update = {
+      if (let newRoadmap = new) features.foreach(roadmap = newRoadmap)
+    }
+  }
+  system field devIssues: [Issue]? read by _product
+  func rank: UDec[2]
+  impl event onSave = {
+    if (updated(backlog)) {
+      devIssues*.as[DevIssue]*.touch
+    }
+    if (updated(roadmap)) features.foreach(roadmap = this.roadmap!)
+    //milestones*.touch
+  }
+  func allDependants: [DevProduct]? = []
+  front func openIssues = Issue.Report(product = this, status = (IssueStatus.all.filter(active) + [IssueStatus.Postponed, IssueStatus.Pending]).toSet).list.open
+}
+
+
+entity UniversalApp extends DevProduct {
+  impl field title: String
+  impl func devType: DevType = ProdDev
+  func isTangible = false
+  impl func type: ProductType = ProductType.App
+  impl view traitItem = row{type, title}
+  func subProducts = [this]
+  field dependants: [DevProduct]? by dependencies
+  impl func allDependants: [DevProduct]? = (dependants + dependants*.allDependants).distinct
+  
+  impl system stored ref compute rank: UDec[2] = {
+    1.00 + allDependants*.as[PersonalProject].groupBy(actor).agg(first.rank).values.sum*0.20
+  }
+  impl view form = nav{
+    grid (labels = Right) {
+      title
+      status
+      backlog
+      roadmap
+      sandboxWorkspace
+      milestones >> list {
+        x(flow = false){status title}
+      }
+      features 
+      docs
+      packageDocs
+      description
+      rank
+      dependencies
+      dependants
+    }
+    button("Issues") { openIssues }
+  }
+  impl func canRead: Bool = true
+  
+  impl event onSave = {
+    dependants*.touch
+  }
+}
+
+

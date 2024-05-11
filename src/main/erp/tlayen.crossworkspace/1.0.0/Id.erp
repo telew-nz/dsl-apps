@@ -1,0 +1,57 @@
+object DbId {
+	const field shortIdDbPattern: String = "-?\d+_-?\d+"
+    const field longIdDbPattern: String = "-?\d+_-?\d+_-?\d+_-?\d+"
+    
+    func isShortIdDb(id: String): Bool = {
+    	id.matches(Regex(shortIdDbPattern))
+    }
+    
+    func isLongIdDb(id: String): Bool = {
+    	id.matches(Regex(longIdDbPattern))
+    }
+}
+
+class ShortIdDb {
+	const field cluster: UInt
+    const field position: UInt?
+    
+    func isEqual(id: ShortIdDb) = {
+    	this.cluster == id.cluster && this.position == id.position
+    }
+    
+    impl func toString = "${cluster}_${position}"
+    
+    object func apply(id: String) = {
+        let short_id_split = id.split("_")
+        if (let sid = try? ShortIdDb(
+        	cluster = short_id_split.first.toUNum!,
+            position = short_id_split.drop(1).first!.toUNum
+        )) sid
+        else throw "Couldn't extract short DB ID from $id"
+    }
+}
+
+class LongIdDb {
+	const field workspaceCluster: UInt
+    const field workspacePosition: UInt?
+    const field itemCluster: UInt
+    const field itemPosition: UInt?
+    
+    impl func toString = "${workspaceCluster}_${workspacePosition}_${itemCluster}_${itemPosition}"
+    func toStringWorkspace = "${workspaceCluster}_${workspacePosition}"
+    func toStringItem = "${itemCluster}_${itemPosition}"
+    
+    func getWorkspaceId = ShortIdDb(cluster = workspaceCluster, position = workspacePosition)
+    func getItemId = ShortIdDb(cluster = itemCluster, position = itemPosition)
+    
+    object func apply(id: String) = {
+        let long_id_split = id.split("_")
+        if (let lid = try? LongIdDb(
+        	workspaceCluster = long_id_split.first.toUNum!,
+            workspacePosition = long_id_split.drop(1).first!.toUNum,
+            itemCluster = long_id_split.drop(2).first!.toUNum!,
+            itemPosition = long_id_split.drop(3).first!.toUNum
+        )) lid
+        else throw "Couldn't extract long DB ID from $id"
+    }
+}

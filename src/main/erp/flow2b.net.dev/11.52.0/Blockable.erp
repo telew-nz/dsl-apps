@@ -1,0 +1,129 @@
+trait Blockable extends Entity {
+  field blockedByIssues: [Issue]? by blocksItems
+  func contentIssues: [Issue]? = []
+  func rank: Dec[2]?
+  func rawRank: Dec[2]? = rank
+  func products: [DevProduct]?
+  compute blockedByActiveIssues {
+    value = blockedByIssues.filter(this.isBlocking(_))
+    update = {
+      this.blockedByIssues = this.blockedByIssues.filter(!this.isBlocking(_)) + new
+    }
+  }
+  func allBlockingIssues: [Issue]? = {
+    let cis = allContentIssues
+    (blockedByActiveIssues + blockedByActiveIssues*.allBlockingIssues + contentIssues.filter(this.isBlocking(_))*.allBlockingIssues)
+      .filter(!cis.contains(_))
+      .distinct
+  }
+  func allContentIssues: [Issue]? = {
+    contentIssues + contentIssues*.allContentIssues
+  }
+  func subContentIssues: [Issue]? = {
+    contentIssues.flatMap(i => if (i.contentIssues) i.subContentIssues else [i])
+  }
+  func isBlocking(issue: Issue): Bool = issue.status.blocking
+  //func product: DevProduct
+  func isInBacklog: Bool
+  func active: Bool
+  
+  ref system stored compute blockStatus: BlockStatus? {
+    value = {
+      if (let e = blockedByEfforts) BlockStatus.fromValue(e)
+      else if (blockedByActiveIssues) Blocked
+    }
+  }
+  ref system stored compute contentEffort: Effort? {
+    value = {
+      if (let e = contentEffortValue) Effort.fromValue(e)
+    }
+  }
+  compute blockedByEfforts: Int? = allBlockingIssues*.blockEffort*.value.sum 
+  compute contentEffortValue: Int? = subContentIssues.filter(_.status !in [Canceled, Duplicate])*.blockEffort*.value.sum
+  func productEfforRank(p: DevProduct): Dec[2] = 1.00
+}
+
+enum BlockStatus(value: Int) {
+  case Blocked(value = 1) {
+    label = "?"
+    icon = "stop-circle"
+    background = "#f99"
+  }
+  case Blocked1(value = 1){
+    label = "1"
+    icon = "stop-circle"
+    background = "#f99"
+  }
+  case Blocked2(value = 2) {
+    label = "2"
+    icon = "stop-circle"
+    background = "#f99"
+  }
+  case Blocked3(value = 3) {
+    label = "3"
+    icon = "stop-circle"
+    background = "#f99"
+  }
+  case Blocked5(value = 5) {
+    label = "5"
+    icon = "stop-circle"
+    background = "#f99"
+  }
+  case Blocked8(value = 8) {
+    label = "8"
+    icon = "stop-circle"
+    color = "white"
+    background = "#c00"
+  }
+  case Blocked13(value = 13) {
+    label = "13"
+    icon = "stop-circle"
+    color = "white"
+    background = "#c00"
+  }
+  case Blocked20(value = 20) {
+    label = "20"
+    icon = "stop-circle"
+    color = "white"
+    background = "#c00"
+  }
+  case Blocked33(value = 33) {
+    label = "33"
+    icon = "stop-circle"
+    color = "white"
+    background = "#c00"
+  }
+  case Blocked53(value = 53) {
+    label = "53"
+    icon = "stop-circle"
+    color = "white"
+    background = "#c00"
+  }
+  case Blocked86(value = 86) {
+    label = "86"
+    icon = "stop-circle"
+    color = "white"
+    background = "#c00"
+  }
+  case BlockedInfinity(value = 10000000) {
+    label = "∞"
+    icon = "stop-circle"
+    color = "white"
+    background = "#f00"
+  }
+  
+  object func fromValue(v: Int?): BlockStatus = {
+    if (v < 1) Blocked
+    else if (v == 1) Blocked1
+    else if (v == 2) Blocked2
+    else if (v == 3) Blocked3
+    else if (v <= 5) Blocked5
+    else if (v <= 8) Blocked8
+    else if (v <= 13) Blocked13
+    else if (v <= 20) Blocked20
+    else if (v <= 33) Blocked33
+    else if (v <= 53) Blocked53
+    else if (v <= 86) Blocked86
+    else BlockedInfinity
+  }
+}

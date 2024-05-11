@@ -1,7 +1,0 @@
-/*a: Dec[0]
-b: Dec[2]
-x: Dec[36]
-a = 2
-b = a
-x = b.pow(-3)
-x.log("x =”)*/

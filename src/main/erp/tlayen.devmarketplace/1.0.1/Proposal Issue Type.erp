@@ -1,0 +1,22 @@
+trait ProposalIssue extends Entity {
+
+	override func issueTypes = super.issueTypes + [ITMyProposal]
+
+	impl event onSave = {
+    	if (created) {
+            observers*.touch
+        }
+    }
+
+}
+
+object ITMyProposal extends IssueType[Proposal] {
+  
+	impl func title = "Your proposals"
+	impl func defaultLevel = Pin
+	impl func roles(item: Proposal) = [Developer]
+	impl func hasIssue(item: Proposal) = true
+	impl func isForUser(item: Proposal, user: User) = item.owner == user
+    impl func isVisible(item: Entity, user: User) = false
+
+}

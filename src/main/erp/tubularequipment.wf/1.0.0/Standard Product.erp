@@ -1,0 +1,14 @@
+basicProduct StandardTubularProduct(skuPrefix = "TP", noAltUnits = true) {
+  impl ref compute title = calcTitle
+}
+
+extend entity StandardTubularProduct extends TubularSuperProduct {
+  impl view customView = tubularView
+}
+
+productAttr WFTop
+productAttr WFSize
+productAttr Feet
+productAttr WFFolding
+productAttr WFSeat
+productAttr WFBrakes

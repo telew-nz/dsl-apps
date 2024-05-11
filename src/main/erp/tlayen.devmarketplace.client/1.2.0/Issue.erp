@@ -1,0 +1,40 @@
+trait InvitationIssue extends Entity {
+
+	override func issueTypes = super.issueTypes + [ITAdmitUserToMarketplace]
+
+}
+
+
+object ITAdmitUserToMarketplace extends IssueType[Invitation] {
+  
+	impl func title = "Admit user to marketplace"
+	impl func defaultLevel = ToDo
+	impl func hasIssue(item: Invitation) = true
+    impl func roles(item: Invitation) = [Admin]
+	impl func isForUser(item: Invitation, user: User) = item.state == AdminReview && user.is(Admin)
+    
+    impl func fixes(item: Invitation) = [
+        Fix(text = "Admit the user", acts = [
+            Act(
+            	label = "Admit", 
+                icon = "plus", 
+                do = {
+                	let user = item.invitedUser
+                	MarketplaceClientUtilities.addUserToMarketplace(user.person.name, user.login).map {
+                    	AdmitUserJob(invitation = item, user = User.current!).enqueue
+                    }
+                }
+            )
+        ]),
+        FixWithTextField(text = "Reject user", fieldLabel = "Reason for rejection", fieldValue = "", 
+        	act = ActWithTextField(
+            	label = "Reject", 
+                icon = "bell-slash",
+                do = {
+                	RejectAdmitionJob(invitation = item, user = User.current!, rejectionReason = fieldValue).enqueue
+                }
+            )
+        )
+    ]
+
+}

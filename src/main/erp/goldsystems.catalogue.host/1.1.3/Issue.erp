@@ -1,0 +1,43 @@
+trait CatalogueItemIssue extends Entity {
+
+	override func issueTypes = super.issueTypes + [ITCatalogueItemToReview]
+
+}
+
+
+object ITCatalogueItemToReview extends IssueType[LinkedBullionProduct] {
+  
+	impl func title = "Catalogue item to review"
+	impl func defaultLevel = Warning
+	impl func roles(item: LinkedBullionProduct) = [BusAdmin]
+	impl func hasIssue(item: LinkedBullionProduct) = item.approval == AwaitingReview
+	impl func isForUser(item: LinkedBullionProduct, user: User) = user.is(BusAdmin) || user.is(Admin)
+    
+    impl func fixes(item: LinkedBullionProduct) = [
+        Fix(text = "Accept item", acts = [
+            Act(
+            	label = "Accept", 
+                icon = "wrench", 
+                do = {
+                	item.approval = Approved
+                    item.save
+                }
+            )
+        ])
+        FixWithTextField(text = "Reject item", fieldLabel = "Reason for rejection", fieldValue = "", 
+        	act = ActWithTextField(
+            	label = "Reject", 
+                icon = "bell-slash",
+                do = {
+                    Activity.current!.comment("Product rejected by ${User.current!.mention}. ${
+                    	if (let v = fieldValue) "Reason: ${v}."
+                        else "No reason given."
+                    }")
+                	item.approval = Rejected
+                    UI.save(this)
+                }
+            )
+        )
+    ]
+
+}

@@ -1,0 +1,74 @@
+entity FundOpportunity extends IOpportunity[FundOpportunityStage] {
+  impl func prefix = "F"
+  impl ref field stage: FundOpportunityStage
+  impl field estimatedAmount: UMoney[currency]?
+  impl field probability: UPercent?
+  override func itemRoles = [BusAdmin]
+  field requirements: [FundReq]? inline by opportunity
+  impl func isBlocked = requirements.exists(!_.complete)
+  impl func clickNextStage = if (stage == StatusQuo) Interest
+  
+  impl view stateView = x{state stage}
+  impl view form = nav {grid {
+    headerView
+    row{country city suburb space}
+    row{lastContact, space}
+    row{estimatedAmount probability}
+    requirements
+    footerView
+  }}
+  
+
+  impl object view list = FundOpportunity.all >> nav {list {
+    dash
+  }}
+}
+
+extend role BusAdmin {
+  extend view menu = menu("Funding") {
+    FundOpportunity
+  }
+}
+
+enum FundOpportunityStage {
+  case StatusQuo {background = "#999" icon = "box"}
+  case Interest {background = "#ed9" icon = "search"}
+  case Considiration {background = "#cce0ff" icon = "balance-scale"}
+  case Validation {background = "#8bf" icon = "microscope"}
+  case FinalApproval {background = "#dea" icon = "flag-checkered"}
+}
+
+trait FundReq extends InlineEntity {
+  field opportunity: FundOpportunity by requirements
+  func complete: Bool
+}
+
+entity FundReqOther extends FundReq {
+  singular = "Other"
+  impl field complete: Bool
+  field desc: Text? {label = "Description"}
+  impl view form = y {
+    complete
+    desc
+  }
+}
+
+entity FundReqArr extends FundReq {
+  singular = "ARR"
+  field min: UMoney[NZD]
+  field val: UMoney[NZD] {label = "Most Likely"}
+  field max: UMoney[NZD]
+  compute arr: UMoney[NZD]? {
+    label = "ARR"
+    value = KPI.last?.revenue?.arr
+  }
+  impl func complete: Bool = arr >= min
+  impl view form = grid {
+    row{
+      arr
+      min >> field (color = if (min <= arr) "green" else "red")
+      val >> field (color = if (val <= arr) "green" else "red")
+      max >> field (color = if (max <= arr) "green" else "red")
+    }
+  }
+}

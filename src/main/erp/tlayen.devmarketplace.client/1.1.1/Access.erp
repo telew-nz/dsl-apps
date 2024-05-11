@@ -1,0 +1,20 @@
+extend entity Person {
+
+	impl func canRead = true
+	impl func canWrite = true
+    
+}
+
+
+extend entity User {
+
+	impl func canRead = true
+	impl func canWrite = true
+    
+    impl event onSave = {
+    	if (created) {
+        	CreateInvitationJob(user = this).enqueue
+        }
+    }
+
+}

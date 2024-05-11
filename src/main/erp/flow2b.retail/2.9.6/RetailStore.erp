@@ -1,0 +1,18 @@
+entity RetailStore extends IOurStore with ISalesChannel {
+  searchWeight = 2
+  impl field title: String
+  field description: Text?
+  field accounts: [FinAccount]?
+  field address: Address?
+  impl func locationAddress = address
+  impl view form = nav{grid(labels = Top){
+    title >> field(label = "", fontStyle = H1)
+    address
+    schedule
+    contacts
+    accounts
+    description
+  }}
+  
+  override object func onlyOne: RetailStore? = Workspace.current.stores*.as[RetailStore].onlyOne
+}

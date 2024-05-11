@@ -1,0 +1,11 @@
+extend role BusAdmin {
+  menu Sales {
+    report SalesByDays
+  }
+}
+
+extend role Salesperson {
+  menu Sales {
+    report SalesByDays
+  }
+}

@@ -1,0 +1,19 @@
+object TestFolding extends Entity {
+	impl func title = "test folding"
+
+	ref field _folded: WalkerFolding
+	ref field _nonfolded: WalkerFolding
+    
+    impl view form = nav{grid{
+    	_folded>>field("Folded attr")
+        _nonfolded>>field("Non-Folded attr")
+	}}
+}
+
+/*
+extend role Admin {
+	extend view menu = menu("debug"){
+    	button("Open test folding") {TestFolding.form.open}
+    }
+}
+*/

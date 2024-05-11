@@ -1,0 +1,107 @@
+trait IUserStory extends BacklogIssue {
+  field role: ProductRole {
+    by = stories
+    label = "As a"
+  }
+  field goal: Text {
+    label = "I want"
+  }
+  field benefit: Text {
+    label = "so that"
+  }
+  field additionalInfo: Text?
+  impl func descUpdated: Bool = updated(role) || updated(goal) || updated(benefit) || updated(additionalInfo) || updated(title)
+}
+
+entity UserStory extends DevIssue with IUserStory{
+  background = "#528025" icon = "user-graduate"
+  impl func numPrefix: String = "S"
+    
+    
+  impl view ref = y {
+    x{number >> field(fontStyle = Label)  title product >> field(fontStyle = Label)}
+    x{DevIssueType.Story effort blockStatus >> field(compact = false) status >> field(editMode = AlwaysEdit) itemUser}
+  }
+  impl view traitItem = grid(labels = None) {
+    x{title >> field(stretch = 1) number >> field(fontStyle = Label)}
+    row {product milestone feature}
+    x {DevIssueType.Story effort blockStatus >> field(compact = false) status >> field(editMode = AlwaysEdit) itemUser}
+  }
+  
+  /*impl view quick = grid {
+    x(flow = false, label = ""){
+      blockStatus >> field(compact = false)
+      status >> field(editMode = AlwaysEdit)
+      name >> field(stretch = 1, fontStyle = H2)
+      number >> field(fontStyle = Label)
+    }
+    product
+    effort
+    role >> field(label = "As a (choose carefully)", placeholder = "who")
+    goal >> field(label = "I want (make it precise and understandable for a developer)", placeholder = "what (a developer should be able to understand how to implement it)")
+    benefit >> field(label = "so that (put some efforts to make it clear)", placeholder = "why")
+    additionalInfo >> field(label = "Additional Information")
+  }*/
+  
+  impl view form = nav {
+    grid {
+      x(flow = false, label = ""){
+        blockStatus >> field(compact = false) 
+        status >> field(editMode = AlwaysEdit)
+        name >> field(stretch = 1, fontStyle = H2)
+        number >> field(fontStyle = Label)
+      }
+      core
+      apps
+      row{epic >> field(title = title) feature}
+      developer
+      row {
+        product
+        milestone >> field(title = name)
+        backlog >> field(editMode = AlwaysRead)
+      }
+      spuUses
+      effort
+      devType >> field (label = "", visible = estimations)
+      estimations >> field (label = "")
+      role >> field(label = "As a (choose carefully)", placeholder = "who")
+      goal >> field(label = "I want (make it precise and understandable for a developer)", placeholder = "what (a developer should be able to understand how to implement it)")
+      benefit >> field(label = "so that (put some efforts to make it clear)", placeholder = "why")
+      additionalInfo >> field(label = "Additional Information")
+      blockedByIssues >> field(label = "This story is blocked by")
+      blocksItems >> field(label = "This story blocks")
+      desires
+
+    }
+     
+    edit {
+      x{
+        button("To Bug") {
+          let g = goal
+          let d = benefit + additionalInfo
+          let r = convertTo(Bug)
+          r.steps = g
+          r.additionalInfo = d
+        }
+        button("To Epic") {
+          convertTo(Epic)
+        }
+        button("To Dev Task") {
+          let d = goal + benefit + additionalInfo
+          let r = convertTo(DevTask)
+          r.description = d
+        }
+        button("To Tech Task") {
+          let d = goal + benefit + additionalInfo
+          let r = convertTo(TechTask)
+          r.desc = d
+        }
+        
+
+      }
+    }
+  }
+  impl func type: DevIssueType = Story
+}
+
+

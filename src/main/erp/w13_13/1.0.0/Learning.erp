@@ -1,7 +1,0 @@
-entity Learning{
-  field plan : String
-  field description : Text
-  field date : Date
-  field teacher : Person
-  func title = plan
-}

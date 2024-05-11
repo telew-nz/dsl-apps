@@ -1,0 +1,79 @@
+extend entity BullionCatalogueService {
+
+    system field syncCatalogueProductsJob: SyncCatalogueProductsJob inline by service
+
+    impl event onSave = {
+      	SyncCatalogueProductsJob(service = this).enqueue
+    }
+    
+    extend view form = y{ 
+        y(visible = !id.toString.startsWith("-")){
+            button("Sync catalogue products") {
+                syncCatalogueProductsJob.enqueueFirst
+            }
+        }
+    }
+  
+}
+
+
+inline entity SyncCatalogueProductsJob extends ScheduledJob {
+
+    impl field service: BullionCatalogueService by syncCatalogueProductsJob
+    impl func schedule = "0 52 * * * ?"
+    impl func do: Future[Any] = {
+        let sid = CatalogueConfig.catalogueWid
+        if (sid.cluster == 17) {
+            let ents01 <- CatalogueItem.all.inWorkspaceTry(17, sid.position, true).map { linkedEntity }.result
+            let ents02 <- CatalogueItem.all.inWorkspaceTry(17, sid.position, true).map { [id, linkedEntityId, approval] }.result
+            ents01.zip(ents02).map(z => z.#1 + z.#0.as[BullionSuperProduct])
+                .filter(l => {
+                    let lid = LongIdDb(l(2).as[Id].toString!)
+                    let sid = ShortIdDb(cluster=lid.workspaceCluster, position=lid.workspacePosition)
+                    (!sid.isEqual(ShortIdDb(Workspace.current.authId)))
+                })
+                .map(l => {
+                	let ll = l(4).as[BullionSuperProduct]!
+                    let sp0 <- SharedProduct.all.find(_.linkedEntityId == l(2).as[Id]).result
+                    if (let sp = sp0) {
+                    	let cap <- sp.getCatalogueApproval
+                		sp.catalogueApproval = cap
+                        sp.status = ll.status
+                        sp.productForm = ll.productForm
+                        sp.size = ll.size
+                        sp.sizeUnit = ll.sizeUnit
+                        sp.metalType = ll.metalType
+                        sp.purity = ll.purity
+                        if (!sp.refNums.exists(_ == ll.sku)) sp.refNums += [ll.sku]
+                        sp.save
+                        [].as[[SharedProduct]?]
+                    }
+                    else {
+                    	if (l(3) != CatalogueApprovalStatus.Approved) {
+                        	[].as[[SharedProduct]?]
+                        }
+                        else {
+                        	let n: BullionName <- BullionName.search(ll.name.title).result.map(n => {
+                                if (let f = n.first) {
+                                    if (f.title == ll.name.title) f
+                                    else BullionName(title = ll.name.title)
+                                }
+                                else BullionName(title = ll.name.title)
+                            })
+                            n.save
+
+                            [SharedProduct(
+                                catalogueLinkId = l(1).as[Id].toString!, linkedEntityId = l(2).as[Id].toString!,
+                                name = n, status = ll.status, productForm = ll.productForm, 
+                                size = ll.size, sizeUnit = ll.sizeUnit,
+                                metalType = ll.metalType, purity = ll.purity
+                            )].as[[SharedProduct]?]
+                        }
+                    }
+                })
+                .oneByOne(_)
+                .map(r => r.flatMap(_))
+        }
+    }
+    
+}

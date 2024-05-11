@@ -1,0 +1,26 @@
+extend enum DevType {  
+  func rate: UMoney[our] = SalesSettings.one.rates.find(type == this)?.rate.alt(throw "No rate for $(this)")
+  func product: ISubProduct = SalesSettings.one.rates.find(type == this)?.product.alt(throw "No rate for $(this)")
+}
+
+inline entity DevRate {
+  field type: DevType
+  field rate: UMoney[our]
+  field product: ISubProduct
+  field desc: Text? {label = "Description"}
+  impl view form = grid{
+    row{type >> field(compact) product >> field(title = title) rate >> field(align = Right)}
+    desc
+  }
+}
+
+inline entity SalesSettings {
+  object func one = Workspace.current.salesSettings
+  field product: ISubProduct?
+  field rounding: Rounding = Round()
+  field rates: [DevRate]? inline
+}
+
+extend entity Workspace {
+  field salesSettings: SalesSettings inline = SalesSettings()
+}

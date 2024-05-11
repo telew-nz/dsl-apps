@@ -1,0 +1,26 @@
+extend entity BullionCatalogueService {
+
+	object field workspacesToMonitor: [String]?
+    system field updateWorkspacesToMonitorJob: UpdateWorkspacesToMonitorJob inline by service
+    
+    extend view form = workspacesToMonitor
+
+}
+
+
+inline entity UpdateWorkspacesToMonitorJob extends ScheduledJob {
+
+    impl field service: BullionCatalogueService by updateWorkspacesToMonitorJob
+    impl func schedule = "0 17 * * * ?"
+    impl func do: Future[Any] = {
+        let wids <- Workspace.getAllIds.map(filter(_ != "18_12"))
+        let res <- wids.oneByOne(wid => {
+            let sid = ShortIdDb(wid)
+            if (sid.cluster == 17) Workspace.all.inWorkspaceFullWid(17, sid.position).map(apps.keys.toSeq.exists(_ == "goldsystems.bp")).result.map((wid, _.first!))
+            else Workspace.all.inWorkspaceFullWid(18, sid.position).map(apps.keys.toSeq.exists(_ == "goldsystems.bp")).result.map((wid, _.first!))
+        }).flatMap(_).map(filter(#1)).map(map(#0))
+        BullionCatalogueService.workspacesToMonitor = res
+        service.save
+    }
+    
+}

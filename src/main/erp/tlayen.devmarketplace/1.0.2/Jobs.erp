@@ -1,0 +1,31 @@
+class RejectProjectJob extends SystemJob {
+  	impl field service = MarketplaceService
+  	
+    field project: DeveloperProject
+    field dev: User
+    field rejectionReason: Text?
+    
+    impl func do: Future[Any] = {
+      	project._devsRejected += dev
+        project.observers.filter(_.observer == dev).foreach(_.delete)
+        Activity.setMainEntity(project)
+        Activity.comment("Project rejected by ${dev.mention}. ${
+                    	if (let v = rejectionReason) "Reason: ${v}."
+                        else "No reason given."
+                    }")
+        project.save
+    }
+}
+
+
+class UpdateUserRolesJob extends SystemJob {
+  	impl field service = MarketplaceService
+  	
+    field user: User
+    field roles: [Role]?
+    
+    impl func do: Future[Any] = {
+      	user.roles = roles
+        user.save
+    }
+}

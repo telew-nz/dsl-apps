@@ -1,0 +1,7 @@
+extend role BusAdmin {
+
+	extend view menu = y {
+    	LinkedBullionProduct
+    }
+
+}

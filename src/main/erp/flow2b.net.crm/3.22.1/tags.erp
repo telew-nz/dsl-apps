@@ -1,0 +1,12 @@
+enum EcommerceLevel{
+  case products
+  case quote
+  case reservation
+}
+
+enum LocationsType{
+  case single
+  case multiLocal
+  case interState
+  case Intenational
+}

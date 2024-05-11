@@ -1,0 +1,72 @@
+trait InvitationIssue extends Entity {
+
+	override func issueTypes = super.issueTypes + [ITInvitation, ITAdmitUserToMarketplace]
+
+}
+
+
+object ITInvitation extends IssueType[Invitation] {
+  
+	impl func title = "Invitation to review"
+	impl func defaultLevel = ToDo
+	impl func hasIssue(item: Invitation) = true
+    impl func roles(item: Invitation) = [Public]
+	impl func isForUser(item: Invitation, user: User) = item.invitedUser == user && item.state == UserReview
+    
+    impl func fixes(item: Invitation) = [
+        Fix(text = "Accept the invitation", acts = [
+            Act(
+            	label = "Accept", 
+                icon = "plus", 
+                do = {
+                	item.state = AdminReview
+                    UI.save(item)
+                }
+            )
+        ]),
+        FixWithTextField(text = "Reject the invitation", fieldLabel = "Reason for rejection", fieldValue = "", 
+        	act = ActWithTextField(
+            	label = "Reject", 
+                icon = "bell-slash",
+                do = {
+                	RejectInvitationJob(invitation = item, rejectionReason = fieldValue).enqueue
+                }
+            )
+        )
+    ]
+
+}
+
+object ITAdmitUserToMarketplace extends IssueType[Invitation] {
+  
+	impl func title = "Admit user to marketplace"
+	impl func defaultLevel = ToDo
+	impl func hasIssue(item: Invitation) = true
+    impl func roles(item: Invitation) = [Admin]
+	impl func isForUser(item: Invitation, user: User) = item.state == AdminReview && user.is(Admin) && user != item.invitedUser
+    
+    impl func fixes(item: Invitation) = [
+        Fix(text = "Admit the user", acts = [
+            Act(
+            	label = "Admit", 
+                icon = "plus", 
+                do = {
+                	let user = item.invitedUser
+                	MarketplaceClientUtilities.addUserToMarketplace(user.person.name, user.login).map {
+                    	AdmitUserJob(invitation = item, user = User.current!).enqueue
+                    }
+                }
+            )
+        ]),
+        FixWithTextField(text = "Reject user", fieldLabel = "Reason for rejection", fieldValue = "", 
+        	act = ActWithTextField(
+            	label = "Reject", 
+                icon = "bell-slash",
+                do = {
+                	RejectAdmitionJob(invitation = item, user = User.current!, rejectionReason = fieldValue).enqueue
+                }
+            )
+        )
+    ]
+
+}

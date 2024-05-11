@@ -1,0 +1,6 @@
+object CatalogueConfig {
+	
+    compute catalogueWidStr: String = "17_60"
+	compute catalogueWid: ShortIdDb = ShortIdDb(catalogueWidStr)
+
+}

@@ -1,5 +1,0 @@
-entity Resources{
-  field title : String
-  field url : Url
-}
-    

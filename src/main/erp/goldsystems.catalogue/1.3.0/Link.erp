@@ -1,0 +1,63 @@
+trait CanBeLinked extends Entity {
+
+	view catalogueForm
+
+}
+
+
+trait HasBullionProductLink extends Entity {
+
+	field linkedEntityId: String
+    compute linkedEntity: Future[BullionSuperProduct] = {
+		AnyEntity.load(linkedEntityId).result.map(_.as[BullionSuperProduct]!).recover(err => {
+			throw "Couldn't convert linked entity to BullionSuperProduct"
+		})
+    }
+    
+}
+
+
+trait HasCatalogueProductLink extends Entity {
+
+	field linkedEntityId: String
+    compute linkedEntity: Future[HasBullionProductLink] = {
+		Entity.load(linkedEntityId).result.map(_.as[HasBullionProductLink]!).recover(err => {
+			throw "Couldn't convert linked entity to HasBullionProductLink"
+		})
+    }
+    
+    front func openLinkedEntity = {
+    	linkedEntity.map(UI.openUrl(_.formUrl))
+    }
+
+}
+
+
+trait CatalogueItem extends HasBullionProductLink {
+
+	field approval: CatalogueApprovalStatus {
+    	default = AwaitingReview
+    }
+    
+}
+
+
+trait SharedItem extends HasCatalogueProductLink {}
+
+
+enum CatalogueApprovalStatus {
+
+	case AwaitingReview {
+    	icon = "question-circle"
+    	background = "#e4d0f1"
+    }
+    case Approved {
+    	icon = "check-circle"
+    	background = "#090"
+    }
+    case Rejected {
+    	background = "#f99"
+    	icon = "car-crash"
+    }
+
+}

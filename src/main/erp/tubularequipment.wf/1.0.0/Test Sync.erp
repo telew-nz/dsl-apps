@@ -1,0 +1,17 @@
+/*
+extend back class WooProductAttr {
+	field top: WFTop?
+    field feet: WFFeet?
+    field folding: WFFolding?
+    field seat: WFSeat?
+    field brakes: WFBrakes?
+}
+*/
+
+/*
+productAttr WFTop
+productAttr WFFeet
+productAttr WFFolding
+productAttr WFSeat
+productAttr WFBrakes
+*/

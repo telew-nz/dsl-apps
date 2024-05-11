@@ -1,0 +1,68 @@
+extend entity PurchaseDelivery {
+  view dropShipDispatchPaperwork = grid(labels = Top) {
+    purchaseOrders.first.customer.legalEntity.brandName >> field(label = "" fontStyle = H1, align = Center)
+    label("Thank you for your recent purchase. We appreciate your custom and look forward to dealing with you again.")
+    number
+    y (label = "Ship To") {
+      legalEntity
+      store
+    }
+    items*.as[DeliveryItem] >> table {
+      product >> field(width = 0.7), qty >> field(label = "Quantity")
+    }
+    
+    purchaseOrders.first.customer.legalEntity >> y(label = "", align = Center) {
+      brandName
+      contacts
+    }
+  }
+  extend view form = button ("Paperworks") {
+    dropShipDispatchPaperwork.open
+  }
+}
+
+extend entity SalesDelivery {
+  view dispatchPaperwork = grid(labels = Top) {
+    salesOrders.first.vendor.legalEntity.brandName >> field(label = "" fontStyle = H1, align = Center)
+    label("Thank you for your recent purchase. We appreciate your custom and look forward to dealing with you again.")
+    number
+    y (label = "Ship To") {
+      receiver
+      shipTo
+    }
+    items*.as[DeliveryItem] >> table {
+      product >> field(width = 0.7), qty >> field(label = "Quantity")
+    }
+    
+    salesOrders.first.vendor.legalEntity >> y(label = "", align = Center) {
+      brandName
+      contacts
+    }
+  }
+  extend view form = button ("Paperworks") {
+    dispatchPaperwork.open
+  }
+}
+
+extend entity DropShipDelivery {
+  view dispatchPaperwork = grid(labels = Top) {
+    salesOrders.first.vendor.legalEntity.brandName >> field(label = ""  fontStyle = H1, align = Center)
+    label("Thank you for your recent purchase. We appreciate your custom and look forward to dealing with you again.")
+    number
+    y (label = "Ship To") {
+      receiver
+      shipTo
+    }
+    items*.as[DeliveryItem] >> table {
+      product >> field(width = 0.7), qty >> field(label = "Quantity")
+    }
+    
+    salesOrders.first.vendor.legalEntity >> y(label = "", align = Center) {
+      brandName
+      contacts
+    }
+  }
+  extend view form = button ("Paperworks") {
+    dispatchPaperwork.open
+  }
+}

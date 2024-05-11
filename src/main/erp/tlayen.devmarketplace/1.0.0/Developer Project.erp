@@ -1,0 +1,21 @@
+entity DeveloperProject extends ProjectIssue {
+
+	impl field title: String
+    field description: Text
+    ref field owner: User {
+    	default = User.current!
+    }
+    ref field developerRole: DeveloperRole by projects
+    ref field proposals: [Proposal]? by project
+
+    impl view form = nav{grid{
+    	title >> field(label = "Project Name")
+        description >> field(label = "Describe project requirements")
+        row{ owner >> field(editMode = AlwaysRead) developerRole space }
+        if (proposals.isEmpty && !this.id.toString.startsWith("-")) "No proposals yet" >> field(editMode = AlwaysRead, fontStyle = H3)
+        proposals >> list(editMode = AlwaysRead, visible = !this.id.toString.startsWith("-")) {
+            x{ x(stretch = 1){ owner suitability.value } budget.to[Money[NZD]](Date.now) budget.to[Money[USD]](Date.now) }
+        }
+    }}
+
+}

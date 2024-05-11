@@ -136,8 +136,8 @@ back object BankImporter {
             //}
           } else if (let fee = fee.positive) {
             if (let ip = tr.as[IncomingPayment]) {
+              ip.amount = (ip.amount - fee).positive!
               IPBankFees(payment = ip, amount = fee)
-              ip.accountAmount = (ip.accountAmount - fee).positive!
             } else if (let op = tr.as[OutgoingPayment]) { 
               OPBankFees(payment = op, amount = fee)
             }

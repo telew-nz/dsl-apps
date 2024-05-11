@@ -1,0 +1,12 @@
+extend entity BullionName {
+
+	override func canRead = true
+
+}
+
+
+extend trait IDynamicPriceModel {
+
+	override func canRead = true
+
+}

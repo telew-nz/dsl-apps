@@ -1,0 +1,19 @@
+enum OrderDeliveryState {
+  case NotDelivered {background = "#ddd"}
+  case Planned {background = "#ed9" label = "Delivery Planned"}
+  case PartiallyDelivered {background = "#ed9"}
+  case InTransit {background = "#dea"}
+  case Delivered {color = "white" background = "#090"}
+}
+
+enum DropShipState {
+  case NotDropShip {
+    background = "#ddd"
+  }
+  case DropShip {
+    background = "#d6bbff"
+  }
+  case PartialDropShip {
+    background = "#d6bbff"
+  }
+}

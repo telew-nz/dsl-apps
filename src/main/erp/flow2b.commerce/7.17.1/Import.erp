@@ -1,0 +1,159 @@
+class AddressImportMapping {
+  field person: String?
+  field company: String?
+  field number: String? 
+  field streetAddress: [String]
+  field suburb: String? 
+  field city: String?
+  field region: String? 
+  field country: String?
+  field postcode: String?
+  
+  
+  func col(i: [String?]?, col: String?): String? = {
+    if (let col, let i) i(col).trim
+  }
+  func apply(i: [String?]?): Address? = if (let i, let a = streetAddress.mapOpt{a => i(a)}.join('\n')) {
+    Address(
+      person = col(i, person)
+      company = col(i, company)
+      number = col(i, number)
+      street = a
+      suburb = col(i, suburb)
+      city = col(i, city)
+      region = col(i, region)
+      country = col(i, country)
+      postcode = col(i, postcode)
+    )
+  }
+  impl view form = grid {
+    row {person company number}
+    row {streetAddress >> field(width=0.66) postcode}
+    row {suburb city region}
+    row {country postcode space}
+  }
+}
+
+class LocationImportMapping {
+  singular = "Location"
+  
+  field types: [LocationType]
+  field address: AddressImportMapping
+  impl view form = y{
+    types >> field(compact = false) 
+    address
+  }
+}
+
+class PhoneImport {
+  singular = "Phone"
+  field type: PhoneType
+  field column: String
+  impl view form = x{type >> field(compact = false) column }
+}
+
+class ContactPersonImport {
+  singular = "Person"
+  
+  field name: String
+  field phones: [PhoneImport]? 
+  field emails: [String]?
+  field websites: [String]?
+  impl view form = grid{
+    name
+    phones
+    emails
+    websites
+  }
+}
+
+entity CounterpartyImportSchema extends SheetImportSchema {
+  impl field title: String
+  
+  field type: CpImportType
+  field relType: [CpImportRelType]? {
+    label = "Counterparty Types"
+  }
+  field code: String?
+  field name: String
+  field phones: [PhoneImport]? 
+  field emails: [String]?
+  field websites: [String]?
+  field people: [ContactPersonImport]? 
+  field locations: [LocationImportMapping]? 
+  
+  impl view form = nav{grid {
+    title
+    x(label = "Type") {type relType}
+    row {code name}
+    phones
+    emails
+    websites
+    people
+    locations
+  }}
+  
+  impl back func process(file: File, data: [String?]?) = {
+    data.drop(1).map(split(SplitRules.CSV)).mapOpt(_).foreach{i =>
+      if (let cName = i(name)) {
+        var g = type.make(cName).saveBy(_.title.flex)
+        if (let refNum = col(i, code)) {
+          g.refNum = refNum
+          g = g.saveBy(p => p.refNum)
+        }
+        
+        relType.foreach{_.make(g)}
+        
+        phones.foreach{ph =>
+          if (let phone = i(ph.column).trim) {
+            g.addPhone(ph.type, phone)
+          }
+        }
+        emails.foreach{e =>
+          if (let email = i(e).trim) {
+            g.addEmail(email)
+          }
+        }
+        websites.foreach{e =>
+          if (let w = i(e).trim) {
+            g.addWebsite(w.as[Url])
+          }
+        }
+        people.foreach{p =>
+          if (let per = g.addPerson(i(p.name).trim)) {
+            p.phones.foreach{ph =>
+              if (let phone = i(ph.column).trim) {
+                per.addPhone(ph.type, phone)
+              }
+            }
+            p.emails.foreach{e =>
+              if (let email = i(e).trim) {
+                per.addEmail(email)
+              }
+            }
+            p.websites.foreach{e =>
+              if (let w = i(e).trim) {
+                per.addWebsite(w.as[Url])
+              }
+            }
+          }
+        }
+        locations.foreach{loc => 
+          g.addLocation(loc.types, loc.address(i))
+        } 
+        g.save
+        
+      }
+    }
+  } 
+}
+
+enum CpImportType(make: String => LegalEntity) {
+  case Company(make = Company(title = _))
+  case Person(make = Person(name = _))
+}
+
+enum CpImportRelType(make: LegalEntity => Void) {
+  case Customer(make = _.makeCustomer())
+  case Vendor(make = _.makeVendor())
+}

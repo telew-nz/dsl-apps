@@ -1,9 +1,0 @@
-entity Goal{
-  field title : String
-  field bucketListItem : BucketList?
-  field details : Text
-  field how : Text
-  field when : Date
-  field who : [Person]
-  field why : Text 
-}

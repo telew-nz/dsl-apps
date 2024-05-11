@@ -1,0 +1,27 @@
+/* WARNING DANGEROUS CODE MAY CRASH SYSTEM (MAYBE?)
+
+extend entity Dashboard {
+	
+    func curStuckEmails: [Entity]? {
+    	value = {
+        	Activity.all.filter(channel == EMail).filter(deliveries.exists(d => d.status == Pending || d.status == Sending)).map(a => a.mainEntity)
+        }
+    }
+    
+    
+    extend view form = y(spacing = false) {
+      (if (let curStuckEmails) DashboardIssueItems(level = Warning, label = "Stuck emails", items = curStuckEmails)).toSeq.map(label, level, count, items) >> subtotal {
+        x (background = level.background, color = level.color) {
+          count >> field(fontStyle = Badge, background = "rgba(0, 0, 0, 0.2)")
+          label(label = label, fontStyle = Bold, icon = level.icon, color = "white")
+        }
+          list(action = form.open) {
+          fullDash
+        }
+      }
+    }
+    
+    
+}
+
+*/

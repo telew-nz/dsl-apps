@@ -1,0 +1,25 @@
+entity Tool {
+  impl field title: String
+  field website: Url?
+  field description: Text?
+  field strengh: Text?
+  field weakness: Text?
+}
+
+
+inline entity SalesOpportunityTool {
+  system field opportunity: SalesOpportunity by tools
+  field role: SalesOpportunityToolRole = Current
+  field tool: Tool
+  field notes: Text?
+  impl view form = nav{grid(labels = None){
+    x{role tool}
+    notes
+  }}
+}
+
+enum SalesOpportunityToolRole {
+  case Current
+  case Competitor
+  case Integration
+}

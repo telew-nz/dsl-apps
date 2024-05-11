@@ -1,0 +1,51 @@
+enum ProjectRoles {
+  case ADMIN
+  case USER
+}
+
+enum ProjectPermissions {
+    case CREATE_PROJECT
+    case EDIT_PROJECT
+    case DELETE_PROJECT
+    case BROWSE_PROJECT
+}
+
+enum TaskListType {
+    case ACTIVE = "Active"
+    case BACKLOG = "Backlog"
+}
+
+enum TaskClassType {
+    case EPIC = "Epic"
+    case STORY = "Story"
+    case TASK = "Task"
+    case SUBTASK = "Sub Task"
+    case BUG = "Bug"
+}
+
+enum TaskType {
+    case DEVELOPMENT = "Development"
+    case TEST = "Test"
+    case BUGFIX = "Bug Fix"
+    case DISCOVERY = "Discovery"
+    case UI_DEV = "UI Development"
+}
+
+enum TaskStatus {
+    case OPEN = "Open"
+    case UNDER_DEVELOPMENT = "Under Development"
+    case REVIEW = "Review"
+    case CLOSED = "Closed"
+    case REOPENED = "Reopened"
+    case REJECTED = "Rejected"
+    case UNDER_TEST = "Under Test"
+    case ACCEPTED = "Accepted"
+    case ON_HOLD = "On Hold"
+}
+
+enum Role {
+    case PROJECT_ADMIN
+    case DEVELOPER
+    case TESTER
+    case FOLLOWER
+}

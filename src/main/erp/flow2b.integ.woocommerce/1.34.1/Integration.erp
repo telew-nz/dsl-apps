@@ -43,7 +43,7 @@ entity WooCommerceIntegration extends ECommerceIntegration[Int] {
   }
 
   func https(path: Url?): HttpRequest = {
-    HttpRequest(url = "$endpoint$path", ssl = true).param("consumer_key", consumerKey).param("consumer_secret", consumerSecret)  
+    HttpRequest(url = "$endpoint$path", ssl = false).param("consumer_key", consumerKey).param("consumer_secret", consumerSecret)  
   } 
   system field ordersSchedule: DownloadOrdersSchedule inline by service
      

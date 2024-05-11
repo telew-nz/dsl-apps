@@ -8,6 +8,9 @@ entity App {
     label = "Development Workspace"
   }
   field mng: String {
+    // Replace the default value with the full id string (like "17_0") of the workspace
+    // that you want to handle the generated app issues by default
+    // Currently it's set to be the same workspace as we use to create an app
     default = Workspace.current.authId
     label = "Management Workspace"
   }
@@ -161,7 +164,7 @@ entity AppVersion {
               x (label = "Package", width = 0.5, spacing = false) {
                 package >> field(stretch = 1)
                 button(icon = "expand-arrows-alt") {
-                  App(id = package, package = package).form.open
+                  App.load(package).result.map(_.form.open)
                 }
               }
               version >> field(width = 0.3)

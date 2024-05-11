@@ -1,0 +1,7 @@
+extend role Admin {
+	
+    extend view menu = y{
+    	button("User catalogue") { UserSelection.list.open }
+    }
+
+}

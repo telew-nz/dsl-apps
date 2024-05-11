@@ -1,8 +1,0 @@
-entity Company {
-  field code: String
-  field title: String
-  view ref = column {
-    title
-    code
-  }
-}

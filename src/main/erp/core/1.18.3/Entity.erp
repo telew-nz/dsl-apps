@@ -113,7 +113,7 @@ trait RefEntity extends AnyEntity {
   }
   system field extUrl: Url?
 
-  func redirectUrl: Url = "https://rd.flow2b.com/r/$(Workspace.current.authId)/$(dslType.fullName)/$id"
+  func redirectUrl: Url = "$(Config.redirectURL)$(Workspace.current.authId)/$(dslType.fullName)/$id"
 
   func hashSuffix: Url = "$(Workspace.current.authId)/$(dslType.fullName.as[Url])/$(id.toString.as[Url])"
   func mention: Html = '<a href="javascript:;" data-href="#$hashSuffix">#$fullTitle</a>'
@@ -234,7 +234,7 @@ trait Entity extends RefEntity {
   func itemImage: Image? = null
   func itemRoles: [Role]? = []
   func getItemRoles: [Role] = itemRoles.alt{
-    if (let roles = observers*.observer*.as[User].filter(_.userEnabled)*.roles - Role.UserRole) {
+    if (let roles = observers*.observer*.as[User].filter(_.userEnabled)*.roles.distinct - Role.UserRole) {
       if (let r = roles.onlyOne) [r] else (roles - Role.Admin).toSet!
     } else {
       [Role.Admin]

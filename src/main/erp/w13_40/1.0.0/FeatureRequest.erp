@@ -1,7 +1,0 @@
-entity FeatureRequest {
-  field title: String
-  field count: Int = 1
-  field effort: Int = 1
-  field done: Bool
-  field description: Text?
-}

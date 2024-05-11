@@ -1,0 +1,7 @@
+extend entity CashAccount {
+  extend override object func default = User.current?.openedRetailSession?.cashAccount.or(CashAccount.onlyOne)
+}
+
+extend entity CardAccount {
+  extend override object func default = User.current?.openedRetailSession?.cardAccount.or(CardAccount.onlyOne)
+}

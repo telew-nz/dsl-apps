@@ -1,0 +1,50 @@
+//entity TubularName {
+//  impl field title : String
+//  field products : [TubularSuperProduct]? read by name
+//}  
+       
+trait TubularSuperProduct extends WalkingFrameSuperProduct {
+  func calcTitle = {
+    var res: String? = ""
+    res += "$sizeCategory"
+    res += " $base".replace("Lightweight (", "").replace("Rehab (", "").replace(")", "")
+ 	res += " $folding".replace(" Non Folding", "")
+    res += " Walker"
+    res += " with $top"
+    res += ", $seat".replace(", No Seat", "").replace(", ", "")
+    res += " and $brakes".replace(" and No Brakes", "")
+    res += " $sizeVariation ".upper.replace("  ", " ")
+    res = res.replace("with  and", "with")
+    res += "– $feet"
+    res = res.replace("with  –", " –")
+    res = res.replace("with " + " $sizeVariation".upper, " $sizeVariation".upper)
+    if (res.isEmpty) "Undefined" else res!
+  }
+  //ref field name: TubularName? by products
+  
+  field minStock: Dec[2]? {label = "Minimum Stock"}
+  field mint : Company? //validate by mint
+  field legalTenderAmount : Int?
+  field serialised : Bool
+  view tubularView = grid(width = 1.2){
+    brands
+    categories
+    row{sizeCategory>>field(label="Size") sizeVariation}
+    row{base top>>field(visible=allowTopSelection)}
+    row{feet}
+    row{folding seat>>field(visible=allowSeatSelection)}
+    row{brakes}
+    row{weight}
+    row(visible=top == ForearmTroughs){minimumWidth maximumWidth}
+    row(visible=top != ForearmTroughs){width}
+    row{minimumHeight maximumHeight}
+    row{depth>>field(label="Length")}
+    row{mint legalTenderAmount serialised}
+  }
+  
+  compute duplicates: [TubularSuperProduct]? = {
+    let t = try? title
+    if (t.isDefined) TubularSuperProduct.all.filter(p => p.title == t && p.id != id) else []
+  }
+  
+} 

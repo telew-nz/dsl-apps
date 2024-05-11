@@ -1,0 +1,34 @@
+back object Conversion extends IConversion {
+  func convert(version: [Int?]): Future[Any] = {
+    if (version < [11,26,0]) {
+      renameField(DevProduct, devIssues, "issues")
+    }
+    if (version < [11,27,0]) {
+      Incident.all.update(spuUses = [IssueSpuUsage(date = activities!.last.dateTime, noChargeReason = Deployment, amount = 0)])
+    }
+    if (version < [11,28,0]) {
+      IssueSpuUsage.all.filter(field[String?](_, "noChargeReason") == "Deployement").update(noChargeReason = Deployment)
+    }
+    if (version < [11,37,0]) {
+      Issue.all*.updateDashboard
+    }
+    let _ <- if (version < [11,43,0]) {
+      Epic.all.update(epicIssues = blockedByIssues*.as[BacklogIssue], blockedByIssues = blockedByIssues.filter(!_.is[BacklogIssue]) )
+      let _ <- recomputeAll(Blockable, contentEffort)
+      recomputeAll(Blockable, blockStatus)
+    }
+    if (version < [11,44,0]) {
+      BacklogIssue.all.filter(epic)*.updateDashboard
+    }
+    if (version < [11,46,0]) {
+      DevIssue.all.filter(status in [Closed, Implemented, ToTest, Verified, ToDoc] ).update(core = Prod)
+    }
+    if (version < [11,48,0]) {
+      ITIssueToRelease.issueObservers*.subject*.updateDashboard
+    }
+    if (version < [11,49,0]) {
+      renameEntity(DevTask, "CodeDebt")
+    }
+  }  
+}    
+ 

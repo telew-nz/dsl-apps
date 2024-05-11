@@ -1,0 +1,19 @@
+variableProduct DatedTubularProduct(skuPrefix = "DTP", noAltUnits = true) {
+  impl ref compute title = calcTitle
+  
+  variation TubularProductDate {
+    ref key field year: TubularYear by products
+    impl view customView = grid{row{
+      year space space
+    }}
+  }
+}
+extend entity DatedTubularProduct extends TubularSuperProduct {
+  impl view customView = tubularView
+}
+
+productAttr TubularYear(fieldName = "Year", plural = "Years" slug = "issue-year") {
+  ref field year: Int
+  field products: [TubularProductDate]? by year
+  impl func title = year.unformattedString
+}

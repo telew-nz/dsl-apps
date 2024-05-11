@@ -1,0 +1,80 @@
+entity DocPackage {
+  background = "#545790"
+  singular = "Package Doc"
+  plural = "Package Docs"
+  ref field package: String
+  field product: DevProduct? by packageDocs
+  field description: Text?
+  field types: [DocType]? read by package {singular = "Type"}
+    
+  impl func title = package 
+}
+
+entity DocType {
+  background = "#545790"
+  singular = "Type"
+  plural = "Types"
+  ref field package: DocPackage by types
+  ref field extension: Bool
+  ref field extensionPackage: DocPackage? {
+    validate = 
+      if (extension && !extensionPackage) "Extension package should be entered for extension"  
+      else if (extensionPackage == package) "Extension package should not be the same as package"
+    visible = extension
+  }
+  ref field type: TypeType
+  ref field name: String
+  field superTypes: [DocType]? by childTypes {singular = "Super Type"}
+  field childTypes: [DocType]? by superTypes {singular = "Child Type"}
+  field description: Text?
+  field declarations: [DocDecl]? read by docType
+  func fullName = if (extension) "$extensionPackage.$name" else "$package.$name"
+  impl func title = if (extension) "extend $type $fullName in $package" else "$type $fullName"
+  impl view form = nav{grid{
+    package
+    extension
+    extensionPackage
+    type
+    name
+    superTypes
+    childTypes
+    description
+    declarations
+  }}
+  
+  impl object view list = DocType.all >> nav{list{grid{
+    title
+  }}}
+}
+
+enum TypeType {
+  case Entity = "entity"
+  case InlineEntity = "inline entity"
+  case Trait = "trait"
+  case InlineTrait = "inline trait"
+  case Enum = "enum"
+  case Interface = "interface"
+  case Class = "class"
+  case Role = "role"
+  case Report = "report"
+}
+
+entity DocDecl {
+  background = "#454882"
+  singular = "Declaration"
+  plural = "Declarations"
+  ref field docType: DocType by declarations
+  ref field type: DeclType
+  ref field signature: String
+  field description: Text?
+  impl func title = "$type ${docType.fullName}.$signature"
+}
+
+enum DeclType {
+  case Field = "field"
+  case Func = "func"
+  case Var = "var"
+  case Val = "val"
+  case Case = "case"
+  case View = "view"
+}

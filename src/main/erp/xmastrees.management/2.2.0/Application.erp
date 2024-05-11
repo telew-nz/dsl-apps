@@ -1,0 +1,20 @@
+trait Application extends Entity {
+  field cv: [File]? {label = "CV"}
+  ref field status: ApplicationStatus = New
+  impl event onSave = {
+    joinAll(HR)
+  }
+  
+  report Report {
+    field activeOnly: Bool
+    impl view list = Application.all.filter(!activeOnly || status.active)
+  }
+}
+
+enum ApplicationStatus(active: Bool) {
+  case New(active = true) {background = "#ed9"}
+  case InProcess(active = true) {background = "#dea"}
+  case Contracted(active = false) {background = "#090" color = "white"}
+  case Backup(active = false) {background = "#ddd"}
+  case Closed(active = false) {background = "#ddd"}
+}

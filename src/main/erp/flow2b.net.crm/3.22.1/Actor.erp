@@ -1,0 +1,26 @@
+extend entity Actor {
+  compute gaLink: Url = "https://analytics.google.com/analytics/web/#/report/visitors-user-activity/a93035085w137692859p198516320/_u.date00=20190101&_u.date01=21000101&_r.userId=$(uuid.toString)"
+}
+extend entity Person {
+  extend view form = extend ("buttons") {
+    button(icon = "chart-bar" "Google Analytics") {
+      UI.openUrl(gaLink)
+    }
+  }
+}
+
+extend entity Company {
+  extend view form = extend ("buttons") {
+    button(icon = "chart-bar" "Google Analytics") {
+      UI.openUrl(gaLink)
+    }
+  }
+}
+
+extend entity CompanyGroup {
+  extend view form = extend ("buttons") {
+    button(icon = "chart-bar" "Google Analytics") {
+      UI.openUrl(gaLink)
+    }
+  }
+}

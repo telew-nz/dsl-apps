@@ -1,0 +1,47 @@
+entity Invitation extends InvitationIssue {
+
+	impl compute title = "Inviting ${invitedUser} to the marketplace"
+    
+    impl func canWrite = User.current! == invitedUser || User.current!.is(Admin)
+
+	field invitedUser: User
+    field state: InvitationState = UserReview
+    
+    impl event onSave = {
+    	invitedUser.send
+        if (updated(state) && state == AdminReview) {
+        	joinAll(Admin)*.notify
+        }
+    }
+    
+    impl view form = nav{grid{
+        x{
+        	state >> field(editMode = AlwaysEdit)
+        	"Invited User:"
+            invitedUser >> field(editMode = AlwaysRead)
+            
+        }
+    }}
+
+}
+
+
+enum InvitationState(active: Bool) {
+    case UserReview(active = true) {
+        background = "#ed9"
+        icon = "spinner"
+    }
+    case AdminReview(active = true) {
+        background = "#8bf"
+        icon = "spinner"
+    }
+    case Closed(active = false) {
+        color = "white"
+        background = "#090"
+        icon = "check-circle"
+    }
+    case Canceled(active = false) {
+        background = "#999"
+        icon = "times-circle"
+    }
+}

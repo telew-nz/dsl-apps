@@ -1,0 +1,227 @@
+class AppVersionSel {
+  singular = "App"
+  field app: App {
+    update = {
+      version =? new.versions.first
+    }
+  }
+  field version: AppVersion {
+    from = app.versions
+  }
+  compute verSel: AppVersion {
+    value = version
+    from = App.all.flatMap(versions.first.toSeq).sortBy(status)
+    update = {
+      this.app = new.app
+      this.version = new 
+    }
+  }
+  impl view form = x {
+    verSel >> field(visible = !try? app)
+    version.status >> field(editMode = AlwaysRead) 
+    app >> field(visible = try? app, noTab)
+    version >> field (title = version, visible = try? app, noTab)
+  }
+}
+
+trait BacklogIssue extends Issue {
+  impl compute title = "$number $name"
+  ref field name: String {
+    label = "Title (keep it short)" 
+    validate = if (name.length >= 90) "Title should be shorter than 90 symbols"
+  }
+  field epic: Epic?
+  
+  override ref field backlog: Backlog? by allIssues 
+  override func issueTypes = super.issueTypes + ITEnteredIssue + ITIssueToEstimate
+  
+  func fix(text: String, status: IssueStatus) = Fix(text = text, acts = [Act(label = status, icon = status.props.icon, color = status.btnCol.or(status.props.background), do = {
+    this.status = status
+    UI.save(this)
+  })])
+  
+  impl compute product: DevProduct {
+    value = _product
+    update = {
+      _product = new
+      this.devType = new.devType
+    }
+  }
+  override field devType: DevType {
+    visible = estimations
+  }
+  ref field feature: Feature? by stories from product.features.filter(_.status.canChoose)
+  impl event onSave = {
+    if (touched || created || updated(status)) {
+      backlog = if (status.backlog) {
+        product.backlog.alt(throw "Please set backlog for the product $product")
+      }
+      backlog?.touch
+      epic?.touch
+    }
+    if (updated(status) && status == Closed) {
+      notifyAll(Support)
+    }
+    if ((updated(status) && status == Verified) || (status == ToTest && updated(blockedByIssues))) {
+      notify(Developer)
+    }
+  }
+}
+enum CoreRelease {
+  case NotReleased{background = "#8bf" icon = "spinner"}
+  case TestServer{background = "#f3d795", icon = "vial"}
+  case Prod{color = "white" background = "#090", icon = "check-circle"}
+}
+trait DevIssue extends BacklogIssue {
+  override func issueTypes = super.issueTypes + ITIssueToVerify + ITIssueToDo + ITIssueToReview + ITIssueToDoc + ITIssueToRelease
+  override func statuses: [IssueStatus] = IssueStatus.all.filter(_ !in [ToTest, Closed])!.toSet 
+  field apps: [AppVersionSel]? 
+  field core: CoreRelease {
+    label = "Core Changes"
+    default = NotReleased
+    visible = isCore && (core != NotReleased || status in [Todo, InProgress, Implemented, Failed])
+  }
+  func isCore = product.title == "Core"
+  compute appVersions: Future[[AppVersion]?] = apps.oneByOne(Future(_.version))
+  field bulkMsgs: [SupportBulkMsg]? read by devIssues
+  //func implStatus: IssueStatus = if (apps*.version.all(status >= Test)) ToTest else Implemented
+  //func verifiedStatus: IssueStatus = if (apps*.version.all(status == Prod)) Closed else Verified
+  
+  func willBeReleasedWith(other: DevIssue) = {
+    (isCore && other.isCore && core != Prod)
+    || (apps.exists(ta => other.apps.exists(oa => oa.app == ta.app && oa.version.id.toString(":" .. ].split(".")*.toNum >= ta.version.id.toString(":" .. ].split(".")*.toNum)))
+  }
+  
+  impl event onSave = {
+    let _ <- if (status in [Implemented, ToTest, Verified, Closed] && apps) {
+      let appVersions <- appVersions
+      let isTest = appVersions.all(status >= Test || status == Canceled) && (!isCore || core != NotReleased)
+      let isReleased = appVersions.all(status in [Canceled, Prod]) && (!isCore || core == Prod)
+      if (status == Implemented && isTest) {
+        status = ToTest
+      } else if (status == ToTest && !isTest) {
+        status = Implemented
+      } else if (status == Verified && isReleased) {
+        status = Closed
+      } else if (status == Closed && !isReleased) {
+        status = Verified
+      }
+    } else if (status in [Implemented, ToTest]) {
+      status = if (!isCore || core != NotReleased) ToTest else Implemented
+    } else if (status in [Verified, Closed]) {
+      status = if (!isCore || core == Prod) Closed else Verified
+    }
+    if (updated(status) && status == ToTest) {
+      notifyAll(QA)
+    }
+  }
+  impl ref field developer: User? {from = User.all.filter(is(Developer))}
+  impl compute itemUser = if (status.role == Developer) developer
+  impl event statusUpdated = {
+    if (status in [InProgress, Implemented, ToTest] && User.current?.is(Developer) && !updated(core)) {
+      developer = User.current
+      core = NotReleased
+    }
+  }
+  
+}
+
+object ITEnteredIssue extends IssueType[BacklogIssue] {
+  impl func title = "Entered Issues"
+  impl func defaultLevel = ToDo
+  impl func roles(item: BacklogIssue) = [ProductOwner]
+  impl func hasIssue(item: BacklogIssue) = {
+    item.status == Entered && item.epic?.status != Entered
+  }
+  impl func fixes(item: BacklogIssue) = [
+    item.fix("Unclear, ask a question and revision", Revision)
+    item.fix("Not going to do that", Canceled)
+    item.fix("It already exists", Duplicate)
+    item.fix("Request developer to estimate", ToEstimate)
+    item.fix("Too low priority now", Postponed)
+    item.fix("Need to do it soon", Heap)
+    item.fix("Very soon", Backlog)
+    item.fix("Right now", Todo)
+  ]
+}
+
+object ITIssueToVerify extends IssueType[DevIssue] {
+  impl func title = "Issues to verify"
+  impl func defaultLevel = ToDo
+  impl func roles(item: DevIssue) = [QA]
+  impl func hasIssue(item: DevIssue) = item.status == ToTest
+  impl func fixes(item: DevIssue) = [
+    item.fix("If verification failed", Failed)
+    item.fix("Verified and documentation worthy", ToDoc)
+    item.fix("Verified but a bug or insufficient change", Verified)
+  ]
+}
+
+object ITIssueToReview extends IssueType[DevIssue] {
+  impl func title = "Issues to review"
+  impl func defaultLevel = Warning
+  impl func roles(item: DevIssue) = [QA]
+  impl func hasIssue(item: DevIssue) = item.status == QAReview
+  impl func fixes(item: DevIssue) = [
+    item.fix("Unclear, ask a question and revision", Revision)
+    item.fix("Such a bug alredy exists", Duplicate)
+    item.fix("It doesn't happen or working as it should", Canceled)
+    item.fix("The bug exists and clear", Entered)
+  ]
+}
+
+object ITIssueToDo extends IssueType[DevIssue] {
+  impl func title = "Issues to do"
+  impl func defaultLevel = ToDo
+  impl func roles(item: DevIssue) = [Developer]
+  impl func hasIssue(item: DevIssue) = item.status in [Todo, InProgress, Failed]
+  impl func isForUser(item: DevIssue, user: User) = item.developer ?== user
+  impl func fixes(item: DevIssue) = 
+    (if (item.status != InProgress) [item.fix("Start doing that", InProgress)]) 
+    +
+    [item.fix("Done", Implemented)]
+}
+
+object ITIssueToRelease extends IssueType[DevIssue] {
+  impl func title = "Issues to Release"
+  impl func defaultLevel = ToDo
+  impl func roles(item: DevIssue) = [Developer]
+  impl func hasIssue(item: DevIssue) = item.status == Implemented || {
+    item.status == Verified && !item.backlog?.qaIssues*.as[DevIssue].exists(_.willBeReleasedWith(item)) 
+  }
+  impl func fixes(item: DevIssue) = [Fix(text = if (item.status == Implemented) "Release the apps to Test" else "Release the apps to Prod")]
+}
+
+
+object ITIssueToEstimate extends IssueType[BacklogIssue] {
+  impl func title = "Issues to Estimate"
+  impl func defaultLevel = ToDo
+  impl func roles(item: BacklogIssue) = [Developer]
+  impl func hasIssue(item: BacklogIssue) = {
+    item.status == ToEstimate && item.epic?.status != ToEstimate
+  }
+  impl func fixes(item: BacklogIssue) = [ToEstimateFix(item = item)]
+}
+class ToEstimateFix extends IFix {
+  field item: BacklogIssue
+  compute effort: Effort? {
+    value = null
+    update = {
+      item.effort = new
+      item.status = Entered
+      if (front) UI.save(item)
+    }
+  }
+  impl view form = x {label("Estimate Effort") effort >> field (compact = false, editMode = AlwaysEdit)}
+}
+
+object ITIssueToDoc extends IssueType[DevIssue] {
+  impl func title = "Issues to document"
+  impl func defaultLevel = ToDo
+  impl func roles(item: DevIssue) = [Doc]
+  impl func hasIssue(item: DevIssue) = item.status.role == Doc
+  impl func fixes(item: DevIssue) = [
+    item.fix("Documented", Verified)
+  ]
+}
+

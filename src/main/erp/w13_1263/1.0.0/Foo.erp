@@ -1,4 +1,0 @@
-entity CustomerPersona {
-  field title: String
-  field desc: Text?
-}

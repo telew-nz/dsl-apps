@@ -1,0 +1,23 @@
+object CWUtils {
+    
+    func getPersonsFromWorkspace(wid: String): Future[[Person]?] = {
+    	let wid_split = wid.split("_")
+        let cid: UInt = wid_split.first.toUNum!
+        let pid: UInt? = wid_split.last.toUNum
+    	if (cid == 17) Person.all.inWorkspaceTry(17, pid, true)
+    	else if (cid == 18) Person.all.inWorkspaceTry(18, pid, true)
+    }
+    
+    func getAllPersons: Future[[Person]?] = {
+    	let wids <- getAllWidsExceptCurrent
+      	wids.oneByOne(getPersonsFromWorkspace(_)).flatMap(res => res.flatMap(_))
+    }
+    
+	func getAllWidsExceptCurrent = {
+    	Workspace.getAllIds.map { allWids => 
+        	allWids
+            	.filter(id => id != Workspace.current.authId)
+        }
+    }
+    
+}

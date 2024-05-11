@@ -1,0 +1,43 @@
+basicProduct Walker (skuPrefix = "TW") {
+  impl compute title = {
+    var res: String? = ""
+    res += "$walkerSize"
+    res += " $base".replace("Light Weight (", "").replace("Rehab (", "").replace(")", "")
+ 	res += " $folding".replace(" Non Folding", "")
+    res += " Walker"
+    res += " with $top"
+    res += ", $seat".replace(", No Seat", "").replace(", ", "")
+    res += " and $brakes".replace(" and No Brakes", "")
+    res += " $sizeVariation ".upper.replace("  ", " ")
+    res = res.replace("with  and", "with")
+    res += "– $feet"
+    res = res.replace("with  –", " –")
+    res = res.replace("with " + " $sizeVariation".upper, " $sizeVariation".upper)
+    if (res.isEmpty) "Undefined" else res!
+  }
+
+  field walkerSize: WalkerSize
+  field sizeVariation: WalkerSizeVariation?
+  field top: WalkerTop?
+  field brakes: WalkerBrakes
+  field base: WalkerBase
+  field folding: WalkerFolding
+  field seat: WalkerSeat?
+  field feet: WalkerFeet
+  
+  impl view customView = grid{
+  	row{walkerSize sizeVariation space}
+    row{base brakes top>>field(visible=base.title.contains("Light Weight"))}
+    row{folding seat>>field(visible=base.title.contains("Rehab")) space}
+    row{feet space}
+  }
+}
+ 
+productAttr WalkerSize (fieldName = "walkerSize", slug = "pa_size")
+productAttr WalkerSizeVariation (fieldName = "sizeVariation", slug = "pa_size-variation")
+productAttr WalkerTop (fieldName = "top", slug = "pa_top")
+productAttr WalkerBrakes (fieldName = "brakes", slug = "pa_brake-options")
+productAttr WalkerBase (fieldName = "base", slug = "pa_base")
+productAttr WalkerFolding (fieldName = "folding", slug = "pa_folding-non-folding")
+productAttr WalkerSeat (fieldName = "seat", slug = "pa_seat-or-no-seat")
+productAttr WalkerFeet (fieldName = "feet", slug = "pa_feet")

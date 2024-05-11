@@ -1,0 +1,19 @@
+class FixWithTextField(text: String, fieldLabel: String?, 
+	fieldValue: String?, act: ActWithTextField) extends IFix {
+	
+    impl view form = x {
+        "• " + text
+      	act >> x (margin = None, flow = false, frame = false) {
+          	fieldValue >> field(label = fieldLabel, editMode = AlwaysEdit)
+          	button(visible = label, label = label, margin = LeftRight, icon = icon) {
+              	_.do(fieldValue)
+          	}
+       	}
+	}
+
+}
+
+class ActWithTextField(
+	label: String?, icon: String?, color: String?, 
+    front field do: (fieldValue: String?) => Future[Void] = {}
+)

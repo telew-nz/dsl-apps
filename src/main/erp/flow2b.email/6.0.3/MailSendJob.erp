@@ -1,0 +1,187 @@
+extend trait IEmailContact {
+  impl object func contactSender = ContactSenderEmail
+  
+  impl back object func defaultRecipients = IUser.current.as[MailService]!.defaultMailRecipients
+}
+object ContactSenderEmail extends ContactSender {
+  impl back func send(activity: Activity): Void = {
+    MailSendJob(activity = activity).enqueue
+  }
+  impl func header(activity: Activity): Html? = {
+    Workspace.current.mailService.template?.header(activity)
+  }
+  impl func footer(activity: Activity): Html? = {
+    Workspace.current.mailService.template?.footer(activity)
+  }
+}
+        
+extend entity Activity {
+  func emailFrom: Contact? = {
+    user?.ourContacts*.as[IEmailContact].find(MailService.canSend(_))
+      .or(if (user.login) user)
+  }
+  func emailTo: [IEmailContact]? = {
+    to*.as[IEmailContact]
+  }
+}
+extend entity IUser {
+  func emailStr(domain: Url): String = {
+    let name = if (login.contains("@")) (login[ .. "@"))! else login
+    "$name@$domain"                                          
+  }
+}  
+extend entity User {
+  override func emailStr(domain: Url): String = {
+    let name = if (login.contains("@")) (login[ .. "@"))! else login
+    "$(person.name) <$name@$domain>"
+  }
+}
+                                               
+        
+extend trait IEmailContact {
+  func emailStr = {
+    if (let w = this.as[EmailContact]?.addressee?.as[Dashboard], let a = OurActor.our) {
+      "$a <$email>"
+    } else if (let n = addresseeName) {
+      "$n <$email>"
+    } else email
+  }
+}
+
+ 
+back class MailSendJob extends SystemJob {
+  impl func service = MailService 
+  field activity: Activity inline
+  impl func dependsOnRegisters = false
+  override func jobError(error: Any): JobError = {
+    if (activity.template) {
+      let deliveries = activity.deliveries.filter(channel == EMail && status == Pending)
+      deliveries.foreach(_.status = Failed)
+      deliveries.foreach(_.details = error.toString)
+      activity.touch
+      activity.entities.first?.observers*.notify()
+      activity.entities.first?.touch
+      activity.save
+      IgnoreError
+    } else {
+      super.error(error)
+    }
+  }
+  
+  impl func do = {
+    guard (service.canSendEmails) else return throw "Service cannot send emails"
+    
+    let deliveries = activity.deliveries.filter(channel == EMail && status == Pending)
+    let contacts: [IEmailContact] = deliveries*.contact*.as[IEmailContact]!
+    let e = activity.mainEntity
+    let te = activity.getTemplateEntity
+    let chain = e.activities.filter(a => a.from.in(contacts))
+    let t = activity.template
+    let subject: String? = {
+      if (let s = activity._subject) s
+      else if (let t) t.subject(te, EMail)
+      else if (chain && !e.entitySubject.startsWith("Re: ")) "Re: " + e.entitySubject 
+      else e.entitySubject
+    }
+    let from = t?.from(te, EMail).alt(activity.emailFrom!)
+    let comment = if (let t) t.text(te, EMail, activity) else activity.comment
+    let txt: Html? = {
+      if (t?.fullFormat) {
+        comment
+      } else if (let template = service.template) {
+        template.apply(from, contacts, subject, comment)
+      } else {
+	    comment
+      }
+    }
+    var messageId: String? = ""
+    contacts.oneByOne {contact =>
+      let el = txt.parseHtml
+      el.select("a[data-href*=EmailContact]")*.delete
+      el.select("a[data-href]").foreach {a =>
+        if (let href = a.attr("data-href")) {
+          let ps = href.split("/")
+          if (ps.count == 3 let r = try? RefEntity.load(ps.last!).result.get) {
+            if (r.is[RefEntity with Contact]) {
+              a.delete
+            } else {
+              a.attr("href", r.realEntity.publicUrl(contact, readOnly = true))
+              a.attr("data-href", "")
+            }
+          }
+        }
+      }
+      let links: EmailLinks = service.template?.links.alt(HtmlLinks)
+      let flow2bLink: Html = if (links == TextLinks) {
+        'flow2b.com'
+      } else if (links == HtmlLinks) {
+        let r: Html = '<a href="https://flow2b.com/?utm_source=deliveredby&utm_medium=email&utm_campaign=deliveredby&utm_content=$(Workspace.current.authId)" style="color:black" target="_new">flow2b.com</a>'.as[Html]
+        r
+      } else {
+        "Flow2b"
+      }
+      let unsub: Html? = if (let u = t?.unsubscribeUrl(te, contact)) {
+        '<a href="$u" style="color:black; float: right" target="_new">Unsubscribe</a>'
+      }
+      el.select("body").first!.append(
+'<div class="flow2b-hide" style="color: #aaaaaa; font-size: 80%; margin: 10px 0 10px 0; padding-top: 10px; border-top: 1px solid #eeeeee;">
+<span>Delivered by $flow2bLink</span>$unsub
+ </div>')
+      
+      if (let template = service.template) {
+        el.select("a").foreach {a =>
+          if (let href = a.attr("href")) {
+            a.attr("href", template.track(href.as[Url], contact))
+          }
+        }
+      }
+      
+      let html = el.innerHtml
+      let attachments <- activity.files.map{file =>
+        let content <- file.content
+        MailSendAttachment(name = file.name, data = content.mimeBase64)
+      }.allCompleted
+      let request = MailSendRequest (
+        to = [contact.emailStr],
+        from = {
+          if (let c = from.as[IEmailContact]) c.emailStr.alt(from.title)
+          else from.as[User]!.emailStr(service.domains.first)
+        },
+        subject = subject,
+        tag = activity.id!.toString,
+        plainBody = html,
+        htmlBody = html,
+        headers = ([
+          "References" -> e.activities.filter(a => a.entities.first == e)*.messageId.map(mid => "<$mid>").join(" "),
+          "In-Reply-To" -> if (let mid = chain.last?.messageId) "<$mid>",
+          "to" -> contacts.first.emailStr,
+          "cc" -> contacts.drop(1).map(emailStr).join(", "),
+          "X-Flow2b-Workspace" -> Workspace.current.authId,
+          "X-Flow2b-Entity" -> activity.mainEntity.dslType.fullName,
+          "X-Flow2b-Id" -> activity.mainEntity.id.toString,
+          "X-Flow2b-From-Type" -> {
+            if (let a = from.as[EmailContact]?.addressee) {
+              if (a.is[Dashboard]) "Role"
+              else a.dslType.name
+            }
+          },
+          "X-Flow2b-From-Company" -> {
+            from.as[EmailContact]?.addressee?.as[CompanyPerson]?.company?.title
+          }
+        ] + (if (let m = messageId) ["message-id" -> "<$m>"])
+          + (if (let u = t?.unsubscribeUrl(te, contact)) ["List-Unsubscribe" -> u])         
+        ),
+        attachments = attachments
+      )
+      let newMessageId <- service.send(request)
+      if (!messageId) {
+        messageId = newMessageId
+      }
+      activity.messageId = messageId
+      deliveries.foreach(_.status = Sending)
+      activity.entities.first?.touch
+      activity.save
+    }
+  }
+}
+        

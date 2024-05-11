@@ -1,0 +1,13 @@
+extend entity SalesOrder {
+  extend field vendor: OurLegalEntity {
+    default =? User.current?.openedRetailSession?.legalEntity.or(OurLegalEntity.onlyOne)
+  } 
+  extend field procState: OrderProcState {
+    default = if (User.current?.openedRetailSession?.store || (User.current?.openedRetailSession && IStore.onlyOne)) {
+      Processed 
+    } else {
+      Processing
+    }
+  }
+  extend override func isCustomerValid = customer || !state.active || (User.current?.openedRetailSession && !allItems)
+}

@@ -1,0 +1,21 @@
+extend entity User {
+  field retailSession: RetailSession? by user {
+    availableFor = List
+    available(All)
+    views = []
+    visible = is(Salesperson)
+  }
+  func forceRetailSession = retailSession.alt(RetailSession(user = this))
+  func openedRetailSession = retailSession.filter(status == Opened)
+  extend view form = extend{retailSession}
+}
+
+extend role Salesperson {
+  entity RetailSession {
+    read = user.isCurrent
+    write = user.isCurrent
+  }
+  extend view dashboard = User.current!.forceRetailSession >> nav(background = "#a73e6c") {
+    widget
+  }
+}

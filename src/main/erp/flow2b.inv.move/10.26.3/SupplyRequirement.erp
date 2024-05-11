@@ -1,0 +1,20 @@
+report SupplyRequirement {
+  field legalEntity: OurLegalEntity?
+  field store: IStore?
+  
+  impl view list = ProdReg.current
+    .filter(
+         outlook < product.minStock
+      && legalEntity ==? this.legalEntity
+      && store ==? this.store
+    )
+    .map(product = product, legalEntity, store, requiredQuantity = outlook - product.minStock, product.minStock, stock) 
+  >> nav(background = "#2e8e67") {
+    table {
+      product, legalEntity, store, requiredQuantity, minStock >> field(label = "Minimum Stock"), stock >> group(label = "Stock") {
+        fact, reserve, available, expectation, outlook
+      }
+    }
+  }
+}
+

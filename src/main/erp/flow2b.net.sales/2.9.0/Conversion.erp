@@ -7,9 +7,7 @@ back object Conversion extends IConversion {
       SalesItem.all.update(supportUnits = product.as[Service]?.supportUnits)
       SalesRentItem.all.update(supportUnits = product.as[Service]?.supportUnits)
     }
-    if (version < [2,7,1]) {
-      install
-    }
+    install
   }  
   impl func install: Future[Any] = if (!try? Workspace.current.salesSettings) {
     Workspace.current.salesSettings = SalesSettings()

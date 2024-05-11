@@ -1,5 +1,0 @@
-extend trait IShipping {
-  extend field detached: Bool {
-    default = true
-  }
-}
