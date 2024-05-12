@@ -5,7 +5,7 @@ import java.nio.file.attribute.BasicFileAttributes
 import scala.math.Ordering
 
 
-object DeleteAllButLatest extends App {
+object KeepLatestApps extends App {
 
     private val dslDir = Paths.get("src/main/erp");
 

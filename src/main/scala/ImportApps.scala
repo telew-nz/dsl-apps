@@ -9,7 +9,7 @@ import com.orientechnologies.orient.core.record.impl.ODocument
 import com.orientechnologies.orient.core.id.ORecordId
 import com.orientechnologies.orient.core.db.record.OTrackedList
 
-object ImportAllApps extends App {
+object ImportApps extends App {
 
     TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
 
