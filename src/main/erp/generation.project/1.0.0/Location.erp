@@ -1,4 +1,0 @@
-entity Location {
-  ref field address: String
-  func title = address
-}

@@ -1,6 +1,0 @@
-inline entity NetworkAllocation{
-  //field item : ShopTransactionItem // limit to current transaction items
-  field qty : Int
-  field company : Company
-  field transaction : Transaction
-}

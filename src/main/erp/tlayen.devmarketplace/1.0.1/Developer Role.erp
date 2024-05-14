@@ -1,6 +1,0 @@
-entity DeveloperRole {
-
-	impl field title: String
-    field projects: [DeveloperProject]? read by developerRole
-
-}

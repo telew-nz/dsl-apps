@@ -1,5 +1,0 @@
-entity Test { 
-  ref field number: Int 
-  ref field date: Date 
-  impl compute title: String = "$number date $date" 
-}

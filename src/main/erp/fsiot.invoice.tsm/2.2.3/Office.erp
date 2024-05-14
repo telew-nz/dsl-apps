@@ -1,9 +1,0 @@
-extend entity User {
-  ref field office: Office?
-}
-
-entity Office {
-  impl field title: String
-  field address: Address?
-  field desc: Text? {label = "Description"} 
-}

@@ -1,8 +1,0 @@
-class RemoveCategoryFromEcwid extends SystemJob {
-  field service: IEcwidIntegration
-  field categoryId: Int
-  
-  func do = {
-    service.https("categories/$categoryId").delete()
-  }
-}

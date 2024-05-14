@@ -1,7 +1,0 @@
-role Online{
-  menu GoldSystemsMenu {
-    entity Sales
-    entity Purchases
-    entity BullionTransactionItem
-  }
-}

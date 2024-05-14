@@ -1,5 +1,0 @@
-extend entity BullionName {
-
-	override func canRead = true
-
-}

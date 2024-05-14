@@ -1,9 +1,0 @@
-trait Testing {  
-  field title: String 
-  field weight : Int   //visibile if product 
-  field subtractions : Int //visible if oneoff // build subtraction structure
-  field testedItem : TestedItem
-}
-
-// AZ: Entity names should start with a Capital letter
-entity scratchTest extends Testing

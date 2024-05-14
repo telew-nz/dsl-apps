@@ -1,8 +1,0 @@
-enum TSMState {
-  case Entered {background = "#ed9" icon = "play"}
-  case AlertSent {background = "#8bf" icon = "bell"}
-  case Approved {background = "#dea" icon = "thumbs-up"}
-  case Sent {color = "white" icon = "check-circle" background = "#090"}
-  case Cancelled {background = "#999" icon = "times-circle"}
-  case Error {background = "red" icon = "pause-circle"}
-}

@@ -1,7 +1,0 @@
-trait Purchases {
-  func supplier: Company
-}
-
-trait TestedItem {
-  field tests : [Testing] inline by testedItem
-}

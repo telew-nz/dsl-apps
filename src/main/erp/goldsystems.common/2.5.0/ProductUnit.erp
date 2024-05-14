@@ -1,4 +1,0 @@
-extend enum ProductUnit {
-  case Kilo(symbol = "kg", scale = 4, base = Gram, k = 1000)
-  case Ounce(symbol = "oz", scale = 4, base = Gram, k = 31.1034768)
-} 

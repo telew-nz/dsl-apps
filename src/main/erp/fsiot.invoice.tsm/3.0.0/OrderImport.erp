@@ -1,4 +1,0 @@
-extend entity OrderImport {
-  singular = "Invoice Import"
-  plural = "Invoice Imports"
-}

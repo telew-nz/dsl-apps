@@ -1,7 +1,0 @@
-entity Proposal {
-  field title : String { label = "Titulo"}
-    field number : Int
-      field descripcion : Text
-        field valor : Int
-          field organizacion : Company
-}

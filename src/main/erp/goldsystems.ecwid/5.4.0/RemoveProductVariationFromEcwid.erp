@@ -1,9 +1,0 @@
-class RemoveProductVariationFromEcwid extends SystemJob {
-  field service: IEcwidIntegration
-  field ecwidProductId: Int
-  field ecwidCombinationId: Int
-  
-  func do = {
-    service.https("products/$ecwidProductId/combinations/$ecwidCombinationId").delete()
-  }
-}

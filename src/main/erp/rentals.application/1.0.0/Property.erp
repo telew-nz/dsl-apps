@@ -1,5 +1,0 @@
-entity Property{
-  field title : String
-  field location : String
-  
-}

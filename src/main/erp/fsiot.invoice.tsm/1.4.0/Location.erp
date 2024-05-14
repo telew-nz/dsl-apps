@@ -1,7 +1,0 @@
-entity Location {
-  ref field code: String
-  ref field name: String
-  field address: Address
-  field desc: Text? {label = "Description"}
-  impl func title = "$code $name"
-}

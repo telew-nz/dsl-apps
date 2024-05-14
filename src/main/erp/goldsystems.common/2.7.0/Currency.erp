@@ -1,7 +1,0 @@
-extend enum Currency {
-  case SGD(symbol = "SG\$", scale = 2, title = "Singapore dollar", position = Prefix) = "SG\$"
- 
-  case XAU(symbol = "XAU", scale = 4, title = "XAU Gold", position = Prefix) = "XAU"
-  case XAG(symbol = "XAG", scale = 4, title = "XAG Gold", position = Prefix) = "XAG"
-  case XPT(symbol = "XPT", scale = 4, title = "XPT Platinum", position = Prefix) = "XPT"
-}

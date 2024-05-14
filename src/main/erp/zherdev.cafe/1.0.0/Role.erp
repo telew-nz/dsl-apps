@@ -1,4 +1,0 @@
-entity Role {
-  field title: String
-  field salaryPerHour: Dec[2]
-}

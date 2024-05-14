@@ -1,4 +1,0 @@
-role MarketingPerson{
-   menu Marketing{
-     entity MarketingCentre
-   }}

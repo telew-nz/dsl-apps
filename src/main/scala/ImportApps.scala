@@ -27,49 +27,53 @@ object ImportApps extends App {
     session.activateOnCurrentThread()
     session.query("select from App").stream().forEach { resIter =>
         val app: ODocument = session.load[ODocument](resIter.getIdentity().get())
-        val id = app.field[ORecordId]("@rid")
         val dslPackage = app.field[String]("dslPackage")
-        println(s"App: id = $id, dslPackage = $dslPackage")
-
-        val dir = dslDir.resolve(dslPackage)
-        Files.createDirectories(dir)
-
-        val manifest = dir.resolve("App.properties")
-        val fields = app.toMap();
-        fields.keySet.forEach { field =>
-            if (!field.equals("files") && !field.equals("@class")) {
-                val prop = s"$field = ${fields.get(field)}\n"
-                Files.write(manifest, prop.getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE)
+        if (dslPackage != "core" && !dslPackage.matches("^w\\d+_\\d+")) {
+            val id = app.field[ORecordId]("@rid")
+            println(s"App: id = $id, dslPackage = $dslPackage")
+    
+            val dir = dslDir.resolve(dslPackage)
+            Files.createDirectories(dir)
+    
+            val manifest = dir.resolve("App.properties")
+            val fields = app.toMap();
+            fields.keySet.forEach { field =>
+                if (!field.equals("files") && !field.equals("@class")) {
+                    val prop = s"$field = ${fields.get(field)}\n"
+                    Files.write(manifest, prop.getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE)
+                }
             }
         }
     }
 
     session.query("select from AppSource").stream().forEach { resIter =>
         val source: ODocument = session.load[ODocument](resIter.getIdentity().get())
-        val id = source.field[ORecordId]("@rid")
         val dslPackage = source.field[String]("dslPackage")
-        val version = source.field[String]("version")
-        val status = source.field[String]("status")
-        println(s"AppSource: id = $id, dslPackage = $dslPackage, version = $version, status = $status")
-
-        val dir = dslDir.resolve(dslPackage).resolve(version)
-        Files.createDirectories(dir)
-
-        val manifest = dir.resolve("AppSource.properties")
-        val fields = source.toMap();
-        fields.keySet.forEach { field =>
-            if (!field.equals("files") && !field.equals("@class")) {
-                val prop = s"$field = ${fields.get(field)}\n"
-                Files.write(manifest, prop.getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE)
+        if (dslPackage != "core" && !dslPackage.matches("^w\\d+_\\d+")) {
+            val id = source.field[ORecordId]("@rid")
+            val version = source.field[String]("version")
+            val status = source.field[String]("status")
+            println(s"AppSource: id = $id, dslPackage = $dslPackage, version = $version, status = $status")
+    
+            val dir = dslDir.resolve(dslPackage).resolve(version)
+            Files.createDirectories(dir)
+    
+            val manifest = dir.resolve("AppSource.properties")
+            val fields = source.toMap();
+            fields.keySet.forEach { field =>
+                if (!field.equals("files") && !field.equals("@class")) {
+                    val prop = s"$field = ${fields.get(field)}\n"
+                    Files.write(manifest, prop.getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE)
+                }
             }
-        }
-
-        val files = source.field[OTrackedList[ODocument]]("files")
-        files.forEach { file =>
-            val name = file.field[String]("name")
-            val content = file.field[String]("content")
-            val f = dir.resolve(s"$name.erp")
-            Files.write(f, content.getBytes())
+    
+            val files = source.field[OTrackedList[ODocument]]("files")
+            files.forEach { file =>
+                val name = file.field[String]("name")
+                val content = file.field[String]("content")
+                val f = dir.resolve(s"$name.erp")
+                Files.write(f, content.getBytes())
+            }
         }
     }
 

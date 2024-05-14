@@ -1,5 +1,0 @@
-entity SampleEntity{
-   field x: String
-   field y: String
-   field title: String
-}

@@ -1,7 +1,0 @@
-enum CatalogueApprovalStatus {
-
-	case AwaitingReview
-    case Approved
-    case Rejected
-
-}

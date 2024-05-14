@@ -1,7 +1,0 @@
-entity CompanyProfile{
-  field company : Company
-  field team : [Team]
-  field details : Text
-    
-    func title = company
-}
