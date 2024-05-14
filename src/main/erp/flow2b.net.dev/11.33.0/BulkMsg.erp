@@ -1,6 +1,0 @@
-entity SupportBulkMsg extends IBulkMsg {
-  singular = "Support Bulk Message"
-  plural = "Support Bulk Messages"
-  override func itemRoles = [Support]
-  override object view list = SupportBulkMsg.all >> nav{list{traitItem}}
-}

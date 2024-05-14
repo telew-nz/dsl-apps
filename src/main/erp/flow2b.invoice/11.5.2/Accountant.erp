@@ -1,5 +1,0 @@
-extend role Accountant {
-  extend view menu = extend("Finance") {
-    IInvoice
-  }
-}

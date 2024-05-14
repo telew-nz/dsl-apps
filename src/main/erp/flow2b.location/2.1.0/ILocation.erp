@@ -1,9 +1,0 @@
-trait ILocation extends Entity with ContactAddressee with ScheduleAssignee {
-  background = "#2e8e67"
-  func address: Address
-}
-trait IMutualLocation extends ILocation
-trait IActorLocation extends ILocation {
-  field actor: Actor by locations
-  func title = "$actor: $address"
-}

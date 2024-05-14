@@ -1,7 +1,0 @@
-back object Conversion extends IConversion {
-  func do(version: [Int?]?) = {
-    if (version < [3,10,0]) {
-      QuantityJewelleryProduct.all.update(status = ForSale)
-    }
-  }  
-}   

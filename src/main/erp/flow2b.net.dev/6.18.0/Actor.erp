@@ -1,5 +1,0 @@
-extend entity Actor {
-  field personalProjects: [PersonalProject]? read by actor
-  field desires: [Desire]? inline by actor
-  compute rank: Dec[2] = 1.00
-}

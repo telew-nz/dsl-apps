@@ -1,9 +1,0 @@
-extend entity SalesOrder {
-  ref compute dropShipState: DropShipState = {
-    if (deliveries.exists(_.is[DropShipDelivery])) {
-      if (deliveries.all(_.is[DropShipDelivery])) DropShip
-      else PartialDropShip
-    } else NotDropShip
-  } {views = []}
-  extend view statusesView = dropShipState >> field(visible = dropShipState != NotDropShip)
-}

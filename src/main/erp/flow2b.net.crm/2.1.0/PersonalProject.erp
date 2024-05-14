@@ -1,7 +1,0 @@
-extend trait IOpportunity {
-  field projects: [PersonalProject]? read by opportunity 
-}
-
-extend entity PersonalProject {
-  field opportunity: IOpportunity?
-}

@@ -1,3 +1,0 @@
-extend trait Entity {
-   event activityDeliveryEvent(activity: Activity, delivery: ActivityDelivery, event: ActivityDeliveryEvent): Void = {}
-}

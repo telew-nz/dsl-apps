@@ -1,7 +1,0 @@
-back object Conversion extends IConversion {
-  func do(version: [Int?]?) = {
-    if (version < [8,17,0]) {
-      Bug.all.filter(field[String](_, "problem") == "CannotExecuteRole").update(problem = CannotReadData)
-    }
-  }  
-}    

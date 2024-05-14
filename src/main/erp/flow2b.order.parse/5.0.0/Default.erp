@@ -1,4 +1,0 @@
-back class OrderProcessorDefault extends OrderProcessorBase {
-  object impl func order: Dec[4]? = 0
-  impl func canProcess(poi: OrderImport, textOptions: [PlainText]) = true
-}

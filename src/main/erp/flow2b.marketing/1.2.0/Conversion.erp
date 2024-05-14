@@ -1,7 +1,0 @@
-back object Conversion extends IConversion {
-  func convert(version: [Int?]): Future[Any] = {
-    if (version < [1,2,0]) {
-      renameField(MarketingBacklog, marketingIssues, "issues")
-    }
-  }  
-}    

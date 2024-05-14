@@ -1,3 +1,0 @@
-report SOFunnel {
-  object view list = UFunnel.select(SalesOpportunity, SalesOpportunityStage)
-}

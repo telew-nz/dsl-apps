@@ -1,6 +1,0 @@
-report Calendar {
-  plural = "Calendar"
-  view list = Event.all
-    .filter(contains(Person.current!) && end > now)
-    .sortBy(end)
-}

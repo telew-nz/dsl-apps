@@ -1,4 +1,0 @@
-extend entity Service {
-  field supportUnits: UInt? {views = []}
-  extend view mainView = supportUnits
-}
