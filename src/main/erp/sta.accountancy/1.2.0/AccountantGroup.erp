@@ -1,9 +1,0 @@
-entity AccountantGroup {
-  field title: String
-  field reviewer: Person from Person.all.filter(is(Reviewer))
-  field accountants: [Person] by accountantGroup from Person.all.filter(is(Accountant))
-}
-
-extend entity Person {
-  field accountantGroup: AccountantGroup? by accountants {visible = is(Accountant)}
-}

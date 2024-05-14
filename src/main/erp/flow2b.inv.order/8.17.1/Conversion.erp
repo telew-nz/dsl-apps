@@ -1,7 +1,0 @@
-back object Conversion extends IConversion {
-  func do(version: [Int?]?) = {
-    if (version < [8,17,1]) {
-      recreateAllRegisters
-    }
-  } 
-}

@@ -1,5 +1,0 @@
-extend enum FreightCompany {
-  case CourierPost(trackingUrl = "http://trackandtrace.courierpost.co.nz/search/$number") {
-    background = "#FFCA08" color = "#D71635"
-  }
-}

@@ -1,7 +1,0 @@
-access Salesperson
-
-access Buyer
-
-access Vendor
-  
-access Customer

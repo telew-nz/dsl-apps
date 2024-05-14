@@ -1,8 +1,0 @@
-back object Conversion extends IConversion {
-  func do(version: [Int?]?) = {
-    if (version < [1,1,0]) {
-      renameField(ProductCategory, googleProductCategory, "flow2b.integ.google.merchant.googleProductCategory")
-      renameField(ECommerceIntegration, catalogs, "flow2b.integ.google.merchant.googleMerchants")
-    }
-  } 
-}  

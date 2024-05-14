@@ -1,7 +1,0 @@
-entity OpportunitySource {
-  background = "#a73e6c"
-  field title: String
-  list compute spent: Dec[2]? = expenses*.paidAmount.sum
-  field expenses: [IOutgoingPayment]?
-}
-

@@ -1,5 +1,0 @@
-extend entity ProductCategory {
-  field googleProductCategory: String?
-   
-  func gmProductType: String = if (let s = superCategory) "$(s.gmProductType) > $title" else title
-}

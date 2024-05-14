@@ -1,6 +1,0 @@
-extend entity SalesDelivery {
-  field instructions: Text? {views = []}
-  extend view deliveryHeader = group {
-    instructions >> field(label = "Delivery Instructions")
-  }
-}

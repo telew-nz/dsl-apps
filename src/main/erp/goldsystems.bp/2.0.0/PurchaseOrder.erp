@@ -1,5 +1,0 @@
-extend entity PurchaseOrder {
-  extend compute number: String = (num) {update = {num = new}}
-  ref field num: String {views = []}
-  func nakedN = num
-}

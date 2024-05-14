@@ -1,7 +1,0 @@
-entity Checklist{
-  field done : Bool 
-  field title : String
-  field procedure : Procedure? // make the reference field  title editable
-//  field details : Text
-  field userStory :  AdminUserStory by checklist
-}

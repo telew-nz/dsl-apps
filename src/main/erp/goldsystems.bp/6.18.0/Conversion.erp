@@ -1,7 +1,0 @@
-back object Conversion extends IConversion {
-  func convert(version: [Int?]): Future[Any] = {
-    if (version < [6,17,0]) {
-      fixBackRefs(BullionSupplierProductPrice, product)
-    }
-  }   
-}   

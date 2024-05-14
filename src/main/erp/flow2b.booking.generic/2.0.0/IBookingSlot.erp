@@ -1,5 +1,0 @@
-trait IBookingSlot extends ScheduleAssignee {
-  func maxCapacity: Number
-  func order: Number? = maxCapacity
-  func match(booking: IBooking): Bool
-}

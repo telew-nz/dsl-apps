@@ -1,9 +1,0 @@
-entity Service extends IBasicProduct {
-  func isTangible = false
-  field title: String
-  field description: Text?
-  view traitItem = grid(labels = None) {
-    x{ h3("Service:") title}
-  }
-  func subProducts = [this]
-}

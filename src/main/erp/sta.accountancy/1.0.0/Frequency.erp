@@ -1,8 +1,0 @@
-enum Frequency(next: Date => Date) {
-  case Week(next = (date: Date) => date.addDays(7))
-  case Fortnight(next = (date: Date) => date.addDays(14))
-  case Month(next = (date: Date) => date.addMonths(1))
-  case TwoMonth(next = (date: Date) => date.addMonths(2))
-  case SixMonth(next = (date: Date) => date.addMonths(6))
-  case Year(next = (date: Date) => date.addYears(1))
-}

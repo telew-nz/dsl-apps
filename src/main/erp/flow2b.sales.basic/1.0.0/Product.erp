@@ -1,8 +1,0 @@
-entity Product extends IIntangibleGood with ISuperProduct {
-  field title: String
-  ref field price: Dec[2]?
-  view form = nav{grid{
-    title
-    price
-  }}
-}

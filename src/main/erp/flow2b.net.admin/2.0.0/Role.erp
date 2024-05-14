@@ -1,6 +1,0 @@
-entity AdminRole {
-field title: String
-field adminProject: [AdminProject] by roles
-field description: Text?
-field stories : [AdminUserStory]? read by role
-}

@@ -1,9 +1,0 @@
-entity Department {
-  field title: String
-  field company: Company by departments
-  field people: [CompanyPerson]? inline by department {views = []}
-}
-
-extend entity Company {
-  field departments: [Department]? inline by company
-}

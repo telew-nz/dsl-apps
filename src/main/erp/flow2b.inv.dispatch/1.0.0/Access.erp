@@ -1,8 +1,0 @@
-access WarehouseDispatcher {
-  entity DispatchList = readWrite
-  entity Delivery = readWrite
-  menu Dispatch {
-    entity DispatchList
-    entity Delivery
-  }
-}

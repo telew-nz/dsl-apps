@@ -1,3 +1,0 @@
-extend entity LegalCompany {
-  ref field brandName: String?
-}

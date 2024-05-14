@@ -1,7 +1,0 @@
-extend trait HasTracking {
-  extend view freightView = row {
-    freightCompany >> field(compact)   
-    trackingNumber >> field(visible = !trackingUrl)
-    freightLocation
-  }
-}

@@ -1,8 +1,0 @@
-basicProduct StandardBullionProduct(skuPrefix = "BP", noAltUnits = true) {
-  impl ref compute title = calcTitle
-}
-
-extend entity StandardBullionProduct extends BullionSuperProduct {
-  override func gstRate(vendor: IVendor?): UPercent[2]?? = if (isPure || (vendor && !vendor!.hasGst)) null else 0.15
-  impl view customView = goldView
-}

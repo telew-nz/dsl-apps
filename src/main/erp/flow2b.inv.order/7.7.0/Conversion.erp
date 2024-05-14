@@ -1,7 +1,0 @@
-back object Conversion extends IConversion {
-  func do(version: [Int?]?) = {
-    if (version < [7,5,0]) {
-      PurchaseItem.all*.onSave
-    }
-  } 
-}    

@@ -1,6 +1,0 @@
-extend trait Customer {
-  field salesOrders: [SalesOrder]? read by customer 
-}
-extend entity Vendor {
-  field purchaseOrders: [PurchaseOrder]? read by vendor 
-}
