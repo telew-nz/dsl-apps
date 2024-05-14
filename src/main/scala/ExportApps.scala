@@ -36,7 +36,6 @@ object ExportApps extends App {
     session.activateOnCurrentThread()
 
     Files.list(dslDir)
-        .filter(d => d.getFileName().toString != "flow2b.integ.woocommerce" && d.getFileName().toString != "flow2b.farmlands" && d.getFileName().toString != "core" && !d.getFileName().toString.matches("^w\\d+_\\d+"))
         .forEach { appDir =>
         println(s"~~> appDir = $appDir")
 
