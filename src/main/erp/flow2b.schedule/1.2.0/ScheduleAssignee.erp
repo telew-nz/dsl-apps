@@ -1,7 +1,0 @@
-trait ScheduleAssignee {
-  field schedule: Schedule?
-  func correctForward(period: Period): Period = schedule?.correctForward(period).alt(period)
-  func isWorkingPeriod(period: Period): Bool = schedule?.isWorkingPeriod(period).alt(true)
-  func isWorkingDate(date: Date): Bool = schedule?.isWorkingDate(date).alt(true)
-  func nextWorkingDate(date: Date): Date = schedule?.nextWorkingDate(date).alt(date)
-}

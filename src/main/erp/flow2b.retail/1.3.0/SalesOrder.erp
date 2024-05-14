@@ -1,6 +1,0 @@
-extend entity SalesOrder {
-  extend field vendor: LegalEntity {
-    default =? User.current?.openedRetailSession?.legalEntity.or(LegalEntity.onlyOneOur)
-  }
-  override func isCustomerValid = customer || !state.active || (User.current?.openedRetailSession && !allItems)
-}

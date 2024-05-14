@@ -1,5 +1,0 @@
-entity ProductCategory {
-  field title: String
-  field description: Text?
-  field products: [ISuperProduct]? by categories
-}

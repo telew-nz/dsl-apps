@@ -1,8 +1,0 @@
-extend role WarehouseOperative {
-  extend view dashboard = RoutePath.all.filter(pathActive).sortBy(dispatchDate) >> 
-    nav(label = "Routing", limit = 5){
-      list(canAdd = false){
-        listItem
-      }
-    }
-}   

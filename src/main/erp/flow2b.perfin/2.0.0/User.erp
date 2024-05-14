@@ -1,8 +1,0 @@
-extend access UserRole {
-  menu Finance {
-    entity Transaction
-    report IncomeExpense
-    entity Account
-    entity Category
-  }
-}

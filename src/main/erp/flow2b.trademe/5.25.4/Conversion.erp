@@ -1,8 +1,0 @@
-back object Conversion extends IConversion {
-  func convert(version: [Int?]): Future[Any] = {
-    if (version < [5,25,3]) {
-      TrademeListing.all.filter(listingId && status == Invalid).foreach(l => RetrieveListingStats(listing = l).enqueue)
-    }
-  } 
-} 
-  

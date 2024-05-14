@@ -1,3 +1,0 @@
-trait IProductItem {
-  func product: IProduct
-}

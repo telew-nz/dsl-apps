@@ -1,5 +1,0 @@
-extend trait Payment {
-  extend field account: FinAccount {
-    default =? User.current?.openedRetailSession?.cashAccount?.as[FinAccount].or(FinAccount.onlyOne)
-  }
-}

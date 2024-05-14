@@ -1,6 +1,0 @@
-extend role Admin {
-  extend view menu = menu("Polls") {
-    Questionnaire >> item(fastAdd)
-    QrTemplate
-  }
-}

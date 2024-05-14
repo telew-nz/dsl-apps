@@ -1,8 +1,0 @@
-entity Organisation { 
-  impl field title: String = "foo            bar       bar"
-  field title1: String = "10"
- 
-  field name: String = if(title=%="foo bar bar") "c" else "i"
-  field position1: String = if(title1 !in [1,2,4]) "position1" else "position2"
-  compute price: Dec[2] =2.as[Number[4]].pow(2.5)
-} 

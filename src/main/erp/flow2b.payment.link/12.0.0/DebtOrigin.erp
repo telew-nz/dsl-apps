@@ -1,4 +1,0 @@
-extend trait DebtOrigin {
-  extend override object func considerManLinks = true
-  extend override func allManLinks: [DebtOrigin]? = manLinks 
-} 

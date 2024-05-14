@@ -1,6 +1,0 @@
-extend trait ISubProduct {
-  extend override view labelView = y{
-    salesPrice >> field(frame = false, align = Center, fontSize = 2.0)
-    barcode >> field(barcode = barcodeFormat, width = 0.5, height = 0.25)
-  }
-}

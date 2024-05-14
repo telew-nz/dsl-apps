@@ -1,9 +1,0 @@
-entity ColorItem {
-  field title: String
-  field color: String?
-  view form = nav {grid {
-    title
-    color
-    " " >> field(background = color)
-  }}
-}

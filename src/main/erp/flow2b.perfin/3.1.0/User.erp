@@ -1,8 +1,0 @@
-role Financer {
-  view menu = menu {
-    Transaction >> item(fastAdd)
-    IncomeExpense
-    Account
-    Category
-  }
-}

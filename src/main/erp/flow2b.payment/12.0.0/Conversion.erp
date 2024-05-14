@@ -1,8 +1,0 @@
-back object Conversion extends IConversion {
-  func do(version: [Int?]?) = {
-    if (version < [12,0,0]) {
-      renameField(OutgoingPayment, reasons, "expenses")
-      renameField(IncomingPayment, reasons, "incomes")
-    }
-  }  
-}    

@@ -1,6 +1,0 @@
-extend class ActivityDelivery {
-  field messageId: String?
-  field numberOfParts: Int?
-  field deliveredParts: Int?
-  field awsCost: Money[5]?
-}

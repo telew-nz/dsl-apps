@@ -1,7 +1,0 @@
-extend access UserRole {
-  menu Finance {
-    entity Transaction
-    entity Account
-    entity Category
-  }
-}

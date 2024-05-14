@@ -1,4 +1,0 @@
-report LeadReport {
-  plural = "LeadReport"
-  view list = Leads.all
-}
