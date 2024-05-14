@@ -1,9 +1,0 @@
-back object Conversion extends IConversion {
-  func do(version: [Int?]?) = {
-    if (version < [4,6,0]) {
-      OurCompany.all.update(
-        pricesIncludingGst = if (let ls = legalStructure) field[Bool](ls, "pricesIncludingGst") else true
-      )
-    }
-  } 
-} 

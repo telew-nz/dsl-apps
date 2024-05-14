@@ -1,9 +1,0 @@
-
-report MyActionItems {
-  object view list = Todo.all.filter{!active && owner == Person.current}
-}
-report OthersActionItems{
-   object view list = Todo.all.filter{!active && owner != Person.current}
-}
-report MyCreatedActionItems {
-  object view list = Todo.all} //todo filter by items i created

@@ -1,8 +1,0 @@
-/*role AllContacts{
-  entity Person
-  entity Company
-   menu Relations{
-     entity Person
-     entity Company
-   }
-}*/

@@ -1,9 +1,0 @@
-entity OutboundPlan{
-  field title : String
-  field dateFrom : Date
-  field dateTo : Date
-  field actors : [Person]
-  field outboundActivity : [OutboundActivity] by outboundPlan
- 
-}
-    

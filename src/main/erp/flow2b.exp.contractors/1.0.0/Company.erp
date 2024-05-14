@@ -1,4 +1,0 @@
-
-extend entity Company{
- // compute ContractorProposal=   Proposal.all.filter(person == this[Person])*.person
-}

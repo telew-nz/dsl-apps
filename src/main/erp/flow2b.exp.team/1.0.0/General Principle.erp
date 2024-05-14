@@ -1,6 +1,0 @@
-entity GeneralPrinciple //extends ActionItem
-{ field title : String
-  field details : [Text]
-  field status : String
- // field enteredBy : People
-} 

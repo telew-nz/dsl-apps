@@ -1,6 +1,0 @@
-extend entity Company {
-  field legalName: String?
-  field roles: [CompanyPersonRole]? inline by company
-  field informationStore : Text?
-  
-}

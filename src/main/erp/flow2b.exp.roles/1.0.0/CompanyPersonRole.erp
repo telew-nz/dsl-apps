@@ -1,8 +1,0 @@
-inline entity CompanyPersonRole {
-  field company: Company
-  field person: Person
-  field role: Role
-  field start: Date?
-  field end: Date?
-  func isCurrent: Bool = end.isEmpty
-}

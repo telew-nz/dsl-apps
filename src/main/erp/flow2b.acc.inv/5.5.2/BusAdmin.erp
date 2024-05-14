@@ -1,4 +1,0 @@
-extend role BusAdmin {
-  entity LSales = readOnly
-  entity LProduct = readOnly
-}

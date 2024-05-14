@@ -1,3 +1,0 @@
-extend trait IBaseProduct {
-  override func canRent = true
-}

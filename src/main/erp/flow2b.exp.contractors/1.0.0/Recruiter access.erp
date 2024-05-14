@@ -1,8 +1,0 @@
-access Recruiter{
-  entity Proposal
-  entity Job
-  menu Recruiting{
-    entity Proposal
-    entity Job
-  }
-}

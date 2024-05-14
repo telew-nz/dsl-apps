@@ -1,9 +1,0 @@
-entity Venue{
-   
-    field venueName : String
-    field location : String
-    field contacts : [Person]
-    field event : [VenueEvent]? by venue
-      
-      func title = venueName
-  }

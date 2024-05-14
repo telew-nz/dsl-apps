@@ -1,8 +1,0 @@
-access Team{
-  entity LearningLog
-    entity Resource
-    menu Team{
-    entity LearningLog
-      entity Resource
-  }
-}

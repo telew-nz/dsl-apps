@@ -1,4 +1,0 @@
-trait Resource{
-  func title : String
-  func company : Company
-}

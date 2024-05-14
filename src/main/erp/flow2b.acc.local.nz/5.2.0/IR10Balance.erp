@@ -1,6 +1,0 @@
-class IR10Y14Balance {
-  back func calc(ir: IncomeTaxReturn): Future[Void] = {
-    let le = ir.legalEntity
-    let p = ir.period
-  }
-}

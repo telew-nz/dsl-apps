@@ -1,8 +1,0 @@
-entity Student {
-  impl field title: String {label = "Last Name"}
-  field firstName: String
-  field middleInitial: String
-  field code: Int
-  
-  impl view form = nav { grid {title, firstName, middleInitial, code}}
-}

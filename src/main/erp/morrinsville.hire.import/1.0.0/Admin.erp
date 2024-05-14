@@ -1,5 +1,0 @@
-extend role Admin {
-  extend view dashboard = ProductsImport.all >> nav(label = "Imports"){list{
-    rootCategory
-  }}
-}

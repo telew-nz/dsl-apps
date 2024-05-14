@@ -1,4 +1,0 @@
-class StraightLineDepreciation extends DepreciationMethod {
-  singular = "Straight Line"
-  field rate: Percent
-}

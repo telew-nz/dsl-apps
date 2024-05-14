@@ -1,5 +1,0 @@
-extend entity AssetRentService {
-  singular = "Hire Service"
-  plural = "Hire Services"
-  //override func title = "Hire $product"
-}

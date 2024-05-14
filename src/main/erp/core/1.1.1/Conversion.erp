@@ -1,7 +1,0 @@
-back object Conversion extends IConversion {
-  func do(version: [Int?]?) = {
-    if (version < [1,1,1]) {
-      SubjectObserver.all.filter(active)*.subject.distinct.foreach(_.as[DashboardItem]?.updateDashboard)
-    }
-  }
-}

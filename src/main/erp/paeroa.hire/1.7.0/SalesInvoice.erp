@@ -1,7 +1,0 @@
-extend entity SalesInvoice {
-  ref compute customerType: CustomerType {
-    value = if (customer.debtAllowance) Charge else Cash
-    views = []
-  }
-  extend view statusesView = customerType
-}

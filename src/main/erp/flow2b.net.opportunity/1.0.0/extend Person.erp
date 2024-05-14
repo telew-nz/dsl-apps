@@ -1,6 +1,0 @@
-extend entity Person{
-   field personalOpportunity : PersonalOpportunity? read by subscriber
-   //compute userScore  = 50
-   //compute subcriberStatus = "Suspect"
-   //compute pipelineReport=   Pipeline.all.filter(person == this[Person])*.person
-}

@@ -1,5 +1,0 @@
-entity Service extends Resource{
-  //field segment : Segment 
-  field company : Company
-  field title: String // = segment + " " + company
-}

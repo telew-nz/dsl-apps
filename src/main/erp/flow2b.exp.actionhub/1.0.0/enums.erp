@@ -1,7 +1,0 @@
-enum TaskStatus{
-  case Offered
-  case Pending
-  case InProgress
-  case ToBeReviewed
-  case Completed
-  case Discarded}

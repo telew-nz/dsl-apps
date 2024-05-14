@@ -1,3 +1,0 @@
-extend access Salesperson {
-  entity SalesOpportunity = readWrite
-}

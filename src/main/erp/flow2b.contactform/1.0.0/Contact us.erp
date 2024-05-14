@@ -1,8 +1,0 @@
-entity ContactUs{
-  field email : String
-  field subject : String
-  field message : Text
-  field source : source How did you hear about us?
-  field refferal : 
-}
-   //If you were referred by an existing customer of ours please enter their first and last name here so we can say thank you!

@@ -1,9 +1,0 @@
-extend enum GstRate {
-  case Standard(rate = GstRateValue(value = 0.15)) = "Standard - 15%"
-}
-
-extend trait LegalEntity {
-  override func defaultGstRate(product: ISuperProduct): GstRate = {
-    if (hasGst) Standard else Exempt
-  }
-}

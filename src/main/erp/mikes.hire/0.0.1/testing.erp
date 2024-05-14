@@ -1,3 +1,0 @@
-extend entity Task {
-  field testing: String
-  }

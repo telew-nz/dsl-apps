@@ -1,9 +1,0 @@
-trait DepreciationMethodOperation extends BaseAssetOperation {
-  field depreciationMethod: DepreciationMethod? inline by operation
-}
-
-inline trait DepreciationMethod {
-  field operation: DepreciationMethodOperation
-  func asset = operation.asset
-}
-

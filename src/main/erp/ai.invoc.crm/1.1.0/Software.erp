@@ -1,5 +1,0 @@
-entity Software {
-  impl field title: String
-  field producer: Company?
-  field description: Text? 
-}

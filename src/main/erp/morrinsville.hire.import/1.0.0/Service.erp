@@ -1,5 +1,0 @@
-object ImportService extends SystemService {
-  func title = "Import"
-  func roles: Set[Role]? = [Admin]
-} 
-   

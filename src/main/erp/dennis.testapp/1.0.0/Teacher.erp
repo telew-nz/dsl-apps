@@ -1,8 +1,0 @@
-entity Teacher {  
-  ref field lastName: String
-  ref field firstName: String
-  ref field middleInitial: String
-  field code: Int
-  impl compute title: String = "$firstName $middleInitial $lastName"
-  impl view form = nav { grid {title, lastName, firstName, middleInitial, code}}
-}

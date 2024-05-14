@@ -1,8 +1,0 @@
-entity Industry {
-  impl field title: String
-  
-  field parent: Industry? by child
-  field child: [Industry]? by parent
-  
-  field description: Text?
-}

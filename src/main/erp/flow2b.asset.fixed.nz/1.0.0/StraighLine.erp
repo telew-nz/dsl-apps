@@ -1,4 +1,0 @@
-inline entity StraightLineDepreciation extends DepreciationMethod {
-  singular = "Straight Line"
-  field rate: Percent
-}

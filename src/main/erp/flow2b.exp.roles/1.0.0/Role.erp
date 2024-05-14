@@ -1,7 +1,0 @@
-entity Role {
-  field title: String
-}
-
-enum Department{
-  field title: String
-}

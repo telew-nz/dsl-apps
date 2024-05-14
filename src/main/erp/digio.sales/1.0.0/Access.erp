@@ -1,9 +1,0 @@
-access SalesPerson {
-  entity Sale = readWrite
-  entity Task = readWrite
-  entity Project = readWrite
-  menu SalesPerson {
-    entity Sale
-    entity Task
-  }
-}

@@ -1,8 +1,0 @@
-role Accountant {
-  entity LegalEntity = readWrite
-  entity Company = readWrite
-  entity Person = readWrite
-  entity CompanyGroup = readWrite
-  impl view dashboard = row{}
-  impl view menu = y{}
-}

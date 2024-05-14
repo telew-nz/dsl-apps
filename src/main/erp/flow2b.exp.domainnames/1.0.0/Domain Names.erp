@@ -1,5 +1,0 @@
-entity name{
-  field title : String
-  field extension : Extension
- 
-}
