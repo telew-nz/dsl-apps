@@ -1,9 +1,0 @@
-role HR {
-  menu HR {
-    trait Application
-  }
-  impl view dashboard = Application.all.filter(status.active) >> 
-    nav(label = "Active Applications", limit = 5, more = Application.Report(activeOnly = true).list.open) {
-      list{}
-    }
-}

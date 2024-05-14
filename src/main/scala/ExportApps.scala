@@ -76,18 +76,23 @@ object ExportApps extends App {
                         val inputFormat = new SimpleDateFormat("EEE MMM dd HH:mm:ss zzz yyyy");
                         val outputFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
                         appSourceDoc.field(k, outputFormat.format(inputFormat.parse(v)))
-                    case (k, v) if k == "dependencies" && v != "[]" =>
-                        val depProps = v.drop(1).dropRight(1)
-                            .split("\\}, \\{")
-                            .map(_.dropWhile(_ == '{'))
-                            .map(_.reverse.dropWhile(_ == '}').reverse)
-                            .map(_.split(",(?=[a-z])").flatMap(prop => prop.split(":").padTo(2, "")).grouped(2).collect(x => x.head -> x.tail.head).toMap)
-                            .foreach(dep => {
-                                val depsDoc = new ODocument("dslPackage", dep.get("dslPackage").getOrElse(""))
-                                depsDoc.field("version", dep.get("version").getOrElse(""))
-                                depsDoc.field("channel", dep.get("channel").getOrElse(""))
-                                appSourceDoc.field[OTrackedList[ODocument]]("dependencies").add(depsDoc)
-                            })
+                    case (k, v) if k == "dependencies" =>
+                        if (v != "[]")
+                            v.drop(1).dropRight(1)
+                                .split("\\}, \\{")
+                                .map(_.dropWhile(_ == '{'))
+                                .map(_.reverse.dropWhile(_ == '}').reverse)
+                                .map(_.split(",(?=[a-z])").flatMap(prop => prop.split(":").padTo(2, "")).grouped(2).collect(x => x.head -> x.tail.head).toMap)
+                                .foreach(dep => {
+                                    val dslPackage = dep.get("dslPackage").getOrElse("")
+                                    val version = dep.get("version").getOrElse("")
+                                    val depsDoc = new ODocument("dslPackage", dslPackage)
+                                    depsDoc.field("version", version)
+                                    depsDoc.field("channel", "Prod")
+                                    appSourceDoc.field[OTrackedList[ODocument]]("dependencies").add(depsDoc)
+                                })
+                    case (k, v) if k == "status" =>
+                        appSourceDoc.field(k, "Prod")
                     case (k, v) => appSourceDoc.field(k, v)
                 }
             appSourceDoc.field("files", "")

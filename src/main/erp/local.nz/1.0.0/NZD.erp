@@ -1,5 +1,0 @@
-extend enum Currency {
-  extend object func default: Currency = NZD
-
-  case NZD(symbol = "NZ\$", scale = 2, title = "New Zealand Dollar", position = Prefix) = "NZ\$"
-}

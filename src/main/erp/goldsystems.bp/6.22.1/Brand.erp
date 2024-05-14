@@ -1,3 +1,0 @@
-extend entity Actor {
-  ref field brandName: String?
-}

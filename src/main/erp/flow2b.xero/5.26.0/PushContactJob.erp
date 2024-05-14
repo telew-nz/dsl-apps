@@ -121,5 +121,3 @@ extend entity Person {
     }else companies*.company*.touch
   }
 }
-
-// ??? Address, PhoneContact, EmailContact...etc ?
