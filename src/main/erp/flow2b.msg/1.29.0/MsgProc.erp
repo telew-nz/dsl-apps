@@ -65,4 +65,3 @@ back object MsgProcDefault extends MsgProcActivity {
   impl func noRecipients = true
 }
       
-

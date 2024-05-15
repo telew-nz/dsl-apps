@@ -180,4 +180,3 @@ inline entity TransferItem extends IProdAmountQtyItem with FProductItems with IP
     productItems >> field(visible = ui.isSelected && product.trackItems)
   }
 }
-

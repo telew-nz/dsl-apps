@@ -50,4 +50,3 @@ entity SaleCampaignRule extends InlineEntity with IPriceFilterModOwner  {
     mods >> field(showEmpty)
   }
 }
-

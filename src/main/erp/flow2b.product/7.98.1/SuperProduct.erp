@@ -77,4 +77,3 @@ trait ISuperProduct extends IBaseProduct {
   }
 }
 
-

@@ -106,4 +106,3 @@ entity UniversalApp extends DevProduct {
     dependants*.touch
   }
 }
-

@@ -121,4 +121,3 @@ back class TMDeliveryItem(item: SoldItem) extends ESalesOrderDeliveryItem[Int] {
   impl func amount = item.shippingAmount
   impl func deliveryMethod = item.shippingType.name
 }
-

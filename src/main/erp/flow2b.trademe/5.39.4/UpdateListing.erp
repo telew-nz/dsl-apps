@@ -211,4 +211,3 @@ back class UpdateListingJob extends SystemJob {
     photo.updateExtExpiry(service, Date.now + 45_day - 1_hour)
   }
 }
-

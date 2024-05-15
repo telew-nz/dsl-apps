@@ -97,4 +97,3 @@ entity Epic extends IUserStory {
   
   override func statuses: [IssueStatus] = IssueStatus.all.filter(_ !in [ToTest, QAReview, ToDoc, Failed, InProgress, Verified])!.toSet 
 }
-

@@ -1,5 +1,7 @@
 package scala
 
+import scala.jdk.CollectionConverters._
+
 import com.orientechnologies.orient.core.db._
 
 import java.util.TimeZone
@@ -37,12 +39,13 @@ object ImportApps extends App {
     
             val manifest = dir.resolve("App.properties")
             val fields = app.toMap();
-            fields.keySet.forEach { field =>
-                if (!field.equals("files") && !field.equals("@class") && !field.equals("@rid")) {
-                    val prop = s"$field = ${fields.get(field)}\n"
-                    Files.write(manifest, prop.getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE)
-                }
-            }
+            val props = fields.keySet.stream.map { field =>
+                if (!List("files", "@class", "@rid", "versions").exists(field.equals(_)))
+                    Option(s"$field = ${fields.get(field)}\n")
+                else
+                    None
+            }.toList().asScala.toSeq.flatten
+            Files.write(manifest, props.mkString("").getBytes())
         }
     }
 
@@ -60,12 +63,13 @@ object ImportApps extends App {
     
             val manifest = dir.resolve("AppSource.properties")
             val fields = source.toMap();
-            fields.keySet.forEach { field =>
-                if (!field.equals("files") && !field.equals("@class") && !field.equals("@rid") && !field.equals("app")) {
-                    val prop = s"$field = ${fields.get(field)}\n"
-                    Files.write(manifest, prop.getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE)
-                }
-            }
+            val props = fields.keySet.stream.map { field =>
+                if (!List("files", "@class", "@rid", "app").exists(field.equals(_)))
+                    Option(s"$field = ${fields.get(field)}\n")
+                else
+                    None
+            }.toList().asScala.toSeq.flatten
+            Files.write(manifest, props.mkString("").getBytes())
     
             val files = source.field[OTrackedList[ODocument]]("files")
             files.forEach { file =>

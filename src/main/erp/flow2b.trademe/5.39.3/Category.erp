@@ -36,4 +36,3 @@ class UpdateCategoriesJob extends SystemJob {
     response.body!.parseJson[TrademeCategory].all.filter(!nums.contains(number))*.save()
   }
 }
-
