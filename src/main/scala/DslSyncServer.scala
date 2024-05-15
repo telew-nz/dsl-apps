@@ -19,7 +19,7 @@ object DslSyncServer {
 
         val route =
             path("export-db-dsl") {
-                post {
+                get {
                     parameter('dslPackage.as[String]) { (dslPackage) =>
                         Try {
                             GithubIntegration.pushChanges
@@ -39,8 +39,8 @@ object DslSyncServer {
         StdIn.readLine()
         println("Server stopped!")
         bindingFuture
-        .flatMap(_.unbind())
-        .onComplete(_ => system.terminate())
+            .flatMap(_.unbind())
+            .onComplete(_ => system.terminate())
 
     }
 
