@@ -8,6 +8,7 @@ import akka.http.scaladsl.server.Directives._
 import akka.http.javadsl.model
 
 import scala.io.StdIn
+import scala.util.{Try, Success, Failure}
 
 object DslSyncServer {
   
@@ -18,18 +19,25 @@ object DslSyncServer {
 
         val route =
             path("export-db-dsl") {
-                get {
+                post {
                     parameter('dslPackage.as[String]) { (dslPackage) =>
-                        complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, s"<h1>Testing $dslPackage</h1>"))
+                        Try {
+                            GithubIntegration.pushChanges
+                        } match {
+                            case Success(_) => complete(StatusCodes.Created)
+                            case Failure(_) => complete(StatusCodes.InternalServerError)
+                        }
                     }
                 }
             }
         
+        val address = sys.env("DSL_SYNC_SERVER_ADDRESS")
         val port = sys.env("DSL_SYNC_SERVER_PORT").toInt
-        val bindingFuture = Http().newServerAt("localhost", port).bind(route)
+        val bindingFuture = Http().newServerAt(address, port).bind(route)
 
-        println(s"Server now online (port=$port).\nPress RETURN to stop...")
+        println(s"Server now online ($address:$port).\nPress RETURN to stop...")
         StdIn.readLine()
+        println("Server stopped!")
         bindingFuture
         .flatMap(_.unbind())
         .onComplete(_ => system.terminate())
