@@ -227,4 +227,3 @@ inline entity DeliveryItem extends IDlvProductItem with IProdUnit {
 class ProdProdItem(product: ISubProduct, unit: ProductUnit, item: ProductItem?) {
   impl func form = if (let i = item) i.labelView else product.labelView
 }
-

@@ -123,4 +123,3 @@ entity PriceListProduct extends IStaticPriceSales {
     current = sp.current
   }
 }
-

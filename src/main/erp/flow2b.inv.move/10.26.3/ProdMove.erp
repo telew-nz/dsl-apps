@@ -75,4 +75,3 @@ interface IProdMoveItem {
   func isTangible = product.isTangible
   func itemsQty: UQty[unit]? = qty
 }
-

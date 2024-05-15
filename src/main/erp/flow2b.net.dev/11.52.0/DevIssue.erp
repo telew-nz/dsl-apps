@@ -224,4 +224,3 @@ object ITIssueToDoc extends IssueType[DevIssue] {
     item.fix("Documented", Verified)
   ]
 }
-

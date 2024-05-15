@@ -84,4 +84,3 @@ object ITMissingInBSU extends IssueType[CashMovement] {
   impl func hasIssue(item: CashMovement) = item.isMissingInBSU
   impl func fixes(item: CashMovement) = [Fix(text = "Usually the payment should be deleted")]
 }
-

@@ -85,4 +85,3 @@ enum LedgerSubAccount(account: LedgerAccount, number: Int, subType: LedgerAccoun
   func template = account.template
   func closeWithPeriod = account.closeWithPeriod
 }
-

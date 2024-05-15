@@ -25,4 +25,3 @@ trait IOrderDlv extends Entity {
   func isAv(level: StockLevel): Bool = true
   func calcedAv = true
 }
-

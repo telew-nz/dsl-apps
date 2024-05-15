@@ -87,4 +87,3 @@ enum OrderProcState(ast: ActiveState) {
     icon = "bell"
   }
 }
-

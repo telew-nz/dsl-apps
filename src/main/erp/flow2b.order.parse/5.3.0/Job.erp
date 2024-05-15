@@ -28,4 +28,3 @@ back interface OrderProcessor {
   func canProcess(poi: OrderImport, textOptions: [PlainText]): Bool
   func process(poi: OrderImport, textOptions: [PlainText]): Future[[ImportedOrder]?]
 }
-

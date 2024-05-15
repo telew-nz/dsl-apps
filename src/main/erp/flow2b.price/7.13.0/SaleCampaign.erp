@@ -51,4 +51,3 @@ entity SaleCampaignRule extends InlineEntity with IPriceFilterModOwner  {
   }
 }
 
-

@@ -30,4 +30,3 @@ trait IMethodResource extends InlineEntity {
   
   func scale(k: UDec[8]): UDuration[hour] = duration*k
 }
-

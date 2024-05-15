@@ -104,4 +104,3 @@ entity UserStory extends DevIssue with IUserStory{
   impl func type: DevIssueType = Story
 }
 
-

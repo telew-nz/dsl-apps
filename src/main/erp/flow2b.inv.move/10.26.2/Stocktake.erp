@@ -263,4 +263,3 @@ inline entity StocktakeItem extends InlineEntity with FProductItems with IProdUn
   override func labelsQty = difference.positive
 
 }
-

@@ -53,4 +53,3 @@ entity SalesContractorApplication extends Application {
 extend entity Person {
   field salesContractorApplications: [SalesContractorApplication]? read by person
 }
-

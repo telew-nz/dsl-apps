@@ -194,4 +194,3 @@ trait Payment extends CashMovement with DebtOrigin with IReasonOwner {
   }
 }
 
-

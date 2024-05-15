@@ -124,4 +124,3 @@ entity ContactFormService extends SystemService with IEndpoint {
   }}
 }
 
-

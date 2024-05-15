@@ -79,4 +79,3 @@ class NotifyJob[T extends RefEntity] extends SystemJob {
     }
   }
 }
-

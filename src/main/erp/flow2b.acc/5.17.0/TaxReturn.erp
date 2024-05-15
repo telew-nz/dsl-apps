@@ -27,4 +27,3 @@ trait TaxReturn extends Entity with Journal with IActiveItem {
   
   impl compute activeState = state
 }
-

@@ -37,4 +37,3 @@ class UpdateCategoriesJob extends SystemJob {
   }
 }
 
-

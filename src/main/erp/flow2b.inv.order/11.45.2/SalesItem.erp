@@ -186,4 +186,3 @@ inline entity SalesItem extends ISalesItemWithDelivery with OrderProductItem wit
   }
   
 }
-

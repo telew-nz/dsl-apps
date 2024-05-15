@@ -74,4 +74,3 @@ class DebtReconRow {
   field currency: Currency
   field amount: Money[currency]?
 }*/
-

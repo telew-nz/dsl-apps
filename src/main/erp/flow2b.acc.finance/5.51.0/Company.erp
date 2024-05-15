@@ -7,4 +7,3 @@ extend entity OurCompany {
     legalStructure?.incomeSummaryClosing(journal, balance)
   }
 }
-

@@ -78,4 +78,3 @@ entity PriceModDiscountFixed extends IPriceMod {
   
   impl view form = x{label("Fixed Discount") discount >> field(align = Left)}
 }
-

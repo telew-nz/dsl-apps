@@ -80,4 +80,3 @@ back class GMErrors {
   field message: String
   impl func toString = "($code) $message"
 }
-

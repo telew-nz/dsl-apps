@@ -181,4 +181,3 @@ inline entity TransferItem extends IProdAmountQtyItem with FProductItems with IP
   }
 }
 
-

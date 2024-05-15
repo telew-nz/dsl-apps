@@ -60,4 +60,3 @@ extend trait IProductItem {
 class ProdProdItem(product: ISubProduct, unit: ProductUnit, item: IProductItem?) {
   impl func form = if (let i = item) i.labelView else product.labelView
 }
-

@@ -53,4 +53,3 @@ extend trait DebtOrigin extends HasDebtCounterparty {
   func posViewDebit: Layout[DebtOrigin] = ref
   func posViewCredit: Layout[DebtOrigin] = ref
 }
-

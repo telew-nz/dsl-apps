@@ -141,4 +141,3 @@ object $fullName extends Entity with ScheduledJob {
   }
 }
 }
-

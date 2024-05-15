@@ -20,7 +20,7 @@ object ImportApps extends App {
     private val dbUrl      = "remote:localhost:2424" //sys.env("TLAYEN_DB_URL")
     private val rootDbUser = "root" //sys.env("TLAYEN_DB_ROOT_USER")
     private val dslDbUser  = "admin" //sys.env("TLAYEN_DSLDB_USER")
-    private val password   = "Jkkat3puE4Qon251J@i#3T6Be" //sys.env("TLAYEN_DB_PASSWORD")
+    private val password   = "password" //sys.env("TLAYEN_DB_PASSWORD")
 
     implicit private val odb: OrientDB = new OrientDB(dbUrl, rootDbUser, password, OrientDBConfig.defaultConfig())
     private val session: ODatabaseSession = odb.open(dsldb, dslDbUser, password)
@@ -38,7 +38,7 @@ object ImportApps extends App {
             val manifest = dir.resolve("App.properties")
             val fields = app.toMap();
             fields.keySet.forEach { field =>
-                if (!field.equals("files") && !field.equals("@class")) {
+                if (!field.equals("files") && !field.equals("@class") && !field.equals("@rid")) {
                     val prop = s"$field = ${fields.get(field)}\n"
                     Files.write(manifest, prop.getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE)
                 }
@@ -61,7 +61,7 @@ object ImportApps extends App {
             val manifest = dir.resolve("AppSource.properties")
             val fields = source.toMap();
             fields.keySet.forEach { field =>
-                if (!field.equals("files") && !field.equals("@class")) {
+                if (!field.equals("files") && !field.equals("@class") && !field.equals("@rid") && !field.equals("app")) {
                     val prop = s"$field = ${fields.get(field)}\n"
                     Files.write(manifest, prop.getBytes(), StandardOpenOption.APPEND, StandardOpenOption.CREATE)
                 }

@@ -52,4 +52,3 @@ trait Event extends Entity with HasN with DeferredJob {
   }
 }
 
-

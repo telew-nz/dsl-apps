@@ -27,4 +27,3 @@ trait MarketingIssue extends Entity {
     )
   }
 }
-

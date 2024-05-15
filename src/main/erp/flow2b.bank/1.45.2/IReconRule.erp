@@ -95,4 +95,3 @@ extend role Accountant {
     IReconRule
   }
 }
-

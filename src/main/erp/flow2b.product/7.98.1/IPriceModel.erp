@@ -79,4 +79,3 @@ extend entity Workspace {
     value <- back{IPriceModel.all}
   }
 }
-

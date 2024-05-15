@@ -225,4 +225,3 @@ class OTNextMonth extends OTPostdelivery {
     orderDate.end(of = month) + dof
   }
 }
-

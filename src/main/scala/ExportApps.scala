@@ -86,13 +86,12 @@ object ExportApps extends App {
                                 .foreach(dep => {
                                     val dslPackage = dep.get("dslPackage").getOrElse("")
                                     val version = dep.get("version").getOrElse("")
+                                    val channel = dep.get("channel").getOrElse("")
                                     val depsDoc = new ODocument("dslPackage", dslPackage)
                                     depsDoc.field("version", version)
-                                    depsDoc.field("channel", "Prod")
+                                    depsDoc.field("channel", channel)
                                     appSourceDoc.field[OTrackedList[ODocument]]("dependencies").add(depsDoc)
                                 })
-                    case (k, v) if k == "status" =>
-                        appSourceDoc.field(k, "Prod")
                     case (k, v) => appSourceDoc.field(k, v)
                 }
             appSourceDoc.field("files", "")

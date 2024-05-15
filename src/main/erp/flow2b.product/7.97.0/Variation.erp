@@ -99,4 +99,3 @@ trait IVariation extends ISubVariation with IProductInv {
     extension("nav")
   }
 }
-

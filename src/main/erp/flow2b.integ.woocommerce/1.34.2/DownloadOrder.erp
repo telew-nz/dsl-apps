@@ -184,4 +184,3 @@ back class CouponLine {
   field discount: UMoney?
   field discountTax: UMoney?
 }
-

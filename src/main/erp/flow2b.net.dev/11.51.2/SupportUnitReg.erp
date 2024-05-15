@@ -137,4 +137,3 @@ entity SupportUnitWriteUp extends SupportUnitMove {
   impl func delta: Int = amount
   impl func numPrefix = "SPUWU"
 }
-

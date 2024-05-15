@@ -56,4 +56,3 @@ object MailService extends SystemService {
     response.data!.messageId
   }
 }
-

@@ -73,4 +73,3 @@ entity QueRspBlockItem extends InlineEntity with IQr {
     }
   }
 }
-

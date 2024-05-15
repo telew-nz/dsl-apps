@@ -185,4 +185,3 @@ inline entity DevQuoteItemAddCharge extends DevQuoteItemAdd {
     desc >> field(label = "")
   }
 }
-
