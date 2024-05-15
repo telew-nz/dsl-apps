@@ -260,3 +260,4 @@ $RECYCLE.BIN/
 .vscode
 project
 target
+.env

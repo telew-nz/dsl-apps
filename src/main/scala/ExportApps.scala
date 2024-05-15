@@ -23,13 +23,12 @@ object ExportApps extends App {
     private val appSourcePropertiesFilename = "AppSource.properties"
 
     private val dsldb           = "dsldb"
-    // TODO: figure out how to automatically include .env values using Metals
-    private val dbUrl           = "remote:localhost:2424" //sys.env("TLAYEN_DB_URL")
-    private val rootDbUser      = "root" //sys.env("TLAYEN_DB_ROOT_USER")
-    private val dslDbUser       = "admin" //sys.env("TLAYEN_DSLDB_USER")
-    private val password        = "password" //sys.env("TLAYEN_DB_PASSWORD")
-    private val overrideOwner   = Option("41_0") // sys.env.get("OVERRIDE_OWNER")
-    private val overrideManager = Option("41_0") // sys.env.get("OVERRIDE_MANAGER")
+    private val dbUrl           = sys.env("EXPORT_DB_URL")
+    private val rootDbUser      = sys.env("EXPORT_DB_ROOT_USER")
+    private val dslDbUser       = sys.env("EXPORT_DSL_DB_USER")
+    private val password        = sys.env("EXPORT_DB_PASSWORD")
+    private val overrideOwner   = sys.env.get("EXPORT_OVERRIDE_OWNER")
+    private val overrideManager = sys.env.get("EXPORT_OVERRIDE_MANAGER")
 
     implicit private val odb: OrientDB = new OrientDB(dbUrl, rootDbUser, password, OrientDBConfig.defaultConfig())
     private val session: ODatabaseSession = odb.open(dsldb, dslDbUser, password)
