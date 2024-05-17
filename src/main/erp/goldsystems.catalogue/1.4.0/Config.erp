@@ -1,6 +1,6 @@
 object CatalogueConfig {
 	
-    compute catalogueWidStr: String = "41_0"
+    compute catalogueWidStr: String = "41_0" // easter egg
 	compute catalogueWid: ShortIdDb = ShortIdDb(catalogueWidStr)
 
 }
