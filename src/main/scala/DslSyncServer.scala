@@ -20,13 +20,15 @@ object DslSyncServer {
         val route =
             path("export-db-dsl") {
                 get {
-                    parameter('dslPackage.as[String]) { (dslPackage) =>
-                        Try {
-                            GithubIntegration.pushChanges
-                        } match {
-                            case Success(_) => complete(StatusCodes.Created)
-                            case Failure(_) => complete(StatusCodes.InternalServerError)
-                        }
+                    Try {
+                        println(s"Pushing changes")
+                        ImportApps()
+                        GithubIntegration.pushChanges
+                    } match {
+                        case Success(_) => complete(StatusCodes.Created)
+                        case Failure(err) =>
+                            println(s"[ERR] ${err.getMessage()}")
+                            complete(StatusCodes.InternalServerError)
                     }
                 }
             }
@@ -35,12 +37,15 @@ object DslSyncServer {
         val port = sys.env("DSL_SYNC_SERVER_PORT").toInt
         val bindingFuture = Http().newServerAt(address, port).bind(route)
 
-        println(s"Server now online ($address:$port).\nPress RETURN to stop...")
-        StdIn.readLine()
-        println("Server stopped!")
-        bindingFuture
-            .flatMap(_.unbind())
-            .onComplete(_ => system.terminate())
+        println(s"Server now online ($address:$port).")
+        
+        sys.addShutdownHook {
+            bindingFuture
+                .flatMap(_.unbind())
+                .onComplete(_ => {
+                    system.terminate()
+                })
+        }
 
     }
 
