@@ -15,7 +15,7 @@ import com.orientechnologies.orient.core.metadata.schema.OType
 
 object ExportApps {
 
-    def apply = {
+    def apply() = {
 
         TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
 
@@ -35,6 +35,9 @@ object ExportApps {
         val odb: OrientDB = new OrientDB(dbUrl, rootDbUser, password, OrientDBConfig.defaultConfig())
         val session: ODatabaseSession = odb.open(dsldb, dslDbUser, password)
         session.activateOnCurrentThread()
+
+        session.command("""delete from App where not(dslPackage matches "^w\\d+_\\d+" or dslPackage = "core")""")
+        session.command("""delete from AppSource where not(dslPackage matches "^w\\d+_\\d+" or dslPackage = "core")""")
 
         Files.list(dslDir).forEach { appDir =>
             println(s"~~> appDir = $appDir")

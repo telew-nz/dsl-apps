@@ -12,7 +12,7 @@ object GithubIntegration {
             |git config user.email "$GITHUB_USER_EMAIL"
         """.stripMargin).!!
 
-    def pushChanges: Unit = {
+    def pushChanges: Unit =
         Seq("bash", "-c", s"""
             |eval "$$(ssh-agent -s)"
             |ssh-add "$$GITHUB_SSH_PATH"
@@ -20,6 +20,12 @@ object GithubIntegration {
             |git commit -m "[${java.time.LocalDateTime.now()}] Updated all apps"
             |git push
         """.stripMargin).!!
-    }
+
+    def pullChanges: Unit =
+        Seq("bash", "-c", s"""
+            |eval "$$(ssh-agent -s)"
+            |ssh-add "$$GITHUB_SSH_PATH"
+            |git pull
+        """.stripMargin).!!
 
 }

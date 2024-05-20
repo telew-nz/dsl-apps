@@ -17,9 +17,9 @@ object DslSyncServer {
         implicit val system = ActorSystem(Behaviors.empty, "my-system")
         implicit val executionContext = system.executionContext
 
-        val route =
+        val routes =
             path("export-db-dsl") {
-                get {
+                post {
                     Try {
                         println(s"Pushing changes")
                         ImportApps()
@@ -31,11 +31,24 @@ object DslSyncServer {
                             complete(StatusCodes.InternalServerError)
                     }
                 }
+            } ~ path("import-db-dsl") {
+                post {
+                    Try {
+                        println(s"Pulling from repo")
+                        GithubIntegration.pullChanges
+                        ExportApps()
+                    } match {
+                        case Success(_) => complete(StatusCodes.Created)
+                        case Failure(err) =>
+                            println(s"[ERR] ${err.getMessage()}")
+                            complete(StatusCodes.InternalServerError)
+                    }
+                }
             }
         
         val address = sys.env("DSL_SYNC_SERVER_ADDRESS")
         val port = sys.env("DSL_SYNC_SERVER_PORT").toInt
-        val bindingFuture = Http().newServerAt(address, port).bind(route)
+        val bindingFuture = Http().newServerAt(address, port).bind(routes)
 
         println(s"Server now online ($address:$port).")
         
