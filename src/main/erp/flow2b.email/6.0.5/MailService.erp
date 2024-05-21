@@ -17,7 +17,7 @@ object MailService extends SystemService {
     HttpRequest(ssl = true, url = "${Config.emailDomain}/api/v1/$path")
      .header("X-Server-API-Key", apiKey)
   }
-  back func apiKey = "93Am9I6E6VGvHBoeR06vVpPQ"
+  back func apiKey = Config.emailApiKey
   //object back func token(domains: [String]): String = domains.join(", ").hmac(apiKey).sha1.base64
    
   impl event onSave = {
