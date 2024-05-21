@@ -76,4 +76,3 @@ trait ISuperProduct extends IBaseProduct {
     impl view list = ISuperProduct.all.filter((!priceModel || priceModel!.contains(priceLevel, _))) >> nav{list{}}
   }
 }
-

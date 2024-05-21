@@ -80,5 +80,3 @@ interface IPrice {
    
   back func amount(request: PriceRequest, item: PriceOrderItem): Future[SalesPrice]   
 }
-
-
