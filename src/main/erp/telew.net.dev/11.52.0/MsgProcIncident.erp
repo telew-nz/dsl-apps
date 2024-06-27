@@ -1,0 +1,33 @@
+back object MsgProcIncident extends MsgProcActivity {
+  impl func priority = 1.0
+  impl func canProc(msg: ExtMsg) = true
+  override func item(msg: ExtMsg, from: Contact?, recipients: [Contact], refs: [Entity]?): Future[Entity?] = {
+    if (let r = refs.onlyOne where !r.is[Actor]) return {
+      if (let i = r.as[Incident] where !i.status.active || i.status == Implemented) {
+        i.preFailedStatus = i.status
+        i.status = Failed
+        i.save
+      } else {
+        r
+      }
+    }
+
+    let companies: [LegalEntity]? = if (let a = from?.as[ActorContact]?.addressee) {
+      if (let c = a.as[Company]) [c.as[LegalEntity]]
+      else if (let c = a.as[CompanyPerson]) c.company.as[LegalEntity].toSeq
+      else if (let p = a.as[Person]) p.companies*.company*.as[LegalEntity] + p
+    }
+    if (let pp = companies.filter(projects).onlyOne where pp.customer) {
+      let isUrgent = msg.richText.flex.contains("urgent") || msg.plainText.flex.contains("urgent")
+      Incident(
+        _product = pp.projects.first!,
+        subject = msg.subject
+        urls = msg.telew?.url.toSeq
+        urgency = if (isUrgent) Urgent else Usual
+        urgencyReason = if (isUrgent) "Customer request"
+      )
+    } else {
+      null[Entity]
+    }
+  }  
+}

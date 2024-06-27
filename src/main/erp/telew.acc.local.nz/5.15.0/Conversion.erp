@@ -1,0 +1,24 @@
+back object Conversion extends IConversion {
+  func install: Future[Any] = {
+    ExpenseType.all.filter(!try? nzExpense).update(nzExpense = Unknown)
+    SalaryType.all.filter(!try? nzSalary).update(nzSalary = Unknown)
+    AssetType.all.filter(!try? nzAsset).update(nzAsset = Unknown)
+  }
+  
+  func convert(version: [Int?]): Future[Any] = {
+    if (version < [5,10,1]) {
+      Company.all.foreach{c =>
+        if (let le = field[ConvEntity?](c, "telew.acc.finance.legalInfo")) {
+          c.legalInfo = LegalInfoNZ(name = le.field("name"), nzbn = le.field("telew.acc.local.nz.nzbn"), irdNumber = le.field("telew.acc.local.nz.irdNumber"), gstNumber = le.field("telew.acc.local.nz.gstNumber"))
+        } else {
+          c.legalInfo = LegalInfoNZ()
+        }
+      }
+      Person.all.foreach {p =>
+        if (let le = field[ConvEntity?](p, "telew.acc.finance.soleTrader")) {
+          p.soleTrader = LegalInfoNZ(name = le.field("name"), nzbn = le.field("telew.acc.local.nz.nzbn"), irdNumber = le.field("telew.acc.local.nz.irdNumber"), gstNumber = le.field("telew.acc.local.nz.gstNumber"))
+        }
+      }
+    }
+  }
+}

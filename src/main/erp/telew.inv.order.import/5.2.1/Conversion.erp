@@ -1,0 +1,13 @@
+back object Conversion extends IConversion {
+  func convert(version: [Int?]): Future[Any] = {
+    if (version < [5,1,0]) {
+      renameField(ImportedOrder, order, "telew.inv.order.import.purchaseOrder")
+    }
+  }
+  
+  impl func install: Future[Any] = {
+    OrderImportService.resolveReferences = true
+    OrderImportService.save
+  }
+}
+ 

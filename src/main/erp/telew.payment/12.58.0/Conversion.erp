@@ -1,0 +1,85 @@
+back object Conversion extends IConversion {
+  func convert(version: [Int?]): Future[Any] = {
+    if (version < [12,33,0]) {
+      recreateAllRegisters
+    }
+    if (version < [12,36,0]) {
+      Payment.all.update(refNum = field(_, "refNum"))
+    }
+    if (version < [12,36,1]) {
+      recreateAllRegisters
+    }
+    if (version < [12,37,0]) {
+      ITaxPayment.all.update(trType = Payment)
+    }
+    if (version < [12,39,1]) {
+      CashMovement.all.filter(srcBankData?.uploadState == Uploaded && srcAccount).map(date = dateOut, account = srcAccount!)
+      .groupBy(account).agg(period = Period(start = date.min, end = date.max)).foreach {
+        account.uploadedOutgoing = period
+        account.save
+      }      
+      CashMovement.all.filter(dstBankData?.uploadState == Uploaded && dstAccount).map(date = dateIn, account = dstAccount!)
+      .groupBy(account).agg(period = Period(start = date.min, end = date.max)).foreach {
+        account.uploadedIncoming = period
+        account.save
+      }
+    }
+    if (version < [12,39,3]) {
+      if (DebtReason.all.result.get) {
+        recreateAllRegisters
+      }
+    }
+    if (version < [12,43,0]) {
+      renameField(LegalEntity, _opRecon, "telew.payment.expense")
+    }
+    if (version < [12,55,0]) {
+      renameEntity(OPBankFees, "BankFees")
+      Payment.all.foreach{p =>
+        if (let main = field[Payment?](p, "feeTr")) {
+          if (main.currency != main.account.currency) {
+            if (main.is[IncomingPayment] == p.is[IncomingPayment]) {
+              main.accountAmount = (main.accountAmount - p.amount).positive!
+            } else {
+              main.accountAmount = main.accountAmount + p.amount
+            }
+          } else if (let ip = main.as[IncomingPayment]) {
+            if (p.is[OutgoingPayment]) {
+              ip.amount = (ip.amount - p.amount).positive!
+              IPBankFees(payment = ip, amount = p.amount)
+              ip.save
+            } else {
+              ip.amount = ip.amount + p.amount
+              IPReturn(payment = ip, reasons = [OPBankFees(amount = p.amount)])
+              ip.save
+            }
+          } else {
+            let op = main.as[OutgoingPayment]!
+            if (p.is[OutgoingPayment]) {
+              op.amount += p.amount
+              OPBankFees(payment = op, amount = p.amount)
+              op.save
+            } else {
+              op.amount = (op.amount - p.amount).positive!
+              OPReturn(payment = op, reasons = [IPBankFees(amount = p.amount)])
+              op.save
+            }
+          }
+        }
+      }
+    }
+    if (version < [12,55,0]) {
+      CashMovement.all.filter(srcBankData).foreach{p =>
+        p.srcBankData!.amount = p.srcAmount
+        p.touch
+        p.save
+      }
+      CashMovement.all.filter(dstBankData).foreach{p =>
+        p.dstBankData!.amount = p.dstAmount
+        p.touch
+        p.save
+      }
+    }
+   
+  }  
+}  
+ 

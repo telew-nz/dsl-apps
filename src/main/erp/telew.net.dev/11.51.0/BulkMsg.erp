@@ -1,0 +1,42 @@
+entity SupportBulkMsg extends IBulkMsg {
+  singular = "Support Bulk Message"
+  plural = "Support Bulk Messages"
+  override func itemRoles = [Doc]
+  override object view list = SupportBulkMsg.all >> nav{list{traitItem}}
+  
+  override func text(contact: ActorContact): Text? = {
+    let r = Regex('\\\$help\s*\(\s*"([^"]+)"\s*,\s*"([0-9_]+)"\)')
+    let t = super.text(contact)
+    if (let wid = contact.company?.actorWorkspaceId) {
+      t.replace(r, '<a href="https://telew.com/s/#13_$wid/core.HelpArticle/form/1260_\$2">\$1</a>')
+    } else {
+      t.replace(r, '<a href="https://telew.com/s/pub/#13_1260/core.HelpArticle/form/\$2">\$1</a>')
+    }
+  }
+  field devIssues: [DevIssue]? by bulkMsgs {
+    label = "Issues"
+  }
+  compute previewText = text(OurLegalEntity.onlyOne!.legalEntity.contacts.first!)
+                  
+  override view form = nav{
+    tabs {
+      grid (label = "Main") {
+        x {state >> field (editMode = AlwaysRead) 
+           title >> field(stretch = 1, fontStyle = H3) 
+           number >> field(fontStyle = Label)}
+        lists
+        subject
+        devIssues
+        label('\$help("NAME", "ID") - link to help topic')
+        text
+      }
+      grid (label = "Preview") {
+        previewText
+      }
+    }
+    button("Send to New Subscribers", icon = "paper-plane", visible = state == Sent) {
+      back {send}
+    }
+  }
+}
+                  

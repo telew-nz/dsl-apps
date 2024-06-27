@@ -1,0 +1,33 @@
+back object Conversion extends IConversion {
+  func convert(version: [Int?]): Future[Any] = {
+    if (version < [6,4,0]) {
+      renameEntity(PriceList, "telew.price.PriceList")
+      renameEntity(PriceListProduct, "telew.price.ProductPrice")
+      fixBackRefs(PriceListProduct, product)
+    }
+    if (version < [6,4,1]) {
+      fixBackRefs(IPriceModel, vendor)
+    }
+    if (version < [7,2,0]) {
+      KitPriceModel.all.update(start = now)
+      MarginPriceModel.all.update(start = now)
+    }
+    if (version < [7,4,0]) {
+      renameEntity(PriceList, "telew.product.PriceList")
+      renameEntity(PriceListProduct, "telew.product.PriceListProduct")
+      fixBackRefs(PriceList, vendor)
+    }
+    if (version < [7,6,0]) {
+      PriceService.debug = true
+      PriceService.save
+//      KitPriceModel.all.update(cachePrices = true)
+    }
+    if (version < [7,9,0]) {
+      KitPriceModel.all
+        .filter(field[UPercent[4]?](_, "discount"))
+        .update(rules = [
+          KitModelRule(mods = [PriceModDiscountPercent(discount = field[UPercent[4]?](_, "discount")!)])
+        ])
+    }
+  }
+}
