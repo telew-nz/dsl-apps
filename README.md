@@ -1,6 +1,6 @@
-# Tlayen Apps
+# Telew Apps
 
-This contains a copy of all the source code for all the Tlayen apps.
+This contains a copy of all the source code for all the Telew apps.
 
 ## Updating
 
