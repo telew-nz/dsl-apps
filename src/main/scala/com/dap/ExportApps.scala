@@ -41,7 +41,7 @@ object ExportApps {
             val appDoc = new ODocument("App")
             val appProps = Files.readAllLines(appDir.resolve(appPropertiesFilename))
                 .stream.map(_.split(" = "))
-                .toList.asScala
+                .iterator().asScala
                 .filter(p => p.length == 2 && p.head != "@rid" && p.head != "versions")
                 .flatten
                 .grouped(2)
@@ -58,14 +58,14 @@ object ExportApps {
             appDoc.field("versions", "")
             appDoc.save()
             val appORID = appDoc.getIdentity
-            Files.list(appDir).filter(_.getFileName.toString != appPropertiesFilename).toList.asScala.map { appSourceDir =>
+            Files.list(appDir).filter(_.getFileName.toString != appPropertiesFilename).iterator().asScala.map { appSourceDir =>
                 println(s"~~> appSourceDir = $appSourceDir")
                 val appSourceDoc = new ODocument("AppSource")
                 appSourceDoc.field("app", appORID)
                 appSourceDoc.field("dependencies", "")
                 Files.readAllLines(appSourceDir.resolve(appSourcePropertiesFilename))
                     .stream.map(_.split(" = "))
-                    .toList.asScala
+                    .iterator().asScala
                     .filter(p => p.length == 2 && p.head != "app" && p.head != "@rid")
                     .flatten
                     .grouped(2)

@@ -43,7 +43,7 @@ object ImportApps {
                         Option(s"$field = ${fields.get(field)}\n")
                     else
                         None
-                }.toList.asScala.toSeq.flatten
+                }.iterator().asScala.toSeq.flatten
                 Files.write(manifest, props.mkString("").getBytes())
             }
         }
@@ -67,7 +67,7 @@ object ImportApps {
                         Option(s"$field = ${fields.get(field)}\n")
                     else
                         None
-                }.toList.asScala.toSeq.flatten
+                }.iterator().asScala.toSeq.flatten
                 Files.write(manifest, props.mkString("").getBytes())
 
                 val files = source.field[OTrackedList[ODocument]]("files")
