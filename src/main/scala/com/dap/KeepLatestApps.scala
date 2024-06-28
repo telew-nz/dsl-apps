@@ -1,21 +1,24 @@
+package com.dap
+
 import java.io.{File, FilenameFilter, IOException}
-import java.nio.file.{Files, FileVisitResult, Path, Paths, SimpleFileVisitor}
 import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file._
+import scala.annotation.{tailrec, unused}
 
-import scala.math.Ordering
 
+@unused
+object KeepLatestApps {
 
-object KeepLatestApps extends App {
-
-    private val dslDir = Paths.get("src/main/erp");
+    private val dslDir = Paths.get("src/main/erp")
 
     implicit val versionOrdering: Ordering[String] = new Ordering[String] {
-        override def compare(x: String, y: String) = {
+        override def compare(x: String, y: String): Int = {
             compareParts(toVersion(x), toVersion(y))
         }
 
         private def toVersion(a: String): List[Int] = a.split('.').map(_.toInt).toList
 
+        @tailrec
         private def compareParts(a: List[Int], b: List[Int]): Int = {
             a match {
             case Nil => b match {
@@ -33,18 +36,16 @@ object KeepLatestApps extends App {
     }
 
 
-    val versionFilter = new FilenameFilter {
-        override def accept(dir: File, name: String) = name.matches("""\d+(\.\d+)*""")
-    }
+    private val versionFilter: FilenameFilter = (_: File, name: String) => name.matches("""\d+(\.\d+)*""")
 
-    def deleteRecursively(path: Path) = {
+    private def deleteRecursively(path: Path): Path = {
     Files.walkFileTree(path, new SimpleFileVisitor[Path] {
-        override def visitFile(file: Path, attrs: BasicFileAttributes) = {
+        override def visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult = {
             Files.delete(file)
             FileVisitResult.CONTINUE
         }
 
-        override def postVisitDirectory(dir: Path, exc: IOException) = {
+        override def postVisitDirectory(dir: Path, exc: IOException): FileVisitResult = {
             Files.delete(dir)
             FileVisitResult.CONTINUE
         }

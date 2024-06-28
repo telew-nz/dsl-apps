@@ -256,6 +256,7 @@ $RECYCLE.BIN/
 
 ### VSCode w/ metals ###
 .bloop
+.bsp
 .metals
 .vscode
 project
