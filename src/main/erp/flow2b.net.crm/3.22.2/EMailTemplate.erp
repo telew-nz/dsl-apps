@@ -1,0 +1,18 @@
+class Flow2bMailTemplate extends IMailTemplateStd {
+  impl func shallTrack(url: Url): Bool = url.lower.contains("//flow2b.com") && !url.lower.contains("//flow2b.com/s/")
+  override func apply(from: Contact, to: [IEmailContact], subject: String?, text: Text?): Html? = {
+    '<div style="width: 640px; max-width: 98%; margin: 0 auto;">$text
+<p></p>
+$(footer(from))
+</div>'
+  }
+  override func footer(a: Activity): Html? = {
+    if (let from = a.emailFrom) footer(from)
+  }
+  func footer(from: Contact): Html? = {  
+'<div class="flow2b-signature">
+<div style="float: right"><a href="https://flow2b.com/?utm_source=message&utm_medium=email&utm_content=logo"><img src="https://flow2b.com/Flow2bh84.png" width="190" height="84"/></a></div>    
+<p style="min-height: 84px">$(innerSignature(from))</p>
+</div>'
+  }
+}
