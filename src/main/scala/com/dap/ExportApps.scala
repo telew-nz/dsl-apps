@@ -36,6 +36,7 @@ object ExportApps {
         session.command("""delete from AppSource where not(dslPackage matches "^w\\d+_\\d+" or dslPackage = "core")""")
 
         Files.list(dslDir).forEach { appDir =>
+            println(s">>> appDir = ${appDir}")
             val appDoc = new ODocument("App")
             val appProps = Files.readAllLines(appDir.resolve(appPropertiesFilename))
                 .stream.map(_.split(" = "))
@@ -57,6 +58,7 @@ object ExportApps {
             appDoc.save()
             val appORID = appDoc.getIdentity
             Files.list(appDir).filter(_.getFileName.toString != appPropertiesFilename).iterator().asScala.map { appSourceDir =>
+		println(s"~~~> appSourceDir = ${appSourceDir}")
                 val appSourceDoc = new ODocument("AppSource")
                 appSourceDoc.field("app", appORID)
                 appSourceDoc.field("dependencies", "")
