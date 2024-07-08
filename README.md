@@ -2,16 +2,13 @@
 
 This contains a copy of all the source code for all the Telew apps.
 
-## Updating
 
-The source code can be updated using [ImportAllApps] script.
+## DSL Sync Server
 
-## Latest
+You can also run the [script][DslSyncServer] that connects with backend instances of Telew apps and provides syncing functionallity with this GitHub repo to the platform.
 
-Having all versions at once makes it difficult to search and so you can use the `latest` branch to view only the latest
-version of each app.
+## Manual updates
 
-To delete all versions other than the latest run the [DeleteAllButLatest] script.
+The source code can be updated imported or exported manually using provided scripts. No pre-made scripts for that as we expect you to run it through DSL sync server, so launch those manually.
 
-[ImportAllApps]: ./src/main/scala/ImportAllApps.scala
-[DeleteAllButLatest]: ./src/main/scala/DeleteAllButLatest.scala
+[DslSyncServer]: ./src/main/scala/com/dap/DslSyncServer.scala
