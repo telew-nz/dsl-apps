@@ -262,3 +262,8 @@ $RECYCLE.BIN/
 project
 target
 .env
+
+bin
+conf
+lib
+start.sh
