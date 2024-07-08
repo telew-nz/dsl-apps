@@ -1,3 +1,4 @@
+rm -rf ./sync-server
 sbt Universal/packageBin
 unzip ./target/universal/dsl-apps-1.0.zip
 mkdir sync-server
