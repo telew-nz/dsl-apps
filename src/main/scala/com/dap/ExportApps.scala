@@ -56,7 +56,7 @@ object ExportApps {
             appDoc.field("versions", "")
             appDoc.save()
             val appORID = appDoc.getIdentity
-            Files.list(appDir).filter(_.getFileName.toString != appPropertiesFilename).iterator().asScala.map { appSourceDir =>
+            Files.list(appDir).filter(Files.isDirectory(_)).forEach { appSourceDir =>
                 val appSourceDoc = new ODocument("AppSource")
                 appSourceDoc.field("app", appORID)
                 appSourceDoc.field("dependencies", "")
@@ -91,7 +91,7 @@ object ExportApps {
                         case (k, v) => appSourceDoc.field(k, v)
                     }
                 appSourceDoc.field("files", "")
-                Files.list(appSourceDir).filter(_.getFileName.toString != appSourcePropertiesFilename).forEach { appFile =>
+                Files.list(appSourceDir).filter(Files.isDirectory(_)).forEach { appFile =>
                     val name = appFile.getFileName.toString.dropRight(4)
                     val content = Files.readAllLines(appFile).asScala.mkString("\n")
                     val fileDoc = new ODocument("name", name)
