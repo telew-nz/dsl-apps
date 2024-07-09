@@ -75,10 +75,16 @@ object ExportApps {
                         case (k, v) if k == "dependencies" =>
                             if (v != "[]")
                                 v.drop(1).dropRight(1)
-                                    .split("\\}, \\{")
+                                    .split("\\}, AppSource\\{")
+                                    .flatMap(_.split("\\}, \\{"))
+                                    .map(_.stripPrefix("AppSource{"))
                                     .map(_.dropWhile(_ == '{'))
                                     .map(_.reverse.dropWhile(_ == '}').reverse)
-                                    .map(_.split(",(?=[a-z])").flatMap(prop => prop.split(":").padTo(2, "")).grouped(2).collect(x => x.head -> x.tail.head).toMap)
+                                    .map(x => {
+                                        println(s"""spl = ${x.split(",(?=[a-z])").mkString(" |@| ")}""")
+                                        println(s"""grp = ${x.split(",(?=[a-z])").flatMap(prop => prop.split(":").padTo(2, "")).grouped(2).map(_.mkString(" |@| ")).mkString("\n")}""")
+                                        x.split(",(?=[a-z])").flatMap(prop => prop.split(":").padTo(2, "")).grouped(2).collect(x => x.head -> x.tail.head).toMap
+                                    })
                                     .foreach(dep => {
                                         val dslPackage = dep.getOrElse("dslPackage", "")
                                         val version = dep.getOrElse("version", "")
