@@ -1,0 +1,3 @@
+extend object OrderImportService {
+  field resolveReferences: Bool = true
+}

@@ -1,0 +1,51 @@
+trait CashMovement extends Journal {
+  background = "#d68400"
+  func srcAccount: FinanceAccount? {canSort = true}
+  func dstAccount: FinanceAccount? {canSort = true}
+  var srcAmount: Number?
+  var dstAmount: Number?
+  var srcBankData: BankData?
+  var dstBankData: BankData?
+  func date: Date {canSort = true}
+  func hasAccount(account: FinanceAccount): Bool = srcAccount == account || dstAccount == account
+  func journalDate = date
+  func hasIssue: Bool = reconcileState.isIssue
+  report Report {
+    field bookkeeper: Person? {
+      from = Person.all.filter(is(Bookkeeper))
+    }
+    field legalEntity: LegalEntity? {
+      from = LegalEntity.ours
+    }
+    field withIssuesOnly: Bool
+    field account: FinanceAccount?
+    field state: [ReconcileState]?
+    field from: Date?
+    field to: Date?
+    
+    view list = CashMovement.all.filter(
+      (legalEntity ==? this.legalEntity)
+      && (!withIssuesOnly || hasIssue)
+      && (srcAccount ==? account || dstAccount ==? account)
+      && journalDate >=? from && journalDate <=? to 
+      && (!this.state || this.state.contains(reconcileState))
+      && isFor(bookkeeper, Bookkeeper)
+    ).sortBy(journalDate.desc) >> nav{
+      list{}
+      extension("nav")
+    }
+  }
+  func reconcileState: ReconcileState
+}
+
+extend entity BankAccount {
+  extend view form = button("Movements") {
+    CashMovement.Report(account = this.as[FinanceAccount]).list.open
+  }
+}
+extend entity CashAccount {
+  extend view form = button("Movements") {
+    CashMovement.Report(account = this.as[FinanceAccount]).list.open
+  }
+}
+

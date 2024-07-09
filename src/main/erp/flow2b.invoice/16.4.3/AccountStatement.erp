@@ -1,0 +1,91 @@
+entity CustAccStm extends HasN {
+  singular = "Statement of Account"
+  impl func nextN = increment(gen)
+  impl func numPrefix = "SOA"
+  impl func title = "$fullNum $customer $(period.end.date)"
+  override func entitySubject: String = "$legalEntity: Statement of Account" 
+  
+  ref field period: Period = {
+    (try? customer.accountTerms!.prevPeriod(now)).alt(
+      Period(start = Date.now.start(of = month) - 1_month, end = Date.now.start(of = month) - 1_minute)
+    )
+  }
+  field legalEntity: OurLegalEntity =? onlyOne
+  ref field customer: Customer by accountStatements
+  field currency: Currency = (try? customer.getCurrency).alt(our)
+  field startBalance: Money[currency]?
+  const field items: [CustAccStmItem]? inline by stm
+  object system field gen: Int?
+  compute logo: Image? = legalEntity.legalEntity.as[Company]?.logo 
+  compute bankAccounts = {
+    OurLegalEntity.ours*.accounts*.as[BankAccount].filter(forCustomerPayments && number && _.currency == this.currency)
+  }
+  compute name = "Customer Account Statement"
+  
+  impl event onSave = {
+    guard (created || dataUpdated) else return {}
+    
+    let stm <- LMoneyDebt.between(period.start, period.end)
+      .filter(
+        start.counterparty == customer.legalEntity 
+        && start.currency == currency 
+        && start.legalEntity == legalEntity)
+      .result
+    startBalance = stm*.start*.balance.sum
+    this.items = stm*.items.filter(amountDue).map {i =>
+      CustAccStmItem(date = i.date, origin = i.journal, dueDate = i.dueDate, amount = i.amountDue!)
+    }
+  }
+  
+  impl view form = nav {grid(labels = None) {
+    row {
+      h1(width = 0.5, label = "Statement of Account")
+      y (width = 0.5, margin = Bottom) {
+        logo >> field(height = 4, margin = None)
+        legalEntity.legalEntity.legalName >> field(fontStyle = H1, margin = None, visible = !logo, align = Right)
+      }
+    }
+    
+    row {
+      number >> field(width = 0.43) 
+      period >> field(width = 0.57, align = Right)
+    }
+    customer
+    
+    [(startBalance, endBalance = startBalance + items*.amount.sum, items)]
+    >> total {
+        group {
+          row(fontSize = 1, position = Head) {
+            label("Opening Balance", align = Right), period.start.date, startBalance
+          }
+          row(fontSize = 1) {
+            label("Total Due", align = Right), period.end.date, endBalance
+          }
+        }
+        table {
+          origin?.title >> field(width = 0.55, label = "Document") 
+          dueDate?.date >> field (label = "Due date", width = 0.18)
+          amount >> field(width = 0.27, label = "Amount Due")
+        }
+    }
+    
+    row {
+      label("Bank Accounts", width = 0.73, fontStyle = Label, align = Right)
+      bankAccounts >> list(width = 0.27, align = Right){
+        number 
+      }
+    }
+  }}
+}
+
+extend entity Customer {
+  field accountStatements: [CustAccStm]? read by customer 
+}
+
+inline entity CustAccStmItem {
+  field stm: CustAccStm by items
+  field date: Date
+  field origin: Journal
+  field dueDate: Date?
+  field amount: Money[stm.currency]
+}

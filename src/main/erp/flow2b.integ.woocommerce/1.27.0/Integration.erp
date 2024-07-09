@@ -1,0 +1,117 @@
+entity WooCommerceIntegration extends ECommerceIntegration[Int] {
+  ref field url: Url
+  impl field initialDownload: WooInitialDownload? inline by service
+  impl func title = url
+  func endpoint: Url = {
+    let bu: Url = url.dropPrefixes(["http://", "https://"]).dropSuffix("/")!
+    "$(bu)/wp-json/wc/v2"
+  }
+  field consumerKey: String
+  field consumerSecret: String
+  field featuredTag: ProductTag?
+  
+  impl field hasBrands: Bool = false
+  //impl func shouldDeleteProducts = true
+  impl func shouldDeleteVariations = true
+  impl back func error(job: ISystemJob, error: Any): JobError = {
+    let code = error.as[HttpResponse]?.code
+    if (let e = error.as[JobError]) e
+    else if (code == 404 || code == 500 || code == 503 || code == 508) {
+      touch
+      saveMain
+      let delta: Duration = 5_minute
+      let date = Date.now + delta*(1 + job.repeatCount)
+      Activity.comment("Server error $code, will try again at $date")
+      RepeatJob(times = 4, on = date, reason = error)
+    }
+    else ReportError(error = error)
+  }
+  impl back func error(error: Any) {
+    ignoreWarnings
+    value = ReportError(error = error)
+  }
+  
+  override back func checkoutUrl(product: ISubProduct): Url? = {
+    let url1: Url = if (url.startsWith("http://") || url.startsWith("https://")) url else "https://$url"
+    if (let v = product.as[IComplexSubProduct]) {
+      if (let sid = v.superProduct.extId(this), let vid = v.extId(this)) {
+        "$url1/cart/?add-to-cart=$sid&variation_id=$vid"
+      }
+    } else if (let pid = product.extId(this)) {
+      "$url1/cart/?add-to-cart=$pid"
+    }
+  }
+
+  func https(path: Url?): HttpRequest = {
+    HttpRequest(url = "$endpoint$path", ssl = true).param("consumer_key", consumerKey).param("consumer_secret", consumerSecret)  
+  } 
+  system field ordersSchedule: DownloadOrdersSchedule inline by service
+     
+  impl view mainView = grid(labels = Top){
+    url
+    consumerKey
+    consumerSecret
+    initialDownload
+  } 
+  override view productViewEx = grid(labels = Top){
+    featuredTag
+    hasBrands
+  }
+  impl object view list = WooCommerceIntegration.all >> nav{list{grid(labels = None){
+    x {url serviceState}
+  }}}
+   
+  impl func uploadProductJobs(change: BatchChange[ProductUpdate[ISuperProduct]]): [SystemJob]? = {
+    change.createdOnly.sliding(1).map{a =>
+      UploadProductsJob(service = this, change = a)
+    } + 
+    change.updatedOnly.groupBy(this, _.product.collectPhotos.all(_.extId(this))).toSeq.flatMap {c =>
+      if (c.#0) {
+        c.#1.sliding(5).map{a =>
+          UploadProductsJob(service = this, change = a)
+        }
+      } else {
+        c.#1.sliding(1).map{a =>
+          UploadProductsJob(service = this, change = a)
+        }
+      }
+    } +
+    change.deletedOnly.sliding(1).map{a =>
+      UploadProductsJob(service = this, change = a)
+    }
+  }
+  impl func uploadVariationJobs(change: BatchChange[ProductUpdate[ISubVariation]]): [SystemJob]? = {
+    change.groupBy(this, product.superProduct).toSeq.map(
+      UploadVariationsJob(service = this, superProduct = _.#0, change = _.#1)
+    )
+  }
+  impl func uploadCategoryJobs(change: BatchChange[IProductCategory]): [SystemJob]? = {
+    [UploadCategoriesJob(service = this, change = change)] 
+  }
+  impl func uploadTagJobs(change: BatchChange[IProductTag]): [SystemJob]? = {
+    [UploadTagsJob(service = this, change = change)] 
+  }
+  impl func uploadShippingClassJobs(change: BatchChange[ShippingClass]): [SystemJob]? = {
+    [UploadShippingClassesJob(service = this, change = change)] 
+  }
+  impl func uploadBrandJobs(change: BatchChange[IBrand]): [SystemJob]? = {
+    if (hasBrands) {
+      change.created.map(b => UploadBrandJob(service = this, brand = b)) + if (let d = change.deleted) [DeleteBrandsJob(service = this, brands = d)]
+    }
+  }
+ 
+  impl func uploadAttrJobs(change: BatchChange[ProductAttr]): [SystemJob]? = {
+    [UploadAttrsJob(service = this, change = change)] 
+  }
+  impl func uploadAttrTermJobs(change: BatchChange[ProductAttrTerm]): [SystemJob]? = {
+    change.groupBy[Int, ProductAttr](this, _.object).toSeq.map(
+      UploadAttrTermsJob(service = this, attr = _.#0, change = _.#1)
+    )
+  }
+  impl func downloadOrdersJobs(from: Date?) : [SystemJob]? = [DownloadOrdersJob(service = this, from = from)]
+  impl func downloadCustomersJobs : [SystemJob]? = [DownloadCustomersJob(service = this)]
+  impl func uploadOrderStateJobs(orders: [SalesOrder]) : [SystemJob]? = [UploadOrdersStateJob(service = this, orders = orders)]
+  
+  impl func downloadPaymentMethodJobs: [SystemJob]? = [DownloadPaymentMethodsJob(service = this)]
+  impl func downloadDeliveryMethodJobs: [SystemJob]? = [DownloadDeliveryMethodsJob(service = this)]
+}

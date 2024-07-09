@@ -1,0 +1,116 @@
+extend enum DashboardIssue {
+  case NegativeStockMovement(role = BusAdmin, priority = major) = "Some products were unavailable at the moment"
+  case DeliveryUnavailable(role = BusAdmin, priority = default) = "Some products are unavailable"
+  case DeliveryAvailableLater(role = BusAdmin, priority = default) = "All products will be available later than planned"
+}
+
+extend trait IBaseOutgoingDelivery {
+  impl func issues = if (!isBeforeInit) {
+    if (availability == Unavailable || availability == UnavailableProdItems) {
+      if (deliveryStatus == Planned) [DeliveryUnavailable] else [NegativeStockMovement]
+    } else if (availability == AvailableLater) {
+      [DeliveryAvailableLater]
+    }
+  }
+  impl func fixes(issue: DashboardIssue) = {
+    if (issue == NegativeStockMovement) {
+      if (let uis = invUnavailableItems) {
+        let sos <- doSupplyOptions(dispatchDate)
+
+        [Fix(text = "Check inventory movements for incorrect sequience of operations, incorrect variation selected or other errors in the data", acts = 
+          uis.flatMap(product.products.keys.toSeq).map {p =>
+            Act(label = p.title, do = ProdMovement(product = p).list.open)
+          }
+         )] + sos.map{s => 
+          Fix(text = "Transfer from $(s.store) of $(s.legalEntity) could be missed", acts = [
+            Act(label = "Transfer", do = {
+              let tr <- this.createTransfer(dispatchDate, s.legalEntity, s.store)
+              tr.form.open
+            })
+          ])
+         } +
+         Fix(text = "If you cannot find out the reason, create a stocktake before the transaction and set estimated items cost", acts = [
+            Act(label = "Create Stocktake", do = createStocktake.form.open)
+         ])
+      }
+    } else if (issue == DeliveryUnavailable || issue == DeliveryAvailableLater) {
+      let sos <- doSupplyOptions(null)
+      (if (issue == DeliveryAvailableLater) if (let d = earliestDispatchDate) {
+        [Fix(text = "Change the dispatch date from $dispatchDate to $d", acts = if (let dp = this.as[IBaseOutgoingDelivery with IDeliveryPath]) [
+          Act(label = "Change dispatch date", do = UI.save{
+            dp.dispatchDate = d
+            dp
+          })
+        ])]
+      }) 
+      + sos.map{s => 
+        Fix(text = "Transfer the unavailable products from $(s.store) of $(s.legalEntity)", acts = [
+          Act(label = "Transfer", do = {
+            let tr <- this.createTransfer(null, s.legalEntity, s.store)
+            tr.form.open
+          })
+        ])
+      }
+      + Fix(text = "Purchase products from a supplier")
+    }
+  }
+   
+  func createStocktake = {
+    Stocktake(
+      date = dispatchDate - 1_minute, 
+      legalEntity = legalEntity, store = deliverySrc!,
+      items = invUnavailableItems*.outStocks
+        .filter(outlook < 0)
+        .map{i =>
+          StocktakeItem(product = i.product, unit = i.product.unit, 
+                        qty = (i.fact - i.outlook).positive, differencePrice = i.product.productCost?.cost)
+        }
+    )
+  }
+  func createTransfer(date: Date?, legalEntity: OurLegalEntity, store: IStore): Future[Transfer] = {
+    let sogs <- supplyOptionGoods(date, legalEntity, store)
+    let le = this.deliverySupplier!.our!
+    Transfer(
+      source = store, destination = this.deliverySrc!, legalEntity = legalEntity,
+      toLegalEntity = if (le != legalEntity) le
+      dispatchDate = dispatchDate - 1_minute, deliveryDate = dispatchDate - 1_minute,
+      items = sogs
+        .filter(stockReg?.outlook > 0)
+        .map(TransferItem(product = product, unit = unit, 
+                          qty = qty.min(stockReg?.outlook!).positive!))!
+    )
+  }
+  
+  compute supplyOptions = if (deliveryStatus == Planned) doSupplyOptions(null)
+  func doSupplyOptions(date: Date?) = {
+    let ss <- invUnavailableItems
+      *.outStocks
+       .filter(outlook < 0)
+       .map{u => 
+         let sts <- Query(u.product).map(_.calcStocks(null /*date too slow*/)).result
+         sts.map(reg = _, unavailableQty = -u.outlook)
+       }
+       .allCompleted
+    ss.flatMap(_)
+       .groupBy(reg.legalEntity, reg.store)
+       .agg(availableAllQty = map(i => i.reg.stock.outlook.clamp(0, i.unavailableQty)).sum).toSeq
+       .filter(availableAllQty > 0 && (store != this.deliverySrc || legalEntity.legalEntity != this.deliverySupplier))
+       .sortBy(availableAllQty.desc)
+  } 
+  func supplyOptionGoods(date: Date?, legalEntity: OurLegalEntity, store: IStore) = {
+    invUnavailableItems
+      *.outStocks
+       .filter(outlook < 0)
+       .map{i =>
+         let stockReg <- Query(i.product).map(_.calcStock(null /*date too slow*/, Inventory, legalEntity, [store])).result
+         (i.product, i.product.unit, qty = -i.outlook!, stockReg)
+       }
+       .allCompleted
+  }
+}
+
+extend trait IOutgoingDelivery {
+  impl func activeRoles = if (!isBeforeInit) {
+    if (deliveryStatus == Planned && canDispatch) [StoreOperative] 
+  }
+}

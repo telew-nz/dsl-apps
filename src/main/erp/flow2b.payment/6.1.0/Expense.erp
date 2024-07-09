@@ -1,0 +1,17 @@
+inline entity PaymentExpense {
+  field payment: OutgoingPayment
+  field expense: IExpenseType
+  field amount: Money[payment.currency] =? -payment.unrecociledAmount
+    
+  register cashLedger = LCash(journal = payment, account = payment.account.ledgerAccount,
+          financeAccount = payment.account, trAmount = -amount, cashFlowCategory = GeneralExpenses)
+  register expenseLedger: LExpenses <- {
+    let baseAmount <- amount.to[Money[payment.legalEntity.getCurrency]](payment.date)
+    LExpenses(account = GeneralExpenses, journal = payment, trAmount = baseAmount, expenseType = expense)
+  }
+  register trading = {
+    if (payment.legalEntity.currency != payment.currency) {
+      CurrencyTrading.spotTrade(payment, -amount, -expenseLedger.trAmount)
+    }
+  }
+}

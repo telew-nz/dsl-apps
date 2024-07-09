@@ -1,0 +1,15 @@
+variableProduct VariableGood(skuPrefix = "VGD") {
+	variation GoodVariation {}
+}
+
+
+extend entity VariableGood extends RuntimeAttributeExtension {
+  singular = "Variable Product"
+  plural = "Variable Products"
+}
+
+ 
+extend entity GoodVariation {
+  singular = "Product Variation"
+  plural = "Product Variations"
+}

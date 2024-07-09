@@ -1,0 +1,41 @@
+entity SlottedPriceModel extends ISlottedPriceModel with TRentPriceModel {
+  field title: String
+  ref field date: Date[day] = now
+  func currency: Currency = vendor.getCurrency
+  field durations: [DurationSlot]
+  field period: Period = Period(start = Date.now.start(of = day), end = Date.now.start(of = day) + 1_day) {
+    label = "Sample Period"
+  }
+  field slots: [RentSlot] {validate = validateSlots}
+  field pricesIncludingGst: Bool = (try? vendor.pricesIncludingGst).alt(true)
+  field products: [SlottedProductPrice]? inline by model {
+    available(All)
+  }
+  func price(product: IBaseProduct): IPrice? = {
+    products.find(p => p.product == product)
+  }
+  func createProduct(product: IBaseProduct, prices: [DurPrice]?, bond: Money[currency]?): SlottedProductPrice = {
+    SlottedProductPrice(model = this, product = product, prices = prices, bond = bond)
+  }
+  
+  func addProduct(product: IBaseProduct): SlottedProductPrice = {
+    SlottedProductPrice(model = this, product = product)
+  }
+  
+  view form = nav{grid{
+    title
+    row {
+      date
+      vendor
+      pricesIncludingGst
+    }
+    durations
+    period
+    slots
+    products >> list(mode = EditSelect){formEx}
+  }}
+}
+
+inline entity SlottedProductPrice extends TRentProductPrice with ISlottedProductPrice {
+  system field model: SlottedPriceModel by products
+}

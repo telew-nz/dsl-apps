@@ -1,0 +1,28 @@
+object UFunnel {
+  object func select[O extends IOpportunity[S], S extends Enum](opObject: O.object, stageObject: S.object) = {
+    passthrough(opObject, stageObject)
+     .leftJoin(longevity(opObject, stageObject), 
+             on = left.stage == right.stage, 
+             map = (left.stage, left.inputWidth, right?.longevity) ).query
+  }
+  
+  object func passthrough[O extends IOpportunity[S], S extends Enum](opObject: O.object, stageObject: S.object) = {
+    opObject.all
+     .groupBy(stage).agg(ops = count, curOps = filter(!lost).count, lostOps = filter(lost).count)
+     .rightJoin(stageObject.all, on = left.stage == right, map = (stage = right, left?.ops, left?.curOps, left?.lostOps))
+     .sortBy(stage.desc).accum(passedOps = ops.sum)
+     .reverse.accum(wasLost = lostOps.sum)
+     .map(stage, inputWidth = (100.00*passedOps/(passedOps + wasLost - lostOps)) + "%").query
+  }
+  
+  object func longevity[O extends IOpportunity[S], S extends Enum](opObject: O.object, stageObject: S.object) = {
+  	opObject.all
+      .flatMap(o => 
+         o.revisions(stage)
+           .filter(end.isDefined && value <= o.stage)
+           .map(stage = value, longevity = end!.diff(begin).day) 
+      )
+      .groupBy(stage).agg(longevity = longevity.distributionStats.map(_ + " days")).query
+  }
+}
+

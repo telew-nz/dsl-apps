@@ -1,0 +1,63 @@
+entity Method extends Entity with IMethod {
+  object field gen: Int?
+  const ref field n: Int? = increment(Method.gen)
+  compute number = "MT$n"
+  ref field name: String?  
+  impl func title = if (let n = name) "$number $name" else "$number $methodMainProduct"
+
+  impl field materials: [MethodMaterial]? inline by method
+  impl field resources: [MethodResource]? inline by method {
+    singular = "Resource"
+  }
+  impl field outputs: [MethodOutput] inline by method
+  
+  
+  impl view form = nav {grid(width = 1.2) {
+    row {number name}
+    outputs >> table{
+      outputProduct >> field(width = 0.6) qty >> field(width = 0.2) gstEditor >> field(width = 0.2, label = "Transfer GST") costWeight  >> field(width = 0.2)
+    }
+    materials >> table{
+      material >> field(width = 0.6) qty >> field(width = 0.2) gstEditor >> field(width = 0.2, label = "Transfer GST")  space(width = 0.2)
+    }
+    resources >> table{
+      resource >> field(width = 0.6) duration >> field(width = 0.2) space(width = 0.4)
+    }
+  }}
+}
+
+inline entity MethodMaterial extends IProdAmountQtyItem with IMethodMaterial  {
+  field method: Method
+  impl field material: Material by methodMaterials {
+    touchCascade = false
+    available(Ref).with(product.unit, product.altUnits)
+    update = {
+      productUpdated()
+    }
+  }
+  impl func product = material.product
+  impl func updateGstRate(): Void = {}
+}
+
+inline entity MethodOutput extends IProdAmountQtyItem with IMethodOutput {
+  field method: Method
+  impl field outputProduct: OutputProduct by methodOutputs {
+    touchCascade = false
+    label = "Product"
+    available(Ref).with(product.unit, product.altUnits)
+    update = {
+      productUpdated()
+    }
+  }
+  impl field costWeight: Dec[2] = 1
+  impl func product = outputProduct.product
+  impl func updateGstRate(): Void = {}
+}
+
+inline entity MethodResource extends IMethodResource {
+  field method: Method
+  impl field resource: Resource by methodResources {
+    touchCascade = false
+  }
+  impl field duration: UDuration[DateUnit.hour]
+}

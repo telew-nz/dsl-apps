@@ -1,0 +1,34 @@
+extend enum StockType {
+  case Resource
+  case Person
+}
+
+trait Event extends Entity with HasN {
+  background = "#498898"
+  icon = "calendar-alt"
+  
+  impl func nextN = increment(Ticket.gen)
+  func period: Period
+  field alerts: [EventAlert]? inline by event {
+    default = [EventAlert()]
+  }
+  
+  report Report {
+    field of: IProductItem =? Person.current
+    field from: Date? = Date.now.start(hour) - 1_hour
+    field to: Date?  
+    impl view list = ProdItemReg.all
+      .filter(item == of && date >=? from && date <=? to && qty < 0)
+      .sortBy(date)
+      .map(doc) >> nav{
+        list(canAdd = false) {
+          traitItem
+      	}
+        add("Appointment") {
+          Appointment.incomplete().form.open
+        }
+      }
+  }
+}
+
+

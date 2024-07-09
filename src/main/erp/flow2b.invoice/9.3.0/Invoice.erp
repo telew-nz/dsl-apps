@@ -1,0 +1,149 @@
+trait IInvoice extends IInvoiceRevision with Debt with DebtOrigin {
+  background = "#d68400"
+  plural = "Invoices"
+  singular = "Invoice"
+   
+  func canceled: Bool = items.all(canceled) && allItems
+  func paidAmount: Money[currency]?
+  compute receivedAmount: Money[currency]? = setoffs.filter(amount > 0)*.amount.sum
+  compute refundedAmount: Money[currency]? = -setoffs.filter(amount < 0)*.amount.sum
+  func setoffs: [Setoff]?
+  func debtDueDate = dueDate
+  func references: [String]?
+  func isPurchase: Bool
+  func prev: InvoiceRevision? = revisions.last
+  field revisions: [InvoiceRevision]? inline by invoice
+  func cashFlows(amount: Money): [CashFlowAmount] = {
+    items
+      .groupBy(cashFlow).agg(invoiceAmount.sum).toSeq
+      .distribute[Money](amount, by = invoiceAmount)
+      .map(i => CashFlowAmount(category = i.cashFlow, amount = i.value))!
+  }
+  func invoice: IInvoice = this
+  func overpaid = paidAmount > total
+  func paid = paidAmount >= total
+  func unpaidAmount = total - paidAmount
+  func vendor: LegalEntity
+  func customer: LegalEntity
+  func deliveryDate: Date? = if (items.all(delivered)) items*.delivery*.deliveryDate.max
+  func allItems: [IInvoiceItem]?
+  func deliveries: [IDelivery]? = allItems.filter(active)*.delivery.distinct
+  func delivered: Bool = allItems.all(!active || delivered)
+  compute paidAmounts: [IInvoiceItem: Money[currency]?]? = {
+    var a = paidAmount - items.filter(invoiceAmount < 0)*.invoiceAmount.sum
+    items.filter(invoiceAmount > 0).map{i => 
+      let v = a.min(i.invoiceAmount)
+      a = (a - v)
+      (i, v)
+    }.toMap
+  }
+  func paidAmountForItem(item: IInvoiceItem): Money[currency]? = paidAmounts.apply(item)
+  
+  ref compute issueState: InvoiceIssueState = {
+    if (!revisions) InvoiceNotIssued
+    else if (allItems.exists(i => !i.revisions || (!i.active && i.revisions.last == this.revisions.last))) InvoiceModified
+    else InvoiceIssued
+  }  
+  
+  field paymentTerms: IPaymentTerms?
+  stored compute dueDate: Date? = {
+    if (!paid && revisions) paymentTerms?.paymentDueDate(revisions.last!.date, deliveryDate)
+  }
+  ref stored compute overdueState: PaymentOverdueState {
+    value = {
+      if (paidAmount == total) Paid
+      else if (let dd = dueDate) {
+        if (dd < now) PaymentOverdue else NoPaymentOverdue
+      }
+      else NoPaymentOverdue
+    }
+    visible = overdueState == PaymentOverdue
+  }
+  func canDispatch: Future[Bool] = {
+    (if (let terms = paymentTerms, let t = total) terms.canDispatch(this)
+    else Future(true))
+  } 
+  compute prepaymentDate: Date? = {
+    if (let prepayment = paymentTerms?.deliveryPrepayment, let a = total*prepayment) {
+      setoffs.accum(amount.sum).find(amount >= a).map(#0.date)
+    } else date
+  } 
+  
+  func onSave = {
+    processRevision()
+  }
+  
+  func processRevision(): Void = {
+    if (revisions) {
+      items.foreach {item =>
+        if (item.revisions && item.needsRevision && !item.canceled) {
+          let newItem = item.copy(revisions = [], prev = null)
+          newItem.prev = item.rollback
+          item.active = false
+        }
+      }
+    } else if (setoffs) {
+      createRevision.save
+    }
+  }
+  func uiCurrentRevision: Future[InvoiceRevision] = {
+    if (issueState != InvoiceIssued) {
+      UI.save(createRevision)
+    } else {
+      revisions.last!
+    }
+  }
+  
+  func createRevision: InvoiceRevision = {
+    InvoiceRevision(
+      prev = revisions.last,
+      invoice = this, items = this.items, currency = this.currency, 
+      date = if (revisions) Date.now else setoffs*.date.min.alt(Date.now)
+    )
+  }
+  //func debtLedger: LDebt
+  view revisionsView = revisions >> table (action = form.open) {
+    number >> field(width = 0.2) date >> field(width = 0.4) 
+    diffTotal >> field(label = "Difference", showPlus = true, width = 0.3) total >> field(width = 0.3)
+  }
+  func issue(): Void = {
+    let revision <- uiCurrentRevision
+    revision.form.print()
+  }
+  
+  view invoiceButtons = group {
+    button("Issue", visible = issueState != InvoiceIssued) {issue()}
+    add("Payment", visible = balance) {addPayment()}
+    generalLedgerButton
+  }
+  
+  func addPayment(): Void = {
+    if (isPurchase) {
+      let a = balance
+      let setoffs = [Setoff(credit = this, amount = a)] 
+      if (a < 0) IncomingPayment(amount = -a, credits = setoffs).form.open
+      else if (a > 0) OutgoingPayment(amount = a, credits = setoffs).form.open
+    } else {
+      let a = -balance
+      let setoffs = [Setoff(debit = this, amount = a)]
+      if (a < 0) OutgoingPayment(amount = -a, debits = setoffs).form.open
+      else if (a > 0) IncomingPayment(amount = a, debits = setoffs).form.open
+    }
+  }
+  
+  report Report {
+    field bookkeeper: Person? {
+      from = Person.all.filter(is(Bookkeeper))
+    }
+    field state: [PaymentState]?
+    field from: Date?
+    field to: Date?
+    
+    view list = IInvoice.all.filter(
+      journalDate >=? from && journalDate <=? to 
+      && (!this.state || this.state.contains(reconcileState.paymentState))
+      && isFor(bookkeeper, Bookkeeper)
+    ).sortBy(journalDate.desc) >> nav{list(canAdd = false){}}
+  }
+}
+

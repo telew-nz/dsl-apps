@@ -54,3 +54,4 @@ account Sales(template = "Sales", credit = acc(Sales, 0))
 account OperatingRevenue(template = "Sales", credit = acc(OperatingRevenue, 10)) 
 account NonOperatingRevenue(template = "Sales", credit = acc(NonOperatingRevenue, 20)) 
 account ExceptionalRevenue(template = "Sales", credit = acc(ExceptionalRevenue, 30)) 
+

@@ -1,0 +1,155 @@
+trait ISlottedPriceModel extends IPriceModel {
+  impl func isSalesModel = false
+  impl func isRentModel = true
+  
+  func period: Period
+  compute cycle: UDuration[day] = period.duration!.to[UDuration[day]]
+  func durations: [DurationSlot]
+  func slots: [RentSlot]
+  func currency: Currency
+  func pricesIncludingGst: Bool
+  override ref compute rentDurUnits: [DurUnit]? = durations*.rentUnit.toSet
+ 
+  func validateSlots: String? = {
+    if (slots.exists(!this.period.contains(period.start))) "Slots periods should be inside the period"
+  }
+   
+  override func rentDur(dispatch: ScheduleDate, ret: ScheduleDate, unit: DurUnit?, forceUnit: Bool): UQty = {
+    if (
+      let sc = slots(dispatch.date, ret.date)
+        .map(this.toSlotsCount(charge))
+        .sum
+    ) {
+      let u = (if (forceUnit) durations.find(d => d.rentUnit == unit) else durations.sortBy(slotsCount.desc).find(d => d.slotsCount <= sc && d.rentUnit == unit))
+        .or(durations.sortBy(slotsCount.desc).find(_.slotsCount <= sc))
+        .alt(durations.first)
+      sc.as[UQty[u.rentUnit]]/u.slotsCount
+    } else {
+      1.as[UQty[unit.alt(durations.first.rentUnit)]]
+    }
+  }
+  private func delta(date: Date): UDuration[day]? = {
+    (date.sub(period.start).days/cycle).round(floor, 0).positive*cycle
+  }
+  private func slot(date: Date): RentSlot? = {
+    let delta: Duration[day]? = delta(date)
+    slots.sortBy(period.start.desc).mapOpt{s => 
+      let p = s.period.add(delta)
+      if (p.contains(date)) s.copy(period = p)
+    }.first
+  }
+  private func slotOrNext(date: Date): RentSlot = {
+    let delta: UDuration[day]? = delta(date)
+    let slot = slots.sortBy(period.start.desc).mapOpt{s => 
+      let p = s.period.add(delta)
+      if (p.contains(date)) s.copy(period = p)
+    }.first.or {
+      slots.sortBy(period.start).mapOpt{s => 
+        let p = s.period.add(delta)
+        if (p.start > date) s.copy(period = p)
+      }.first
+    }.alt {
+      let s = slots.sortBy(period.start).first
+      s.copy(period = s.period.add(delta + cycle))
+    }
+  }
+  
+  private func slots(start: Date, end: Date): [RentSlot]? = if (start < end) {
+    let slot = slotOrNext(start)
+    if (slot.period.start < end) slot + slots(slot.period.end + 1_second, end)
+  }
+  
+
+  impl func rentRetDate(dispatch: ScheduleDate, retSchedule: ISchedule, qty: UQty?): Date = {
+    adjustToSchedule(
+      retSchedule, qty, 
+      moveDate(
+        date = dispatch.date, 
+        slotsCount = toSlotsCount(qty), 
+        first = true)
+    ).max(dispatch.date)
+  }
+  private func moveDate(date: Date, slotsCount: UQty[Slot]?, first: Bool): Date = {
+    let slot = slotOrNext(date)
+    let sc = toSlotsCount(slot.charge)
+    if (slotsCount >= sc ) {
+      moveDate(slot.period.end + 1_second, (slotsCount - sc).positive, first = false)
+    } else if (slotsCount > 0 && sc) {
+      (slot.period.start.max(date) + slot.period.duration*slotsCount/sc!).as[Date]
+    } else {
+      date
+    }
+  }
+  
+  private func adjustToSchedule(returnSchedule: ISchedule, qty: UQty?, date: Date): Date = {
+    let d = date.as[Date]
+    if (returnSchedule.isWorkingDate(d)) {
+      d
+    } else {
+      returnSchedule.prevPeriod(d)?.end.alt(d)
+    }
+  }
+  func toSlotsCount(qty: UQty?): UQty[Slot]? = {
+    if (qty) slotsCount(qty.unit!.as[DurUnit]!)*qty
+  }
+  func slotsCount(unit: DurUnit): UQty[Slot]? = {
+    durations.find(u => u.rentUnit == unit)?.slotsCount
+  }
+}
+
+class RentSlot {
+  field period: Period {label = "Period"}
+  field unit: DurUnit = default
+  field charge: UQty[unit]? {
+    canEditUnit
+    default = 1
+  }
+  impl view form = grid(labels = None) {
+    row {period >> field(frame = false, width = 0.6) charge >> field(width = 0.2) }
+  }
+  
+  impl func toString = "$period => $charge"
+}
+
+class DurationSlot {
+  field rentUnit: DurUnit = default
+  field slotsCount: UQty[Slot] = 1
+  impl view form = grid(labels = None) {
+    row {rentUnit >> field(compact = true) slotsCount >> field(align = Right)}
+  }
+}
+
+interface ISlottedProductPrice extends IPriceRent {
+  impl func model: ISlottedPriceModel
+  override func currency = model.currency
+  //func overnightCharge: UMoney[currency]? = if (let oc = model.night?.charge) durationPrice(oc)
+  func prices: [DurPrice]?
+  func gstRate: UPercent[2]?
+  
+  protected func durationPrice(duration: UQty?): SalesPrice = {
+    guard (let sc = model.toSlotsCount(duration)) else return SalesPrice()
+    
+    let ps = prices.map(price, slotsCount = model.toSlotsCount(_.dur)).sortBy(slotsCount.desc)
+    if (let pp = ps.find(sc >= slotsCount).or(ps.last), let slotsCount = pp.slotsCount) {
+      pp.price.mul(sc.as[UDec[8]]/slotsCount)
+    } else {
+      SalesPrice()
+    }
+  }
+  
+  impl back func rentAmount(currency: Currency, inclGst: Bool, customer: ICustomer?, qty: UQty, period: RentPeriod): Future[SalesPrice] = {
+    let am = durationPrice(period.dur)
+    let a <- am.mul(qty).to(currency, now)
+//    let nm = overnightCharge*nightsCount*itemsQty
+//    let n <- nm.to[UMoney[currency]](now)
+    a.convertGst(gstRate, model.pricesIncludingGst, inclGst)
+  }
+
+  impl back func rentPrices(currency: Currency, inclGst: Bool): Future[[DurPrice]?] = {
+    prices.map{p => 
+      let p0 <- p.price.to(currency, now)
+      p.copy(price = p0) 
+        .convertGst(gstRate, model.pricesIncludingGst, inclGst)
+    }.allCompleted      
+  }
+}

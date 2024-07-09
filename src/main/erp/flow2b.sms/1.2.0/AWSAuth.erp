@@ -1,0 +1,62 @@
+// *** Signing AWS Requests with Signature Version 4 ***
+// docs: https://docs.aws.amazon.com/general/latest/gr/sigv4_signing.html
+// example(python): https://docs.aws.amazon.com/general/latest/gr/sigv4-signed-request-examples.html
+
+trait AWSAuth extends IAuth {
+  func awsAccessKeyID: String
+  func awsSecretAccessKey: String
+  
+  func awsRegion: String
+  func awsService: String
+  func awsServiceScope: String
+  
+  impl func authRequest(request: HttpRequest): Future[HttpRequest] = {
+    let dt = Date.now().timezone("UTC")
+    let amzDate = dt.format("yyyyMMdd'T'HHmmss'Z'")
+    let dateStamp = dt.format("yyyyMMdd")
+    
+    let uri = request.url.dropPrefix(["https://", "http://", "www."])
+    let host = (" " + uri)( .."/"?) // (only for indentation) FIXME: `uri[ .."/"?)`
+    
+    // *** TASK 1: CREATE A CANONICAL REQUEST ***
+    let canonicalURI = "/" + uri("/".."?"?)
+    let canonicalQueryString = uri("?".. ) // TODO: process request.params for GET queries
+    
+    let headers = request.headers.add(["x-amz-date" -> amzDate, "host" -> host])
+    let canonicalHeaders: String? = headers.keys.sort.map { k => 
+      let val = headers(k)
+      k.lower + ":" + val.trim
+      // TODO: convert sequential spaces to a single space in val
+    }.join("\n") + "\n"
+    
+    let signedHeaders = headers.keys.sort*.lower.join(";")
+    let payloadHash =  request.body.as[Data].sha256.hex
+    let canonicalRequest = [request.method, canonicalURI, canonicalQueryString, canonicalHeaders, signedHeaders, payloadHash].join("\n")
+    
+    // *** TASK 2: CREATE THE STRING TO SIGN ***
+    let algorithm = "AWS4-HMAC-SHA256"
+    let credentialScope = "$dateStamp/$awsRegion/$awsServiceScope/aws4_request"
+    let stringToSign = [algorithm, amzDate, credentialScope, canonicalRequest.sha256.hex].join("\n")
+    
+    // *** TASK 3: CALCULATE THE SIGNATURE ***
+    let signingKey = getSignatureKey(dateStamp)
+    let signature = stringToSign.hmac(signingKey).sha256.hex
+    
+    // *** TASK 4: ADD SIGNING INFORMATION TO THE REQUEST ***
+    let authorisationHeader = "$algorithm Credential=$awsAccessKeyID/$credentialScope, SignedHeaders=$signedHeaders, Signature=$signature"
+    request.headers = request.headers.add(["x-amz-date" -> amzDate, "host" -> host, "Authorization" -> authorisationHeader])
+    request 
+  }
+  
+  
+  back func sign(signKey: Data, msg: String): Data = msg.hmac(signKey).sha256
+  
+  back func getSignatureKey(dateStamp: String): Data = {
+    let kDate    = sign("AWS4${awsSecretAccessKey}".toData, dateStamp)
+    let kRegion  = sign(kDate, awsRegion)
+    let kService = sign(kRegion, awsServiceScope)
+    let kSigning = sign(kService, "aws4_request")
+    
+    kSigning
+  }
+}

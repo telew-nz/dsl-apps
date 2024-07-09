@@ -1,0 +1,9 @@
+entity Discussion {
+  field title: String
+  field description: Text?
+  report Report {
+    view list = Discussion.all >> nav{list {
+      title
+    }}
+  }
+}

@@ -1,0 +1,59 @@
+extend entity POIInvoice {
+  const field purchaseOrder: PurchaseOrder? {
+    views = []
+  }
+  field legalEntity: OurLegalEntity? {
+    default = onlyOne
+    views = []
+  }
+  field store: IStore? {
+    default = onlyOne
+    views = []
+  }
+
+  extend override view form = nav{grid{
+    issuesView
+    x { poi >> field(stretch = 1) number >> field(fontStyle = Label)}
+    purchaseOrder
+    invoiceType >> field(label = "")
+    row {
+      invoiceNumber invoiceDate dueDate
+    }
+    row {
+      y (label = "Vendor") {
+        vendorNumber >> field(fontStyle = Label)
+        vendor
+      } rowsWithGst poNumber
+    }
+    row {legalEntity store space}
+    row {
+      totalNoGst gst totalWithGst 
+    }
+    /*[(items*.amount.sum, items)].toSeq >> total {
+      row {
+        space space space amount
+      }*/
+    items >> table {
+      y (label = "Description", width = 0.6, margin = None) {
+        code >> field(fontStyle = Label) 
+        desc
+        product
+      }
+      qty >> field(width = 0.1) 
+      gstRateEditor >> field(width = 0.1, label = "GST") 
+      amount >> field(width = 0.2) 
+    }
+    //}    
+  }}
+}
+ 
+extend entity POIInvoiceItem {
+  field product: ISubProduct? {
+    init = {
+      new.addRefNum(code)
+      if (let desc) {
+        try? new.silentUpdate(title, desc)
+      }
+    } 
+  }
+}

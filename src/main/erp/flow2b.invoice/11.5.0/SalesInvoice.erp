@@ -1,0 +1,56 @@
+trait ISalesInvoice extends IInvoice {
+  func hasSalesIssues = paymentState == Overpaid || overdueState == PaymentOverdue
+  func isPurchase: Bool = false
+  func startingBalance: Money[currency]? = -total
+  stored compute paidAmount: Money[currency]? 
+    
+  event onSave = {
+    processRevision()
+    
+    if (isInstant) {
+      paidAmount = balanceChange
+      postOnSave()
+    } else if (revisions.first?.as[IInvoiceRevision].alt(this)?.moneyLedger?.calced) {
+      paidAmount = balanceChange - debtLinksAmount
+      postOnSave()
+    }
+  }
+  compute vendor = legalEntity
+  func customer: Customer?
+  func payee = legalEntity
+  func debtAllowance: Money? = payer?.as[Customer]?.debtAllowance
+  
+  func setoffs: [Setoff]? = credits
+  func originLedgers(journal: Journal, date: Date, amount: Money): Future[[Ledger]?] = {
+    if (!isInstant) {
+      [LDebt(account = AccountsReceivable, origin = this, journal = journal, isSetoff = true, 
+             legalEntity = this.legalEntity, date = date, trAmount = amount, 
+             counterparty = this.debtCounterparty!, currency = currency)]
+    } else {
+      let lgs <- instantLedgers(journal, date)
+      revisions*.gstLedgers(journal, date) + lgs
+    }
+  }
+  func isInstantPaid: Bool = {
+    !debits && (if (let c = credits.onlyOne) c.amount == total && (c.credit.date - this.date).abs <= 3600_second else false)
+  }
+  func instantLedgers(journal: Journal, date: Date): Future[[Ledger]?] 
+  
+  func cashFlow = Sales
+  
+  func getPaymentTerms = paymentTerms
+    .or(payer?.as[Customer]?.paymentTerms)
+    .or(if (debtAllowance) legalEntity.customerAccountPaymentTerms else legalEntity.customerCashPaymentTerms)?.as[IIPaymentTerms]
+    .alt(DefaultPaymentTerms)
+  //func debtLedger: LDebt = receivableLedger
+  //func isTheir = customer?.isTheir
+  
+  view statusesView = x {
+    issueState
+    paymentState
+    unpaidAmount 
+    overdueState
+  }
+  
+  view ref = x{title statusesView}
+}

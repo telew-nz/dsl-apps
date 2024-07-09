@@ -1,0 +1,44 @@
+inline trait NZLegalStructure {
+  field incomeTaxBasis: IncomeTaxBasis?
+  field gstBasis: GstBasis?
+  field pricesIncludingGst: Bool {
+    default = true
+    label = "Display prices including GST"
+  }
+} 
+ 
+extend class LegalInfo {
+  field irdNumber: String? {views = []}
+  field gstNumber: String? {views = [] visible = gstStatus == Registered}
+  extend view form = group{
+    irdNumber
+    gstStatus
+    gstNumber
+  }
+  extend view gstView = group{
+    gstNumber
+    address
+  }
+  extend view gstCustomerView = group{
+    address
+  }
+}
+
+
+inline entity NZCompany extends NZLegalStructure with ICorporation {
+  singular = "Company"
+  plural = "Companies"
+}
+
+inline entity NZTrust extends NZLegalStructure with ICorporation {
+  singular = "Trust"
+  plural = "Trusts"
+}
+inline entity NZSoleTrader extends NZLegalStructure with ISoleTrader {
+  singular = "Sole Trader"
+  plural = "Sole Traders"
+}
+inline entity NZPartnership extends NZLegalStructure with IPartnership {
+  singular = "Partnership"
+  plural = "Partnership"
+}

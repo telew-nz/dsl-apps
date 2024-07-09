@@ -1,0 +1,14 @@
+enum BankStatementType(back field canProcess: (file: File, data: Data?) => Bool, 
+                       back field process: (file: File, data: Data?) => ProcessResult, 
+                       knowOurAccount: Bool) 
+{
+
+}
+
+class ProcessResult {
+  field account: FinAccount?
+  field accountNumber: String?
+  field items: [BankStatementItem]?
+  field directions: [PaymentDirection] = [Incoming, Outgoing]
+}
+

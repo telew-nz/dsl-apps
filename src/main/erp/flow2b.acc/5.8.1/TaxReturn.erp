@@ -1,0 +1,33 @@
+enum TaxReturnStatus {
+  case Entered {
+    background = "#ed9"
+  }
+  case InProgress {
+    background = "#dea"
+  }
+  case Filed {
+    color = "white"
+    background = "#090"
+  }
+  case Canceled {background = "#ddd"}
+}
+
+trait TaxReturn extends Entity with Journal with DashboardItem {
+  field date: Date {
+    default = now
+    label = "Return date"
+  }
+  impl func journalDate = date
+  impl func itemRoles = [Accountant]
+  ref field status: TaxReturnStatus {
+    default = InProgress
+    update = {
+      if (new == Filed) {
+        date = now
+      }
+    }
+  }
+  
+  impl func activeRoles = if (status == Entered || status == InProgress) [Accountant]
+}
+

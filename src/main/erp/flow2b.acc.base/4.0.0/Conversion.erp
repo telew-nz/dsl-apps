@@ -1,0 +1,10 @@
+back object Conversion extends IConversion {
+  func do(version: [Int?]?) = {
+    if (version < [4,0,0]) {
+      MJournal.all.foreach{j =>
+        j.legalEntity = conv(j).field[LegalEntity]("legalEntity").our!
+        j.save
+      }
+    }
+  }
+}

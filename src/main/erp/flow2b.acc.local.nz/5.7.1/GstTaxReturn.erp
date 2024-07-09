@@ -1,0 +1,80 @@
+entity GstTaxReturn extends TaxReturn with Journal {
+  impl func title = "GST $(year.unformattedString) $legalEntity"
+  ref compute year = period.end.year
+  impl ref field legalEntity: OurLegalEntity =? OurLegalEntity.onlyOne
+  func filingDuration: Duration = {
+    if (let d = try? legalEntity.as[OurCompany]!.legalStructure!.as[NZLegalStructure]!.gstFilingPeriod!.duration) d 
+    else 6_month
+  }
+  field period: Period = {
+    let d = filingDuration
+    let taxYearStart: Date = Date.now.start(of = DateUnit.year) - 9_month
+    let perN = ((Date.now - taxYearStart).months / d).round(floor, 0) 
+    Period(start = taxYearStart + d*(perN - 1), end = taxYearStart + d*perN)
+  }
+   
+  field gst101: GST101Y17 inline by gstReturn {
+    availableFor = Inline
+    visible = id
+  }
+  
+  impl view traitItem = y{h3("Gst Tax Return") x{title status}}
+  impl view ref = x {title status}
+  impl view form = nav{
+    tabs {
+      grid(labels = Top, label = "Settings"){
+        issuesView
+        date
+        status
+        period
+        legalEntity
+      }
+      gst101 >> field(label = "GST101A")
+    }
+    button("Recalculate", visible = id) {
+      back {
+        this.recalc()
+      }
+    } 
+    generalLedgerButton
+  }
+  
+  impl event onSave = {
+    let _ <- if (created) {
+      recalc()
+    }
+    /*ledgers = 
+      if (ir4.tax || ir4.taxedAmount) {
+        [LTax(tax = IncomeTax, journal = this, currency = NZD, amount = -ir4.tax, taxedAmount = -ir4.taxedAmount)]
+      } +
+      if (let tax = ir4.f32b + ir4.provTaxBalance) {
+        [LTax(tax = ProvisionalTax, journal = this, currency = NZD, amount = -tax)]
+      } +
+      if (let tax = ir4.tax + ir4.f32b + ir4.provTaxBalance) {
+        [LBasic(account = IncomeTaxExpense, journal = this, amount = tax)]
+      }
+      */
+  }
+  
+  register ledgers: [Ledger]?
+  
+  back func recalc(): Future[Void] = {
+    this.touch()
+    date = now
+    gst101.defaultAllFields()
+    gst101.calc()
+  }
+  
+  impl func issues = {
+    (if (gst101.hasErrors) [DashboardIssue.AccountingErrors])
+  }.toSet
+  
+  impl func fixes(issue: DashboardIssue) = {
+    if (issue == AccountingErrors) [
+      Fix(
+        text = "Fix all accounting issue in $period"
+      )
+    ]
+  }
+  
+}

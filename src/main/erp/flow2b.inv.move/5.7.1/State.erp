@@ -1,0 +1,47 @@
+enum GoodAvailability(isIssue: Bool) {
+  case Unavailable(isIssue = true) {
+    background = "#e99"
+  }
+  case AvailableLater(isIssue = true) {
+    background = "#e99"
+  }
+  case Waiting(isIssue = false) {
+    background = "#ed9"
+  }
+  case Available(isIssue = false) {
+    background = "#dea"
+  }
+  case ToDispatch(isIssue = false) {
+    background = "#dea"
+  }
+  case Dispatched(isIssue = false) {
+    color = "white"
+    background = "#090"
+  }
+}
+
+enum DispatchState {
+  case NotReady {
+    background = "#999"
+  }
+  case ToDispatch {
+    background = "#dea"
+  }
+  case Dispatched {
+    color = "white"
+    background = "#090"
+  }
+}
+
+enum OverdueState {
+  case NoOverdue {
+    background = "#dea"
+  }
+  case Overdue {
+    background = "#e99"
+  }
+  case Delivered {
+    color = "white"
+    background = "#090"
+  }
+}

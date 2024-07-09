@@ -1,0 +1,48 @@
+back object Conversion extends IConversion {
+  func do(version: [Int?]?) = {
+    if (version < [4,0,0]) {
+      LegalStructure.all.foreach{s =>
+        if (let our = conv(s).field[Company]("company").our) {
+          s.company = our
+          s.save
+        } else {
+          s.delete
+        }
+      }
+    }
+    if (version < [4,1,0]) {
+      FinanceAccount.all.foreach{a => 
+        let legalEntity = conv(a).field[LegalEntity]("legalEntity")
+        if (let our = legalEntity.our) {
+          a.legalEntity = our
+          a.save
+        } else {
+          let ba = a.convertTo(BankAccountPaymentMethod)
+          legalEntity.payementMethods = legalEntity.payementMethods + ba
+          ba.save
+          legalEntity.save
+        }
+      }
+    }
+    if (version < [4,2,0]) {
+      Company.all.foreach {c =>
+        if (let gstStatus = field[String?](c.legalInfo, "gstStatus")) {
+          if (!c.our) {
+            c.makeVendor.gstStatus = if (gstStatus == "Registered") Registered else NotRegistered
+            c.save
+          }
+        }
+      }
+      Person.all.foreach {c =>
+        if (let li = c.soleTrader) {
+          if (let gstStatus = field[String?](li, "gstStatus")) {
+            if (!c.our) {
+              c.makeVendor.gstStatus = if (gstStatus == "Registered") Registered else NotRegistered
+              c.save
+            }
+          }
+        }
+      }
+    }
+  }
+} 

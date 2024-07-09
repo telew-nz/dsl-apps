@@ -1,0 +1,130 @@
+interface MailTemplate extends AnyRef {
+  func links: EmailLinks = HtmlLinks
+  func track(url: Url, to: IEmailContact): Url = {
+    guard (shallTrack(url) let p = to.contactAddressee?.addresseeActor) else return url
+    
+    var tr: Url = "?f2bu=$(p.uuid)"
+    if (!url.contains("&utm_") && !url.contains("?utm_")) {
+      tr = tr + "&utm_source=message&utm_medium=email&utm_content=link"
+    }
+    if (url.contains("?")) url.replace("?", "$tr&")!.as[Url]
+    else if (url.contains("#")) url.replace("#", "$tr#")!.as[Url]
+    else (url + tr).as[Url]
+  }
+  func shallTrack(url: Url): Bool = false
+  back func apply(from: Contact, to: [IEmailContact], subject: String?, text: Text?): Html?
+  func person(from: Contact): Person? = from.as[EmailContact]?.person.or(from.as[User]?.person)
+  func companyPerson(from: Contact): CompanyPerson? = {
+    from.as[EmailContact]?.addressee?.as[CompanyPerson]
+      .or(from.as[User]?.person?.companies.find(_.company.our))
+  }
+  func company(from: Contact): Actor? = companyPerson(from)?.company
+    .or(from.as[EmailContact]?.addressee?.as[Actor])
+    .or(OurActor.our?.actor)
+  func phones(from: Contact, companyContacts: [Contact]?): [Phone]? = {
+    companyPerson(from)?.contacts*.as[PhoneContact]
+      .or(companyContacts*.as[PhoneContact])*.phone
+  }
+  func toHtml(s: String?): String? = {
+    let r: Html? = s
+    r.as[String]
+  }
+  func companyUrl(from: Contact): Url? = {
+    if (let u = company(from)?.contacts*.as[WebsiteContact]*.url.first) {
+      if (u.contains("//")) u else "http://$u"
+    }
+  }
+  func companyHref(from: Contact): Html? = {
+    if (let t = companyUrl(from)) {
+      if (links == TextLinks) "$(t)<br/>" 
+      else if (links == HtmlLinks) '<a href="$t">$(if (t.contains("//")) t("//" .. ] else t)</a><br/>'
+    }
+  }
+}
+
+enum EmailLinks {
+  case HtmlLinks
+  case TextLinks
+  case NoLinks
+}
+
+interface IMailTemplateStd extends MailTemplate {
+  func closing: String = "Regards"
+  func exposePhone: Bool = true
+  back func innerSignature(from: Contact): Html = {
+    let person: Html? = if (let pn = person(from)?.name) "$pn<br/>"
+    let cp = companyPerson(from)
+    let company: Actor? = company(from)
+    let jobTitle: Html? = {
+      if (let t = cp?.jobTitle) "$t, $(cp!.company.title)<br/>" 
+      else if (let com = company) "$(com.title)<br/>"
+    }
+    let phone: Html? = if (exposePhone) if (let t = phones(from, company?.contacts).first) "$t<br/>"
+    let companyUrl: Html? = companyHref(from)
+    '$closing,<br/>$person$jobTitle$phone$companyUrl'
+  }
+  back func signature(from: Contact): Html = {
+    '<p class="flow2b-signature">$(innerSignature(from))</p>'
+  }
+  impl back func apply(from: Contact, to: [IEmailContact], subject: String?, text: Text?): Html? = {
+'<div style="width: 640px; max-width: 98%; margin: 0 auto;">
+$text
+<p></p>
+$(signature(from))
+</div>'
+  }
+}
+
+class MailTemplateStandard extends IMailTemplateStd {
+  singular = "Standard"
+  impl field closing: String = "Regards"
+  impl field exposePhone: Bool = true
+  impl field links: EmailLinks {
+    default = HtmlLinks
+    label = "Links format (less chance to be determined as spam)"
+  }
+}
+
+class MailTemplateHtml extends MailTemplate {
+  singular = "Html"
+  impl field links: EmailLinks {
+    default = HtmlLinks
+    label = "Links format (less chance to be determined as spam)"
+  }
+  field html: Html = 
+'<html>
+<head></head>
+<body>
+<div style="width: 640px; max-width: 100%; margin: 0 auto">
+\$text
+<p></p>
+<div class="flow2b-signature">
+  <div style="float: right">
+    <a href="\$url?utm_source=message&utm_medium=email&utm_content=logo">
+      <img src="???" width="190"/>
+    </a>
+  </div>    
+  <p style="min-height: 84px">
+    Regards,<br/>
+    \$name<br/>
+    \$jobTitle, \$company<br/>
+    \$phone
+    \$website
+  </p>
+</div>
+</div>
+</body>
+</html>
+'
+  impl back func apply(from: Contact, to: [IEmailContact], subject: String?, text: Text?): Html? = {
+    html
+      .replace("\$text", text.as[String])
+      .replace("\$name", toHtml(person(from)?.name))
+      .replace("\$firstName", toHtml(person(from)?.firstName))
+      .replace("\$jobTitle", toHtml(companyPerson(from)?.jobTitle?.title))
+      .replace("\$company", toHtml(company(from)?.title))
+      .replace("\$phone", (phones(from, company(from)?.contacts).map(toHtml(_)).join("<br/>") ?+ "<br/>").as[String])
+      .replace("\$website", companyHref(from).as[String])
+      .replace("\$url", companyUrl(from).as[String])
+  }
+}

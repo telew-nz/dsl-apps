@@ -1,0 +1,58 @@
+class PhoneNumberValidationJob extends SystemJob {
+  impl field service: SMSService
+  
+  field phoneContact: IPhoneContact
+  field countryCode: String
+  
+  impl func do = {
+    validate()
+  }
+  
+  back func validate(): Future[Phone?] = {
+  	let number = phoneContact.phone
+    let variants = CountryCodes.generatePhoneVariants(countryCode, number)
+    let phoneInfo <- validatePhones(variants)
+    
+    phoneContact.phoneE164 = phoneInfo.phone
+    phoneContact.countryCode = phoneInfo.countryCode
+    phoneContact.carrier = phoneInfo.carrier
+    phoneContact.save()
+    
+    phoneInfo.phone
+  }
+  
+  private back func validatePhones(phones: [Phone]?): Future[(phone: Phone?, countryCode: String?, carrier: String?)] = {
+  	if (phones.isEmpty) return (null[Phone], "", "")
+    
+    let phoneNumber = phones.first!
+    let isE164 = phoneNumber.startsWith("+")
+    
+    let validateRequest = NumberValidateRequest(
+      isoCountryCode = countryCode
+      phoneNumber = phoneNumber
+    )
+    let res <- service.https("v1/phone/number/validate").post(validateRequest.json).recover(_.as[HttpResponse])
+    let vr = res.body!.parseJson[NumberValidateResponse] 
+
+    if(res.code == 200 &&
+       vr.phoneType != "INVALID" &&
+       (isE164 || vr.countryCodeIso2 == countryCode)) (vr.cleansedPhoneNumberE164, vr.countryCodeIso2, vr.carrier)
+    else validatePhones(phones.drop(1))
+  }
+}
+
+class NumberValidateRequest {
+  extFieldNaming = UpperCamelCase
+  
+  field isoCountryCode: String?
+  field phoneNumber: String
+}
+
+class NumberValidateResponse {
+  extFieldNaming = UpperCamelCase
+
+  field countryCodeIso2: String?
+  field carrier: String?
+  field cleansedPhoneNumberE164: String?
+  field phoneType: String?
+}

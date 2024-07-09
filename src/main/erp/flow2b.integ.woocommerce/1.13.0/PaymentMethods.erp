@@ -1,0 +1,22 @@
+/*back class DownloadPaymentMethodsJob extends SystemJob {
+  field service: WooCommerceIntegration
+  
+  func do: Future[Any] = {
+    let response <- service.https("/payment_gateways").get
+    response.body!.parseJson[[PaymentMethodData]?]*.make(service)
+  }
+}
+
+back class PaymentMethodData extends WooData {
+  extFieldNaming = Underscore
+  field id: String
+  field title: String
+  field enabled: Bool
+  field description: PlainText?
+  
+  object func make(service: WooCommerceIntegration): CategoryData? = if (enabled) {
+    service.updatePaymentMethod(id) {m =>
+      m.name = title
+    }
+  }
+}*/

@@ -1,0 +1,353 @@
+back interface OrderProcessorBase extends OrderProcessor {
+  impl func process = {
+    if (let pages = text.split("\f").mapOpt(_).mapOpt(lines(_))) {
+      nextInvs(pages)
+    }
+  }
+  
+  func nextInvs(pages:[[String]]): [POIInvoice] = {
+    let page = pages.first
+    if (let tail = pages.drop(1), let n = page.takeWhile(!isTableHeader(_)).count.positive) {
+      let htf = tail.first.span(!isTableHeader(_))
+      let d0 = htf.#0.count.as[UDec[8]]/n
+      let d = if (d0 > 1) 1.as[UDec[8]]/d0! else d0
+      if (d < 0.5) {
+        let pph = page.span(!isTableHeader(_))
+        let newPage: [String] = pph.#0! + pph.#1.takeWhile(!isTableFooter(_)) + htf.#1.dropWhile(!canBeTableLine(_))
+        nextInvs([newPage] + tail.drop(1))
+      } else {
+        [makeInv(page)] + nextInvs(tail)
+      }
+    } else {
+      [makeInv(page)]
+    }
+  }
+  
+  func makeInv(lines: [String]): POIInvoice = {
+    let inv = POIInvoice(poi = poi)
+    let htf = lines.span(!isTableHeader(_))
+    let headerLines = htf.#0
+    let tf = htf.#1.drop(1).span(!isTableFooter(_))
+    
+    guard (let tableLines0 = makeTableLines(tf.#0)) else return inv
+    let tableLines = filterTableLines(tableLines0)
+    
+    let footerLines = tableLines.last.tail + tf.#1
+    tableLines.last.tail = []
+    
+    let nums = tableLines.map{l =>
+      extractLineNum(l).alt(LineNum(line = l))
+    }
+    
+    let infoLines = headerLines + footerLines
+    if (let total = extractTotal(infoLines)) {
+      if (nums*.amount.sum == total.withGst) {
+        inv.rowsWithGst = true
+      } 
+      if (total.gst && nums.all(!gstRate)) {
+        nums*.gstRate = total.gstRate
+      }
+      inv.totalNoGst = total.noGst
+      inv.gst = total.gst
+    } else if (nums.all(type) let type = nums*.type.distinct.onlyOne) {
+      inv.rowsWithGst = type == withGst
+      let total = Total(noGst = nums*.amountNoGst.sum.positive, gst = nums*.gst.sum.positive)
+      if (checkTotal(infoLines, total)) {
+        inv.totalNoGst = total.noGst
+        inv.gst = total.gst
+      }
+    }
+    
+    let totalMatch = inv.totalWithGst && nums*.amount.sum in [inv.totalWithGst, inv.totalNoGst]
+    nums.foreach{ln =>
+      if (!totalMatch || ln.qty) {
+        ln.makeItem(inv, extractLineDesc(ln))
+      }
+    }
+    extractInfo(inv, infoLines)
+    
+    let tf = text.flex
+    inv.invoiceType = {
+      if (tf.contains("tax invoice")) TaxInvoice
+      else if (tf.contains("credit note")) CreditNote
+      else if (tf.contains("debit note")) DebitNote
+    }
+    
+    //inv.text = text
+    inv
+  }
+  
+  func intPattern = "\d+"
+  func decPattern = "\\\$?\d{1,3}(,?\d{3})*\.\d{2,4}"
+  func percentPattern = "\d+(.\d+)?\s?%"
+  func codePattern = "^[\^]?\s*(([A-Z0-9]{1,3}\s+)?[A-Z0-9-#.*]+)(\s|\$)"
+  func tableLinePattern = ".*\s" + decPattern
+  func wordSepPattern = "[\s=]"
+  func datePattern = "(\S*)\s*date\s*:?\s*([^\s]+)"
+  func numberPattern = "([A-Za-z.]+)(\s+[A-Za-z.]+)?((:\s*)|\s+)(([A-Z.-]*[0-9]{2,}[A-Z]*([-.\s]|\$))+)"
+  func invoiceNumberTerms = ["tax invoice", "invoice no", "invoice", "reference", "number"]
+  func vendorNumberTerms = ["gst number", "abn"]
+  func headerTerms = ["description"]
+  func footerTerms = ["charged to account", "total excluding", "total including", "total exclusive", "total gst", "comments", "E &O E", "E&OE", "carry forward"]
+  
+  field rTableLine = Regex(tableLinePattern)
+  field rDec = Regex(decPattern)
+  field rInt = Regex(intPattern)
+  field rWordSep = Regex(wordSepPattern)
+  field rPercent = Regex(percentPattern)
+  field rCode = Regex(codePattern)
+  field rDate = Regex(datePattern)
+  field rNumber = Regex(numberPattern)
+  
+  
+  func lines(text: PlainText): [String]? = {
+    text.lines(None).mapOpt(_)
+  }
+  func isTableHeader(line: String): Bool = {
+    let l = line.flexWholeWords
+    headerTerms.exists(l.contains(_))
+  }
+ 
+  func isTableFooter(line: String): Bool = {
+    let l = line.replace(".", " ").flexWholeWords
+    footerTerms.exists(l.contains(_))
+  }
+  func canBeTableLine(line: String): Bool = {
+    line.length > 20 && line.matches(rTableLine) //ends with *0.00 or *0.0000
+  } 
+  func wordType(word: String): LineWordType = {
+    if (word.matches(rDec)) dec
+    else if (word.matches(rInt)) int
+    else if (word.matches(rPercent)) percent
+    else if (word =%= "nett" || word =%= "net" || word == "-") any
+    else str
+  }
+  func splitToWords(line: String): [String] = {
+    line.split(rWordSep).mapOpt(_)!
+  }
+  func cmp(a: UMoney[4]?, b: UMoney[4]?): Bool = a.round(round, 2) == b.round(round, 2)
+  func doExtractLineNum(line: TableLine, qtys: [UNumber]?, decs: [UDec[4]]?): LineNum? = {
+      //qty*price + gst == amount
+      qtys.distinct.mapOpt{qty =>
+        if (let i = decs.combinations(3)*.permutations.find(i => i(1)*qty > i(2) && cmp(i(1)*qty + i(2), i(3)))) {
+          LineNum(line = line, qty = qty, amount = i(3), gstRate = i(2).as[UPercent[2]]/(i(1)*qty), type = withGst, gst = i(2))
+        }
+      }.first
+    .or {
+      //qty*(price + gst) == amount
+      qtys.distinct.mapOpt{qty =>
+        if (let i = decs.combinations(3)*.permutations.find(i => i(1) > i(2) && cmp((i(1) + i(2))*qty, i(3)))) {
+          LineNum(line = line, qty = qty, amount = i(3), gstRate = i(2)/i(1), type = withGst, gst = i(2)*qty)
+        }
+      }.first
+    }.or {
+      //qty*price - discount == amount
+      qtys.distinct.mapOpt{qty =>
+        if (let i = decs.combinations(3)*.permutations.find(i => cmp((i(1)*qty - i(2)).positive, i(3)))) {
+          LineNum(line = line, qty = qty, amount = i(3))
+        }
+      }.first
+    }.or {
+      //qty*price*(100% - discount) == amount
+      qtys.distinct.mapOpt{qty =>
+        line.percents.mapOpt {discount =>
+          if (let i = decs.combinations(2)*.permutations.find(i => cmp(i(1)*qty*((1 - discount).positive), i(2)))) {
+            LineNum(line = line, qty = qty, amount = i(2))
+          }
+        }.first
+      }.first
+    }.or {
+      //qty*price == amount
+      qtys.distinct.mapOpt{qty =>
+        if (let i = decs.combinations(2)*.permutations.find(i => cmp(i(1)*qty, i(2)))) {
+          LineNum(line = line, qty = qty, amount = i(2))
+        }
+      }.first
+    }.or {
+      //qty*price/pricePerQty == amount
+      qtys.combinations(2)*.permutations.mapOpt{qi =>
+        if (let i = decs.combinations(2)*.permutations.find(i => cmp(i(1)*qi(1)/qi(2), i(2)))) {
+          LineNum(line = line, qty = qi(1), amount = i(2))
+        }
+      }.first
+    }
+  }
+  
+  func extractLineNum(line: TableLine): LineNum? = {
+    let decs: [UDec[4]]? = line.decs
+    (if (let qtys = line.ints) {
+       doExtractLineNum(line, qtys, decs)
+    }).or {
+      //qty is decimal
+      decs.distinct.mapOpt {qty =>
+        var first = true
+        doExtractLineNum(line, [qty], decs.filter{d =>
+          if (d == qty && first) {
+            first = false
+            false
+          } else {
+            true
+          }
+        })
+      }.first
+    }.or{
+      //amount*gstRate == gst
+      if (let pers = line.percents.distinct) {
+        pers.filter(_ <= 0.4).mapOpt{gstRate =>
+          if (let i = decs.combinations(2)*.permutations.find(i => cmp((i(1)*gstRate), i(2)))) {
+            LineNum(line = line, qty = 1, amount = i(1), gstRate = gstRate, type = noGst, gst = i(2))
+          }
+      	}.first
+      }
+    }
+  }
+  func extractLineDesc(num: LineNum): LineDesc? = {
+    let nums = num.qty.toSeq + num.amount.toSeq + (if (let r = num.gstRate, let rr = r) [rr*100])
+    let desc = ([num.line.words.takeWhile((try? _.toUNum) !in nums).join(" ")] + num.line.tail).join("\n")
+    let code = desc.all(rCode).onlyOne?.group(1)
+    LineDesc(line = num.line, code = code, desc = if (code) desc.replace(rCode, "").trim else desc)
+  }
+  func extractTotal(lines: [String]?): Total? = {
+    if (let i = lines*.all(rDec)*.toString*.toUNum.combinations(3)*.permutations
+      .filter(i => i(1) > i(2) && i(3) >= i(1))
+      .find(i => i(1) + i(2) == i(3))
+    ) {
+      Total(noGst = i(1), gst = i(2))
+    }
+  }
+  func checkTotal(lines: [String]?, total: Total): Bool = {
+    let decs = lines*.all(rDec)*.toString*.toUNum
+    [total.noGst , total.withGst].exists(n => n in decs)
+  }
+  
+  func extractInfo(inv: POIInvoice, lines: [String]?): Void = {
+    lines.foreach {line =>
+      let ll = line.lower
+      ll.all(rDate).foreach {d =>
+        if (d.group(1) == "due") {
+          if (!inv.dueDate) {
+            inv.dueDate = try? Date(d.group(2)!)
+          }
+        } else {
+          if (!inv.invoiceDate) {
+            inv.invoiceDate = try? Date(d.group(2)!)
+          }
+        }
+      }
+    }
+    let nums = lines.flatMap {line =>
+      line.all(rNumber).map {g =>
+        (name = " " + (g.group(1).trim + " " + g.group(2).trim).trim!.replace(".", "").lower, num = g.group(5).trim!)
+      }
+    }
+    inv.vendorNumber = vendorNumberTerms.mapOpt {n =>
+      nums.find(name.endsWith(" " + n))?.num
+    }.first
+    inv.invoiceNumber = invoiceNumberTerms.mapOpt {n =>
+      nums.find(name.endsWith(" " + n) && num != inv.vendorNumber)?.num
+    }.first 
+  }
+  
+  back class TableLine {
+    field str: String
+    field tail: [String]?
+    field words: [String] = splitToWords(str)
+    field pattern = words.map(w => wordType(w)).dropWhile(_ == str).reverse
+    
+    func ints: [UInt]? = words.filter(matches(rInt)).mapOpt(toUNum)
+    func decs: [UDec[4]]? = words.filter(matches(rDec)).mapOpt(toUNum)
+    func percents: [UPercent[2]]? = words.filter(matches(rPercent)).mapOpt(toUNum.as[UDec[4]]/100)
+    func text: PlainText = ([str] + tail).join("\n")
+    func matchLevel(other: TableLine): Dec[4]? = {
+      let m = pattern.zip(other.pattern).takeWhile(left == right || left == any || right == any).count.as[UDec[4]]
+      if (m >= 3) m
+      else {
+        let q0 = (str.length.as[Dec[4]]/other.str.length)
+        let q = ((if (q0 > 1) 1/q0 else q0) + 0.3).min(1)
+        m*q
+      }
+    }
+    impl func toString = "$str\n$(tail.join('\n'))".trim
+  }
+  
+  
+  back class LineNum(line: TableLine, qty: UQty[4]?, amount: UMoney[4]?, gstRate: UPercent[2]??, gst: UMoney[4]?, type: LineAmountType?) {
+    func makeItem(inv: POIInvoice, desc: LineDesc?) = POIInvoiceItem(
+      invoice = inv, 
+      qty = qty, amount = amount, gstRate = gstRate
+      code = desc?.code
+      desc = desc?.desc
+    )
+    compute amountWithGst = if (type == withGst) amount else amount + gst
+    compute amountNoGst = if (type == withGst) amount - gst else amount
+  }
+  back class LineDesc(line: TableLine, desc: String?, code: String?)
+  back class Total(noGst: UMoney[4]?, gst: UMoney[4]?) {
+    compute withGst: UMoney[4]? = noGst + gst
+    compute gstRate: UPercent[2]? = if (let noGst) gst/noGst
+  }
+  
+  
+  func makeTableLines(lines: [String]?): [TableLine]? = {
+    guard (let tableLines = lines.dropWhile(!canBeTableLine(_))) else return []
+    
+    var tl = TableLine(str = tableLines.first)
+    var ret: [TableLine] = [tl]
+    tableLines.drop(1).foreach{line => 
+      if (tl.tail.count < 8 && canBeTableLine(line)) {
+        tl = TableLine(str = line)
+        ret += tl
+      } else {
+        tl.tail += [line]
+      }
+    }
+    ret
+  }
+  
+  func filterTableLines(lines: [TableLine]): [TableLine] = {
+    var l = lines.first
+    if (l.words.first == "1" && lines.exists(_.words.first == "2")) return {
+      var i = 1
+      var ret: [TableLine]? = []
+      lines.foreach {ll =>
+        if (ll.words.first == i.toString && ll.words.count > 1) {
+          l = ll
+          l.words = l.words.drop(1)!
+          l.str = l.str.dropPrefix(i.toString).trim!
+          ret += l
+          i += 1
+        } else {
+          l.tail = l.tail + [ll.str] + ll.tail
+        }
+      }
+      ret!
+    }
+    
+    guard (let levels = lines.drop(1).map(line => (line, level = line.matchLevel(l)))) else return lines
+    
+    let threshold = (levels*.level.max * 0.7).min(3)
+    var ret = [l]
+    levels.foreach {ll =>
+      if (ll.level >= threshold) {
+        l = ll.line
+        ret += l
+      } else {
+        l.tail = l.tail + [ll.line.str] + ll.line.tail
+      }
+    }
+    ret
+  }
+}
+
+enum LineAmountType {
+  case withGst
+  case noGst
+}
+
+enum LineWordType {
+  case dec
+  case int
+  case percent
+  case str
+  case any
+}

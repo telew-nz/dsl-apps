@@ -1,0 +1,10 @@
+trait ILocation extends ScheduleAssignee {
+  background = "#2e8e67"
+  ref field actor: Actor by locations
+  func address: Address?
+  func mutual: Bool = false
+  
+  object func ours: [ILocation]? = OurActor.our?.actor?.locations
+  object func forceOur: ILocation = our.alt(throw "Please enter a store for your company")
+  object func our: ILocation? = ours.first
+}

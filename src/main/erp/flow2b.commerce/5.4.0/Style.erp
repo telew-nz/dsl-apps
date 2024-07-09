@@ -1,0 +1,18 @@
+object CommerceStyle {
+  style incomplete {
+    css = "color: #b70;"
+  }
+  style available {
+    css = "color: #2a1;"
+  }
+  style unavailable {
+    css = "color: #f21;"
+  }
+  style reserve {
+    css = "color: #f21;"
+  }
+  style expectation {
+    css = "color: #2a1;"
+  }
+  style normal 
+}

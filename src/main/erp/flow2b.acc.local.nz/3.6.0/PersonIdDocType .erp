@@ -1,0 +1,3 @@
+extend enum PersonIdDocType {
+  case Card18 = "18+ card"
+}

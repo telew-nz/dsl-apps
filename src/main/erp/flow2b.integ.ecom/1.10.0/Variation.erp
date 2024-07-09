@@ -1,0 +1,21 @@
+extend trait ICustomerComplexProduct {
+  event onSave = {
+	if (!IUser.current.is[ECommerceIntegration] && touched) {
+      ECommerceIntegration.all.map {service =>
+        if (service.userEnabled) {
+          let po <- service.productUpdate(this, shouldDelete = service.shouldDeleteVariations, updated(photos))
+          let b = BatchChange.create(service, [po])
+          if (!b.isEmpty) service.uploadVariationJobs(b)*.run
+        }
+      }.result
+    }
+  }
+}
+
+extend trait ECommerceIntegration {
+  back func uploadAllVariations(): Future[Void] = {
+    let prods <- ICustomerComplexProduct.all.map(productUpdate(_, shouldDelete = shouldDeleteVariations, photosUpdated = true)).result
+    let b = BatchChange.createAndFilter(this, prods, item.enabled || extId)
+    if (!b.isEmpty) uploadVariationJobs(b)*.run()
+  }
+} 

@@ -1,0 +1,81 @@
+trait Debt extends Journal {
+  background = "#d68400"
+  
+  func date: Date {canSort}
+  func currency: Currency
+    
+  func startingBalance: Money[currency]?
+  ref compute balance = startingBalance + balanceChange
+  compute balanceChange = creditAmount - debitAmount
+  func origin: Debt? = debitOrigin.or(creditOrigin)
+  func cashFlows(amount: Money): [CashFlowAmount]?
+  func journalPriority: Int? = 0
+  func counterparty: LegalEntity
+  func definesDate: Bool = false
+  func canceled: Bool = false
+  func originLedgers(journal: Journal, date: Date, amount: Money): Future[[Ledger]?] 
+  func mainLedgers: Future[[Ledger]?] = []
+  
+  field debits: [Setoff]? inline by credit
+  func debitOrigin: Debt? = debits.first?.debit
+  compute debitAmount: Money[currency]? = debits.map(try? amount).sum  
+  ref stored compute reconcileState: ReconcileState = {
+    if (canceled) Canceled
+    else if (!debits && !credits) {if (!startingBalance) Reconciled else Unreconciled}
+    else if (!balance) Reconciled
+    else if ((startingBalance >= 0) == (balance > 0)) PartiallyReconciled
+    else OverReconciled
+  } 
+  compute paymentState: PaymentState = reconcileState.paymentState
+
+  func creditOrigin: Debt? = credits.first?.credit
+  field credits: [Setoff]? inline by debit
+  
+  compute creditAmount: Money[currency]? = credits.map(try? amount).sum
+   
+  func isJournal(other: Debt): Bool = {
+    journalPriority > other.journalPriority || (journalPriority == other.journalPriority 
+       && (date > other.date || (date == other.date && id > other.id)) 
+    )
+  }
+ 
+  register ledgers: [Ledger]? <- makeLedgers
+  func makeLedgers: Future[[Ledger]?] = {
+    let ls <- (
+      credits.filter(this.isJournal(credit)).flatMap[Future[[Ledger]?]](
+        [
+          credit.originLedgers(this, this.date, amount), 
+          this.originLedgers(this, this.date, -amount) 
+        ]
+      )
+      + debits.filter(this.isJournal(debit)).flatMap[Future[[Ledger]?]](
+        [
+          debit.originLedgers(this, this.date, -amount),
+          this.originLedgers(this, this.date, amount) 
+        ])
+    ).allCompleted
+    procLedgers(ls.flatMap(_))
+  }
+  func procLedgers(ledgers: [Ledger]?): Future[[Ledger]?] = {
+    if (let ledgers = ledgers) {
+      if (ledgers*.legalEntity.allTheSame) CurrencyTrading.with(ledgers)
+      else {
+        let lgs: [[Ledger]?]? <- ledgers*.legalEntity.distinct.map {le =>
+          let debts: [Ledger]? = ledgers.filter(_.legalEntity != le)
+          	.groupBy(legalEntity, currency).agg(trAmount.sum).toSeq
+            .map{
+               LDebt(account = IntercompanyDebts, journal = this, legalEntity = le, 
+                 currency = _.currency, counterparty = _.legalEntity, trAmount = _.trAmount)
+            }
+          CurrencyTrading.with(ledgers.filter(_.legalEntity == le) + debts)
+        }.allCompleted
+        lgs.flatMap(_)
+      }
+    } else Future([])
+  }
+}
+
+class CashFlowAmount {
+  field category: CashFlowCategory
+  field amount: Money
+}

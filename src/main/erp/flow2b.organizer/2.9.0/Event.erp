@@ -1,0 +1,45 @@
+trait Event extends HasTasks {
+  background = "#498898"
+  func allParticipants: [Participant]?
+  func requiredParticipants: [Participant]?
+
+  func period: Period
+  func contains(participant: Participant?): Bool = {
+    !participant || allParticipants.contains(participant!)
+  }
+  
+  compute clashes: [Event]? = {
+    Event.all.filter( 
+      _.period.intersect(this.period) && _ != this &&
+      _.requiredParticipants.intersect(this.requiredParticipants)
+    )
+  }
+  field alerts: [EventAlert]? inline by event {
+    default = [EventAlert()]
+  }
+  
+  object view widget = Event.all
+    .filter(contains(Person.current) && period.end >= Date.now)
+    .sortBy(period.start) >> nav(label = "Calendar", limit = 5, more = Calendar().list.open){
+      list{}
+      extension("buttons")
+    }
+}
+
+trait Participant extends ScheduleAssignee {
+  func autoAccept: Bool
+}
+extend entity Person extends Participant {
+  func autoAccept: Bool = !login
+}
+
+entity EventLocation extends Participant {
+  field title: String
+  field address: Address?
+  func autoAccept: Bool = true
+  view form = nav{grid{
+    title
+    address
+    schedule
+  }}
+}

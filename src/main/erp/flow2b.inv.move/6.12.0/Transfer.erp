@@ -1,0 +1,142 @@
+entity Transfer extends IOutgoingDelivery with IIncomingDelivery with Journal {
+  background = "#2e8e67"
+  func deliverySupplier: LegalEntity? = legalEntity
+  func deliveryReceiver: LegalEntity? = toLegalEntity.alt(legalEntity)
+  //Fields
+  object field gen: Int?
+  field currency: Currency = Currency.our
+  const ref field n: Int? = increment(gen)
+  compute gstAmount: Money[currency]? = items*.gstAmount.sum
+  compute totalWithoutGst: Money[currency]? = items*.amount.sum
+  ref stored compute total: Money[currency]? = totalWithoutGst + gstAmount
+  func pathCanBeExecuted: Bool = dispatchState == ToDispatch
+  
+  field legalEntity: LegalEntity {
+    default =? try? LegalEntity.ours.onlyOne!
+    from = LegalEntity.ours
+  }
+  field toLegalEntity: LegalEntity? {
+    label = "Transfer Ownership to Legal Entity"
+    from = LegalEntity.ours
+  }
+  func deliverySrc: Store? = source
+  func deliveryDst: Store? = destination
+  field source: Store {from = Store.ours}
+  field destination: Store {from = Store.ours}  
+  field items: [TransferItem]? inline by delivery 
+  func journalDate = dispatchDate
+  
+  func pathSrc: ILocation? = source
+  func pathDst: ILocation? = destination
+  func canBeDeliveredInstantly(store: Store): Bool = (try? source) && store == source
+  //Compute
+  func number = "TR" + n
+  func title = number + " " + dispatchDate.as[Date[day]]!
+  
+  //Views
+  object view list = Transfer.all >> nav{list{grid(labels = Top){
+    row{number >> field(width = 0.3) dispatchDate >> field(width = 0.3) source >> field(width = 0.4) }
+    row{legalEntity >> field(width = 0.3) toLegalEntity >> field(width = 0.3, label = "Transfer Ownership to") destination >> field(width = 0.4) }
+    statusesView
+  }}}
+  view ref = x{
+    status >> field (editMode = AlwaysEdit) dispatchState title
+  }
+   view form = nav{
+     grid (width = 1.2){
+       row{number total >> field(canEditUnit = true, visible = toLegalEntity) space}
+       statusesView
+       row {legalEntity, toLegalEntity, dispatchDate}
+       row {source, destination, deliveryDate}
+       possibleDispatchPeriods >> list(frame = false){ 
+         x {
+           start
+           label("—")
+           if (end == Date.max) "∞" else end
+           button("Set") {
+             this.dispatchDate = start
+             this.save()
+           }
+         }
+       }
+       extension
+       items
+       supplyOptionsView >> field(label = "Supply Options")
+    }
+    generalLedgerButton
+  }
+  
+  view statusesView = x(label = "State"){status availability dispatchState overdueState}
+}
+
+inline entity TransferItem extends IAmountQtyItem with IOutgoingDeliveryItem with IIncomingDeliveryItem {
+  func itemDelivery = delivery
+  func pricesIncludingGst = delivery.legalEntity.pricesIncludingGst
+  func currency: Currency = delivery.currency
+  func active: Bool = true
+  field product: IProduct {
+    available(Ref).with(unit, altUnits)
+    from = IProduct.all.filter(isTangible)
+    update = {
+      this.unit = new.unit
+      this.qty = this.qty.as[Qty[this.unit]]!
+      gstRate = product.forceGstRate(delivery.legalEntity)
+    }
+  }
+  field unit: ProductUnit {from = product.units}
+  field qty: Qty[unit] {
+    default = 1
+    label = "Quantity"
+  }
+  
+  field delivery: Transfer by items
+
+  //Register
+  func outStock(product: IProduct, baseQty: Qty): StockRegister? = {
+    StockRegister(
+      legalEntity = delivery.legalEntity, store = delivery.source, good = product,
+      sort = if (delivery.status == Planned) 1 else 0, 
+      date = delivery.dispatchDate, document = delivery,
+      factualQty = if (delivery.status == Planned) 0 else -(baseQty), 
+      reservedQty = if (delivery.status == Planned) baseQty else 0
+    )
+  }  
+  
+  func inStock(product: IProduct, baseQty: Qty): StockRegister? = {
+    StockRegister(
+      legalEntity = delivery.toLegalEntity.alt(delivery.legalEntity), store = delivery.destination, good = product,
+      sort = if (delivery.status != Delivered) 1 else 0, 
+      date = delivery.deliveryDate, document = delivery,
+      factualQty = if (delivery.status == Delivered) baseQty else 0, 
+      expectedQty = if (delivery.status == Delivered) 0 else baseQty
+    )
+  }  
+  
+  register ownershipTransfer = if (let to = delivery.toLegalEntity) {
+    if (delivery.status != Planned && product.isTangible) {
+      LInventory(journal = delivery, contraLegalEntity = to, product = product, 
+                 qty = baseQty, isDebit = false, contraAccount = CostOfGoodsSold, 
+                 contraAmount = -amount, gstRate = gstRate, gstAmount = gstAmount)
+    }
+  }
+  
+  view form = grid(width = 1.2, margin = None) {
+    row {
+      product >> field(label = "", width = 0.55) 
+      qty >> field(canEditUnit = true, width = 0.2) 
+      priceEditor >> field(width = 0.2, visible = delivery.toLegalEntity) 
+      amountEditor >> field(width = 0.25, visible = delivery.toLegalEntity)
+    }
+    stockDesc >> field(label = "")
+    availableView >> field(label = "")
+    edit {
+      panel(collapsed = !discount, label = "More", visible = delivery.toLegalEntity, frame = false, margin = None) {
+        grid(width = 1.2, margin = Bottom) {
+          row{gstEditor >> field(width = 0.2)}
+        }
+      }
+    }
+  }
+}
+
+

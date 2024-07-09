@@ -1,0 +1,10 @@
+inline entity PricesAutoUpdate extends ScheduledJob {
+  field period: Duration[hour, 0]
+  
+  field service: ECommerceIntegration by pricesAutoUpdate
+  func schedule = "0 3 */${period.unformattedString} * * ?"
+  
+  func do = {
+    service.uploadAllPrices()
+  }
+}

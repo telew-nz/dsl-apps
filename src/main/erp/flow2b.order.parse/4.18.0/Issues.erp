@@ -1,0 +1,46 @@
+object ITPOINoInvoices extends IssueType[PurchaseOrderImport] {
+  impl func title = "Unable to find invoices"
+  impl func hasIssue(item: PurchaseOrderImport) = item.state == Complete && !item.invoices
+  impl func fixes(item: PurchaseOrderImport) = [
+    Fix(text = "Make sure the uploaded field is a valid tax invoice")
+  ]
+}
+
+extend entity PurchaseOrderImport {
+  override func issueTypes = super.issueTypes + ITPOINoInvoices
+}
+
+object ITPOINoInvoiceType extends IssueType[POIInvoice] {
+  impl func title = "The document does not seem to be an Invoice"
+  impl func hasIssue(item: POIInvoice) = !item.invoiceType && item.poi.state == Complete
+  impl func fixes(item: POIInvoice) = [
+    Fix(text = "Make sure the uploaded field is a valid tax invoice"),
+    Fix(text = "Edit and select the invoice type")
+  ]
+}
+
+object ITPOINoTotal extends IssueType[POIInvoice] {
+  impl func title = "POI: Unable to extract total amount"
+  impl func hasIssue(item: POIInvoice) = !item.totalNoGst && item.items && item.poi.state == Complete
+}
+object ITPOINoTotalMatch extends IssueType[POIInvoice] {
+  impl func title = "POI: Total does not match to the sum of the items amount"
+  impl func hasIssue(item: POIInvoice) = item.poi.state == Complete && item.totalNoGst && {
+    (item.rowsWithGst && item.items*.amount.sum != item.totalWithGst)
+      || (!item.rowsWithGst && item.items*.amount.sum != item.totalNoGst)
+  }  
+}
+object ITPOINoItems extends IssueType[POIInvoice] {
+  impl func title = "POI: Unable to extract items"
+  impl func hasIssue(item: POIInvoice) = !item.items && item.poi.state == Complete
+}
+object ITPOIGstRate extends IssueType[POIInvoice] {
+  impl func title = "POI: GST rate is incorrect"
+  impl func hasIssue(item: POIInvoice) = item.items.exists(gstIssue) && item.poi.state == Complete
+}
+
+extend entity POIInvoice {
+  override func issueTypes = super.issueTypes + issueTypes0 + issueTypesAdd
+  func issueTypes0 = [ITPOINoInvoiceType, ITPOINoTotal, ITPOINoTotalMatch, ITPOINoItems, ITPOIGstRate]
+  func issueTypesAdd: [IssueType[POIInvoice]]? = []
+}

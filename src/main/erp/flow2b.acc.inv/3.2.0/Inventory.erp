@@ -1,0 +1,35 @@
+extend register LInventory {
+  field isDebit: Bool
+    
+  stored compute costQueue: QtyAmountQueue[Qty[product.unit], Money[currency]]?
+  compute qtyBalance: Qty[product.unit]? = costQueue.qty
+  func onSave: Void = {
+    if (qty) {
+      if (isDebit) {
+        costQueue = prev?.costQueue.enqueue(FIFO, qty, amount)
+      } else {
+        let r = prev?.costQueue.dequeue(qty)
+        costQueue = r.queue
+        if (let v = r.value) {
+          amount = -v
+          baseAmount = -v
+        }
+      }
+    } else if (let q = prev?.costQueue) {
+      costQueue = null
+      costQueue = costQueue.enqueue(FIFO, q.qty, prev?.balance + amount)
+    }
+    
+    if (contraAccount?.template == Product) {
+      contraLedger = LProduct(this, account = contraAccount!, trAmount = -amount, qty = qty!)
+    } 
+    balance = costQueue.amount
+    calcLedger
+  }
+  
+  register contraLedger: Ledger?
+}
+
+extend entity MLInventory {
+  func calculatedAmount = !isDebit && qty
+}

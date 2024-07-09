@@ -1,0 +1,14 @@
+back object Conversion extends IConversion {
+  func convert(version: [Int?]): Future[Any] = {
+    if (version < [1,10,1]) {
+      Payment.all.filter(srcBankData?.date).foreach{p =>
+        p.srcBankData!.date = p.srcBankData!.date!.date
+        p.touch
+      }
+      Payment.all.filter(dstBankData?.date).foreach{p =>
+        p.dstBankData!.date = p.dstBankData!.date!.date
+        p.touch
+      }
+    }
+  } 
+}     

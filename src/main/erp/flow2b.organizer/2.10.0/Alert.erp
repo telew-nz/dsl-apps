@@ -1,0 +1,39 @@
+inline entity EventAlert extends DeferredJob {
+  system field event: Event by alerts
+  field before: Duration[unit]? = 0_hour
+  field unit: DateUnit = hour
+  compute timeType: AlertTimeType {
+    value = {
+      if (!before) AtTimeOfEvent
+      else if(before.hours == 1_hour) OneHour
+      else Before
+    }
+    update = {
+      this.unit = new.duration.unit!.as[DateUnit]!
+      this.before = new.duration
+    }
+  }
+  func service = AlertService
+  func jobDate: Date? = {
+    let d = event.period.start - before
+    if (d > Date.now) d
+  }
+  func do = {
+    event.observers*.notify
+  }
+  view form = x { 
+    timeType
+    before >> field(canEditUnit = true, visible = timeType == Before)
+  }
+}
+
+object AlertService extends SystemService {
+  func title = "AlertService"
+  func roles: Set[Role]? = [Admin]
+}
+
+enum AlertTimeType(duration: Duration?) {
+  case AtTimeOfEvent(duration = 0_hour) = "At time of event"
+  case OneHour(duration = 1_hour) = "1 hour before"
+  case Before(duration = 10_minute)
+}

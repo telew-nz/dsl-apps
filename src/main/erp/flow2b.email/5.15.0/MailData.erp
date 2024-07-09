@@ -1,0 +1,81 @@
+class MailHttpData {
+  extFieldNaming = Underscore
+  field postalId: Int {extName = "id"}
+  field rcptTo: Email
+  field mailFrom: Email?
+  field token: String
+  field subject: String?
+  field messageId: String?
+  field timestamp: Duration
+  field size: String?
+  field spamStatus: String?
+  field bounce: Bool 
+  field receivedWithSsl: Bool
+  field to: String?
+  field cc: String?
+  field from: String?
+  field date: String?
+  field inReplyTo: String?
+  field references: String?
+  field listUnsubscribe: String?
+  
+  field flow2bWorkspace: String?
+  field flow2bEntity: String?
+  field flow2bId: String?
+  
+  field htmlBody: Text?
+  field attachmentQuantity: Int?
+  field plainBody: PlainText? 
+  field repliesFromPlainBody: PlainText?
+  field attachments: [MailAttachment]?
+  
+  back func toExtMsgContact(address: String?): ExtMsgContact = {
+    if (let from = (address("<" .. ">")).trim.or(address.trim).lower
+        where EmailContact.isAddressValid(from)
+    ) {
+      ExtMsgContact(name = (address[ .. "<")).trim.dropPrefix('"').dropSuffix('"').trim, address = from)
+    } else {
+      ExtMsgContact(name = address)
+    }
+  }
+  back func toExtMsg: ExtMsg = {
+    let from = {
+      let c = toExtMsgContact(from)
+      if (c.address) c else toExtMsgContact(mailFrom)
+    }
+    let to0 = toExtMsgContact(rcptTo)
+    ExtMsg(
+      channel = EMail
+      messageId = messageId
+      isSpam = spamStatus != "NotSpam"
+      from = from
+      to = to0
+      cc = (to + "," +  cc)
+        .split(",")
+        .mapOpt(_.trim)
+        .map(s => toExtMsgContact(s))
+        .filter(_.address != to0.address)
+      subject = subject
+      richText = htmlBody
+      plainText = plainBody
+      refMessageIds = references
+        .split(">").mapOpt(trim.dropPrefix(",").trim.dropPrefix("<").trim).reverse
+      flow2b = if (let flow2bWorkspace, let flow2bEntity, let flow2bId) {
+        ExtMsgFlow2b(workspace = flow2bWorkspace, dslType = flow2bEntity, id = flow2bId)
+      }
+      attachs = attachments.map{a => 
+        ExtMsgAttach(name = a.filename.alt("Untitled"), contentType = a.contentType, content = a.data.decodeMimeBase64)
+      }
+      unsubscribes = listUnsubscribe.trim.split(">").mapOpt(trim.dropPrefix(",").trim.dropPrefix("<"))
+    )
+  }
+}
+
+class MailAttachment {
+  extFieldNaming = Underscore
+  field filename: String?
+  field contentType: String?
+  field size: Int?
+  field data: String?
+}
+                   

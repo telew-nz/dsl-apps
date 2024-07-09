@@ -1,0 +1,22 @@
+entity ProductCategory {
+  field photos: [Image]?
+  field superCategory: ProductCategory? by subCategories
+  field subCategories: [ProductCategory]? read by superCategory
+  ref field name: String
+  field description: Text?
+  field products: [ISuperProduct]? by categories
+  ref compute title = if (let s = superCategory) "$s / $name" else name
+  func collectPhotos: [Image]? = {
+    if (let p = photos) p
+    else if (let p = products*.collectPhotos.first(1)) p
+    else subCategories*.collectPhotos.first(1)
+  }
+  view form = nav{grid{
+    photos
+    superCategory
+    name
+    subCategories >> list {field(title = _.name)}
+    description
+    products
+  }}
+}

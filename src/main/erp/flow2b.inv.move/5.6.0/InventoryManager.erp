@@ -1,0 +1,21 @@
+access InventoryManager {
+  menu Inventory {
+    entity Transfer
+    entity Stocktake
+    report StockReport
+    report SupplyRequirement
+    report GoodsMovement
+    report NegativeStock
+    trait ISuperProduct
+  }
+  view dashboard = row {
+    IOutgoingDelivery.all.filter(status == Planned).sortBy(dispatchDate) 
+      >> nav(label = "Outgoing Deliveries", maxHeight = 25){list(canAdd = false) {
+      x {dispatchDate ref}
+    }}
+    IIncomingDelivery.all.filter(status == Planned || status == InTransit).sortBy(deliveryDate) 
+      >> nav(label = "Incoming Deliveries", maxHeight = 25){list(canAdd = false) {
+      x {deliveryDate >> field(visible = true) ref}
+    }}
+  }
+}

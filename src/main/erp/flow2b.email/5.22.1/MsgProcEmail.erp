@@ -1,0 +1,26 @@
+back object MsgProcEmail extends MsgProcActivity {
+  impl func priority = 0.1
+  impl func parseSubject = true
+  impl func canProc(msg: ExtMsg) = msg.channel == EMail
+  
+  override func item(msg: ExtMsg, from: Contact?, recipients: [Contact], refs: [Entity]?): Entity? = {
+    if (let r = refs.onlyOne) return r 
+
+    let sub0: EmailSubscription? = EmailSubscription.all.find(containsAddress(msg.from.address)).result.get                           
+    
+    if (let listUnsubscribes = msg.unsubscribes, let email = msg.from.address) {
+      let sub = sub0.alt {
+        EmailSubscription(
+          title = msg.from.name.alt(email),
+          emails = [email]
+        )
+      }
+      sub.listUnsubscribe = listUnsubscribes.find(startsWith("http://") || startsWith("https://")).alt(listUnsubscribes.first)
+      sub.save
+    } else if (let sub = sub0) {
+      sub
+    } else {
+      super.item(msg, from, recipients, refs)
+    }
+  }  
+}

@@ -1,0 +1,141 @@
+extend trait IEmailContact {
+  impl func canSend: Bool = true
+  impl back object func send(activity: Activity, contacts: [IEmailContact]): Void = {
+    activity.from = activity.emailFrom
+    activity.deliveries = activity.deliveries + contacts.map(ActivityDelivery(channel = EMail, contact = _))
+    activity.entities.first?.touch
+    MailSendJob(service = getService(activity), activity = activity).enqueue
+  }
+  back object func getService(activity: Activity): MailService = {
+    if (let from = activity.emailFrom?.as[IEmailContact]
+        let domain = from.email('@' .. ]
+    ) {
+      if (let service = MailService.all.filter(canSend && domains.contains(domain)).result.get.onlyOne) {
+        service
+      } else {
+        throw "Cannot send email: No mail service found capable to send mail for domain $(domain)"
+      }
+    } else if (activity.user.is[User] let service = MailService.all.result.get.first) {
+      service
+    } else {
+      throw "Cannot send email: No email found for user $(activity.user)"
+    }
+  }
+        
+  back object func resend(activity: Activity): Void = {
+    MailSendJob(service = getService(activity), activity = activity).enqueue
+  }
+}
+        
+extend entity Activity {
+  func emailFrom: Contact? = {
+    user?.ourContacts*.as[IEmailContact].first.or(user.as[User])
+  }
+}
+extend entity User {
+  func emailStr(domain: Url): Url = {
+    let name = if (login.contains("@")) (login[ .. "@"))! else login
+    "$login@$domain"                                          
+  }
+}        
+ 
+back class MailSendJob extends SystemJob {
+  impl field service: MailService 
+  field activity: Activity inline
+  impl func dependsOnRegisters = false
+  impl func do = {
+    let deliveries = activity.deliveries.filter(channel == EMail)
+    let contacts: [IEmailContact] = deliveries*.contact*.as[IEmailContact]!
+    let e = activity.entities.first
+    let chain = e.activities.filter(a => a.from.in(contacts))
+    let subject = if (!e.title.startsWith("Re: ") && chain) "Re: " + e.entitySubject else e.entitySubject
+    let txt: Html? = {
+      if (let template = service.template) {
+        template.apply(activity.from!, contacts, subject, activity.comment)
+      } else {
+	    activity.comment
+      }
+    }
+    var messageId: String? = ""
+    contacts.oneByOne {contact =>
+      let el = txt.parseHtml
+      el.select("a[data-href*=EmailContact]")*.delete
+      el.select("a[data-href]").foreach {a =>
+        if (let href = a.attr("data-href")) {
+          let ps = href.split("/")
+          if (ps.count == 3) {
+            let r = Entity.load(ps.last!).result.get
+            if (r.is[Entity with Contact]) {
+              a.delete
+            } else {
+              a.attr("href", r.publicUrl(contact, readOnly = true))
+              a.attr("data-href", "")
+            }
+          }
+        }
+      }
+      let links: EmailLinks = service.template?.links.alt(HtmlLinks)
+      let flow2bLink: Html = if (links == TextLinks) {
+        'flow2b.com'
+      } else if (links == HtmlLinks) {
+        '<a href="https://flow2b.com" style="color:black" target="_new">flow2b.com</a>'
+      } else {
+        "Flow2b"
+      }
+      el.select("body").first!.append(
+'<div class="flow2b-hide" style="color: #aaaaaa; font-size: 80%; margin: 10px 0 10px 0; padding-top: 10px; border-top: 1px solid #eeeeee;">
+Delivered by $flow2bLink.
+ </div>')
+      let html = el.innerHtml
+      let attachments <- activity.files.map{file =>
+        let content <- file.content
+        MailSendAttachment(name = file.name, data = content.mimeBase64)
+      }.allCompleted
+      let request = MailSendRequest (
+        to = [contact.emailStr],
+        from = {
+          if (let c = activity.from!.as[IEmailContact]) c.emailStr.alt(activity.from!.title)
+          else activity.from!.as[User]!.emailStr(service.domains.first)
+        },
+        subject = subject,
+        tag = activity.id!.toString,
+        plainBody = html,
+        htmlBody = html,
+        headers = ([
+          "References" -> e.activities.filter(a => a.entities.first == e)*.messageId.map(mid => "<$mid>").join(" "),
+          "In-Reply-To" -> if (let mid = chain.last?.messageId) "<$mid>",
+          "to" -> contacts.first.emailStr,
+          "cc" -> contacts.drop(1).map(emailStr).join(", "),
+          "X-Flow2b-Workspace" -> Workspace.current.authId,
+          "X-Flow2b-Entity" -> activity.mainEntity.dslType.fullName,
+          "X-Flow2b-Id" -> activity.mainEntity.id.toString,
+          "X-Flow2b-From-Type" -> {
+            if (let a = activity.from!.as[EmailContact]?.addressee) {
+              if (a.is[Dashboard]) "Role"
+              else a.dslType.name
+            }
+          },
+          "X-Flow2b-From-Company" -> {
+            activity.from!.as[EmailContact]?.addressee?.as[CompanyPerson]?.company?.title
+          }
+        ] + (if (let m = messageId) ["message-id" -> "<$m>"])),
+        attachments = attachments
+      )
+      let newMessageId <- service.send(request)
+      if (!messageId) {
+        messageId = newMessageId
+      }
+      activity.messageId = messageId
+      deliveries.foreach(_.status = Sending)
+      activity.entities.first?.touch
+      activity.save
+    }
+  }
+}
+        
+extend trait IEmailContact {
+  func emailStr = if (let n = addresseeName) "$n <$email>" else email
+}
+
+
+        

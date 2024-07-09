@@ -1,0 +1,81 @@
+entity AssetRentService extends IBasicProduct {
+  background = "#649023"
+  func title = "Rent $product"
+  func isTangible = false
+  ref field product: ISuperProduct by rentService {
+    from = ISuperProduct.all.filter(isTangible && unit == Item)
+  }
+  field unit: ProductUnit {
+    default = ProductUnit.Day
+    from = [ProductUnit.Minute, ProductUnit.Hour, ProductUnit.Day]
+  }
+  field altUnits: [ProductAltUnit]? {
+    label = "Alternative Units"
+  }
+  compute allAssets {
+    value = product.subProducts*.as[IProduct]*.assets
+    label = "Assets"
+  }
+  
+  view form = nav{grid {
+    product
+    categories  
+    unit
+    altUnits >> list{x{unit, k}}
+    pricesView >> field(label = "Prices", visible = prices)
+    allAssets
+  }
+    button("Asset Product Movements") {
+      AssetProductMovement(product = product).list.open
+    }
+    salesOrdersButton
+  }
+  func subProducts = [this]
+  
+  object view list = AssetRentService.all >> nav{list{grid(labels = None) {
+    row{title >> field(width = 0.8) salesPrice >> field(width = 0.2)}
+  }}}
+}
+
+extend trait ISuperProduct {
+  field rentService: AssetRentService? inline by product {
+    views = []
+  }
+  compute canBeRented: Bool {
+    value = rentService
+    update = {
+      if (new) rentService = AssetRentService(product = this)
+      else rentService = null
+    }
+    views = []
+  }
+}
+
+extend entity Good {
+  extend view assetsStartup = grid (label = "Rent", labels = Right) {
+    canBeRented
+    rentService!.categories >> field(visible = canBeRented)
+  }
+}
+
+extend trait IFixedAsset {
+  compute rentService: AssetRentService? = product.superProduct.rentService
+    
+  //func onSave = {
+  //  if (!rentService) {
+  //    AssetRentService(product = product.superProduct).save
+  //  }
+  //}
+}
+
+extend entity FixedAsset {
+  extend view form = extend("fields") {
+    rentService
+  }
+}
+ 
+extend enum ProductUnit {
+  case Minute(symbol = "minute", scale = 0, base = null, k = 1)
+  case Hour(symbol = "hour", scale = 2, base = ProductUnit.Minute, k = 60)
+  case Day(symbol = "day", scale = 2, base = ProductUnit.Hour, k = 24)
+}

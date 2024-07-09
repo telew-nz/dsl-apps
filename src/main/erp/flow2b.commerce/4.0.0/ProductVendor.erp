@@ -1,0 +1,25 @@
+inline entity ProductVendor {
+  ref field product: ISuperProduct by vendors
+  ref field vendor: Actor by vendingProducts 
+  ref field price: Money[vendor.getCurrency]?
+  func toString = "$product $vendor: $price"
+}
+
+extend trait Actor {
+  field vendingProducts: [ProductVendor]? inline by vendor
+  func vendingProduct(superProduct: ISuperProduct): ProductVendor? = {
+    vendingProducts.find(product == superProduct)
+  }
+}
+
+extend entity Company {
+  extend view form = vendingProducts
+}
+
+extend entity Person {
+  extend view form = vendingProducts
+}
+
+extend entity CompanyGroup {
+  extend view form = vendingProducts
+}

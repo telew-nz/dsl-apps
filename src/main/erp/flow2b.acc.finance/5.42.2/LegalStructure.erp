@@ -1,0 +1,15 @@
+trait LegalStructure extends InlineEntity {
+  field company: OurCompany by legalStructure
+  func currency = company.getCurrency
+  func specificAccounts: [LedgerAccount]? = []
+  func canCloseIncomeSummary: Bool
+  func incomeSummaryClosing(journal: Journal, balance: Money[currency]): [Ledger]?
+  func title = company.title
+  func gstBasis: GstBasis?
+}
+
+enum GstBasis {
+  case Payment
+  case Invoice
+}
+  

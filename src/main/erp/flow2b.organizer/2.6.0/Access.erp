@@ -1,0 +1,30 @@
+extend access UserRole {
+  entity Task {
+    read = owner == current
+    write = owner == current
+  }
+  entity Appointment {
+    read = contains(Person.current)
+    write = owner == current
+  }
+  menu Organizer {
+    entity Task
+    report Calendar
+    entity Discussion
+    report RecentItem
+  }
+  extend view dashboard = group {
+    Task.all.filter(active && owner == Person.current)
+      >> nav(label = "Tasks", limit = 5, more = Task.Report().list.open){list{}}
+    Person.load(Person.current!.id)*.subjects*.subject.sortBy(touchedOn.desc) 
+      >> nav(label = "Recent Items", background = "#498898", limit = 5, more = RecentItem().list.open){
+        list(canAdd = false){ref}
+        add("Discussion") {Discussion().form.open}
+      }
+    Event.all
+     .filter(contains(Person.current) && end >= Date.now)
+     .sortBy(end) >> nav(label = "Calendar", limit = 5, more = Calendar().list.open){
+        list{}
+      }
+  }
+}

@@ -1,0 +1,76 @@
+back class CreateWebhooksJob extends SystemJob {
+  impl field service: WooCommerceIntegration
+  impl func dependsOnRegisters = false
+  impl func do: Future[Any] = {
+    let _ <- if (!service.webhookOrderCreatedId) {
+      let rid <- createWebhook("Flow2b Order Created", "order.created", "orderCreated")
+      service.webhookOrderCreatedId = rid
+      service.save
+    }
+    let _ <- if (!service.webhookOrderUpdatedId) {
+      let rid <- createWebhook("Flow2b Order Updated", "order.updated", "orderUpdated")
+      service.webhookOrderUpdatedId = rid
+      service.save
+    }
+    let _ <- if (!service.webhookCustomerCreatedId) {
+      let rid <- createWebhook("Flow2b Customer Created", "customer.created", "customerCreated")
+      service.webhookCustomerCreatedId = rid
+      service.save
+    }
+    if (!service.webhookCustomerUpdatedId) {
+      let rid <- createWebhook("Flow2b Customer Updated", "customer.updated", "customerUpdated")
+      service.webhookCustomerUpdatedId = rid
+      service.save
+    }
+  }
+  
+  func createWebhook(name: String, topic: String, f: String): Future[Int] = {
+    let u = WooWebhook(name = name, topic = topic, 
+                         secret = service.webhookSecret,
+                         deliveryUrl = service.apiUrl(f))
+    let response <- service.https("/webhooks").post(u.json)
+    let r = response.body!.parseJson[WooWebhook]
+    r.id!
+  }
+}
+
+extend entity WooCommerceIntegration extends ECommerceIntegration[Int] with Endpoint {
+  system const field webhookSecret: Password = String.randomKey(16)
+  system const field webhookOrderCreatedId: Int?
+  system const field webhookOrderUpdatedId: Int?
+  system const field webhookCustomerCreatedId: Int?
+  system const field webhookCustomerUpdatedId: Int?
+  impl func createWebhookJobs: [SystemJob]? = {
+    if (!webhookOrderUpdatedId) [CreateWebhooksJob(service = this)]
+  }
+  
+  back func process(request: IncomingHttpRequest): Future[Any] = {
+    if (let signature = request.header("X-WC-Webhook-Signature")) {
+      let expected = request.body.hmac(webhookSecret).sha256.base64
+      if (signature != expected) {
+        throw "Wrong signature $signature for:\n$(request.body)"
+      }
+
+      let body: Data = request.body!
+      if (request.url.endsWith("orderCreated") || request.url.endsWith("orderUpdated")) {
+        orderUpdated(body)
+      } else if (request.url.endsWith("customerCreated") || request.url.endsWith("customerUpdated")) {
+        customerUpdated(body)
+      } else {
+        throw "Unexpected url $(request.url)"
+      }
+    } else {
+      //Bug in woocommerce
+      //throw "No signature in webhook request $(request.url): $(request.headers)"
+    }
+  }
+}
+
+back class WooWebhook {
+  extFieldNaming = Underscore
+  field id: Int?
+  field name: String
+  field topic: String
+  field secret: String?
+  field deliveryUrl: Url  
+}

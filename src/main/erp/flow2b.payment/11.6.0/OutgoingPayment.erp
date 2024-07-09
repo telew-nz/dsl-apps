@@ -1,0 +1,157 @@
+entity OutgoingPayment extends Payment {
+  background = "#d68400"
+  func legalEntity = payer
+  func srcAccount: FinanceAccount? = account
+  func dstAccount: FinanceAccount? = null
+ 
+  compute srcAmount: Number? {
+    value = -accountAmountEditor
+    update = {accountAmountEditor = -new!}
+  }
+  compute dstAmount: Number? {
+    value = 0
+    update = {}
+  }
+  compute dstBankData: BankData? {
+    value = null
+    update = {}
+  }
+  compute srcBankData: BankData?{
+    value = bankData
+    update = {bankData =? new}
+  }
+  func startingBalance: Money[currency]? = expenses.mapOpt(try? _.amount).sum - amount
+  compute unreconciledAmount: Money[currency]? = -balance
+    
+  func title = "$number $(date.date) $payee"
+  func number: String = "OP" + n 
+  func entityNumbers = [number]
+  
+  compute debtCounterparty: LegalEntity? {
+    value = payee
+    update = {
+      if (let n = new) this.payee = n
+    }
+  }
+  ref field payer: OurLegalEntity {
+    available(Ref).with(accounts)
+    default =? (try? origin!.legalEntity).or(OurLegalEntity.onlyOne)
+    update = {
+      this.account =? new.accounts.onlyOne
+    }
+  }
+  
+  ref field payee: LegalEntity? {
+    available(Ref).with(vendor, vendor.expense)
+    default = try? origin!.debtCounterparty!
+    update = {
+      if (let e = new?.vendor?.expense) {
+        if (!origins) {
+          PaymentExpense(payment = this, expense = e)
+        }
+      }
+    }
+  }
+  func additOrigins: [IAdditOrigin]? = expenses
+  list field expenses: [IPaymentExpense]? inline by payment {
+    default = {
+      if (let e = payee?.vendor?.expense) {
+        if (!origins) {
+          [PaymentExpense(payment = this, expense = e)]
+        }
+      }
+    }
+    singular = "Expense"
+  }
+  
+  func amountUpdated(): Void = {
+    if (origins.count == 1) origins.first!.amount = amount 
+  }
+  func isTheir = payee?.isTheir
+  func isIncoming: Bool = false
+  event onSave = {
+    credits*.credit*.touch
+  }  
+  
+  compute origins: [IOPOrigin]? {
+    value = credits.map(OPOrigin(setoff = _)) + debits.map(OPReturn(setoff = _)) + expenses
+    init = {
+      new.init(this)
+    }
+    update = {}
+    remove = old.remove()
+  }
+  
+  object view list = OutgoingPayment.all >> nav{list{grid(labels = None, width = 1.2){
+    row{number, date.as[Date[day]]!, payee, account, space, recRefs >> list(frame = false){_ >> field(title = title)} }
+    row{stateView >> field(width = 0.6), -amount >> field(width = 0.2), space(width = 0.4)}
+  }}}
+ 
+  func isPurchase = true
+
+  view form = nav{grid{
+      number
+      date
+      stateView >> field(label = "State")
+      unreconciledAmount
+      payer
+      payee
+      account
+      
+      amount >> field(canEditUnit = true)
+      accountAmount
+      origins
+      bankData
+       
+    }
+    button("Convert to Transfer", visible = !origin) {
+      let from = account
+      let outcome = amount
+      let d = bankData
+      let r = convertTo(CashTransfer)
+      r.srcBankData = d
+      r.from = from
+      r.outcome = outcome
+    }   
+    generalLedgerButton
+  }
+  view stateView = x{reconcileState}
+}
+
+
+interface IOPOrigin {
+  func init(payment: OutgoingPayment): Void
+  func remove(): Void
+  var amount: Money?
+}
+class OPOrigin extends IOPOrigin {
+  singular = "Origin"
+  field setoff: Setoff inline = Setoff()
+  func init(payment: OutgoingPayment): Void = {
+    setoff = Setoff(debit = payment)
+  }
+  func remove = setoff.delete
+  view form = setoff.form.removeField(debit)
+  compute amount: Money {
+    value = setoff.amount
+    update = {setoff.amount = new}
+  }
+}
+
+class OPReturn extends IOPOrigin {
+  singular = "Return"
+  field setoff: Setoff inline = Setoff()
+  func remove = setoff.delete
+  func init(payment: OutgoingPayment): Void = {
+    setoff = Setoff(credit = payment)
+  }
+  view form = y{
+    h3("Return")
+    setoff.negativeForm.removeField(credit)
+  }
+  compute amount: Money {
+    value = setoff.negativeAmount
+    update = {setoff.negativeAmount = new}
+  }
+}
+

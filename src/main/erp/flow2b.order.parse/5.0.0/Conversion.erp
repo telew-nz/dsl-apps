@@ -1,0 +1,16 @@
+back object Conversion extends IConversion {
+  func convert(version: [Int?]): Future[Any] = {
+    if (version < [5,0,0]) {
+      renameEntity(OrderImport, "PurchaseOrderImport")
+      renameField(OrderImport, orders, "invoices")
+      renameEntity(ImportedOrder, "POIInvoice")
+      renameEntity(ImportedOrderItem, "POIInvoiceItem")
+      renameField(ImportedOrderItem, order, "invoice")
+      renameField(ImportedOrder, type, "invoiceType")
+      renameField(ImportedOrder, orderDate, "invoiceDate")
+      renameField(ImportedOrder, theirNumber, "invoiceNumber")
+      renameField(ImportedOrder, ourNumber, "poNumber")
+    }
+  }
+}
+ 

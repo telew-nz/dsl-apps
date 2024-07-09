@@ -1,0 +1,9 @@
+extend trait ISuperProduct {
+  impl event onSave = {
+    if (updated(trackItems) && trackItems == Always) {
+      let sbs = this.subProducts
+      IFProductItems.all.filter(product in sbs)*.touch
+    }
+    
+  }
+}

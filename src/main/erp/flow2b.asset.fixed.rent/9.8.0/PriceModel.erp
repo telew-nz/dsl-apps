@@ -1,0 +1,27 @@
+extend trait IPriceRent {
+  back func rentAvPeriods(from: Date, item: RentAvCalcItem): [RentAvPeriodItem]? = {
+    if (let pers = rentPeriods(from, item.store.getSchedule, item.retStore.getSchedule, item.dur)) {
+      if (let avPers = item.product.avPeriods(item.prodRegSel, item.priorityDate, item.exclRegs, item.qty)) {
+        pers.first(300).filter{p => 
+          avPers.exists(a => a.includes(p))
+        }.map(RentAvPeriodItem(period = _))
+      }
+    }
+  }
+}
+
+class RentAvPeriodItem(period: Period, items: [IProductItem]?) {
+  impl func toString = period.toString + (" " +? items.join(", "))
+}
+class RentAvCalcItem {
+  field priorityDate: Date
+  field le: OurLegalEntity
+  field store: IStore
+  field retStore: IStore
+  field product: ISubProduct
+  field dur: UQty
+  field qty: UQty
+  field exclRegs: [Id?]?
+  func prodRegSel: ProdRegSel = this.copy(ProdRegSel, stockType = product.rentStockType)
+
+}

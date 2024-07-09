@@ -1,0 +1,42 @@
+extend trait ECommerceIntegration {
+  func mainView: Layout 
+  func shouldDeleteProducts = false
+  func shouldDeleteVariations = false
+  func initialDownload: ECommerceInitialDownload? = null
+  
+  back func uploadProductJobs(change: BatchChange[ProductUpdate[ISuperProduct]]): [SystemJob]? = []
+  //And call
+  back event productsUploaded(change: BatchChange[ProductUpdate[ISuperProduct]]): Future[Any] = {}
+  
+  back func uploadProductPriceJobs(change: BatchChange[ProductUpdate[ISuperProduct]]): [SystemJob]? = {
+    uploadProductJobs(change)
+  } 
+  
+  back func uploadVariationJobs(change: BatchChange[ProductUpdate[IComplexSubProduct]]): [SystemJob]? = [] 
+  //And call
+  back event variationsUploaded(change: BatchChange[ProductUpdate[IComplexSubProduct]]): Future[Any] = {}
+  
+  back func uploadVariationPriceJobs(change: BatchChange[ProductUpdate[IComplexSubProduct]]): [SystemJob]? = {
+    uploadVariationJobs(change)
+  }
+  
+  back func uploadCategoryJobs(change: BatchChange[IProductCategory]): [SystemJob]? = [] 
+  back func uploadBrandJobs(change: BatchChange[IBrand]): [SystemJob]? = [] 
+  back func uploadTagJobs(change: BatchChange[IProductTag]): [SystemJob]? = [] 
+  
+  back func uploadAttrJobs(change: BatchChange[ProductAttr]): [SystemJob]? = [] 
+  back func uploadAttrTermJobs(change: BatchChange[ProductAttrTerm]): [SystemJob]? = [] 
+
+  back func downloadCustomersJobs: [SystemJob]? = []
+  back func downloadOrdersJobs(from: Date?) : [SystemJob]? = []
+  back func uploadOrderStateJobs(orders: [SalesOrder]) : [SystemJob]? = []
+  
+  back func createWebhookJobs: [SystemJob]? = []
+  
+  back func checkoutUrl(product: ISubProduct): Url? = product.extUrl(this)
+  
+  func productViewEx: Layout[this] = emptyView
+  func paymentViewEx: Layout[this] = emptyView
+  func deliveryViewEx: Layout[this] = emptyView
+  func advancedViewEx: Layout[this] = emptyView
+} 

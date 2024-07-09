@@ -1,0 +1,17 @@
+trait IOrder {
+  func orderDate: Date
+  func orderCurrency: Currency
+  func orderTotal: Money[orderCurrency]
+  func orderPaidAmount: Money[orderCurrency]?
+
+  var vendor: LegalEntity
+  var customer: LegalEntity
+}
+
+trait ISalesOrder extends IOrder {
+  view formExt = grid(labels = Top){}
+  func customerSelected(): Void = null[Void]
+}
+trait IPurchaseOrder extends IOrder {
+  view formExt = grid(labels = Top){}
+}

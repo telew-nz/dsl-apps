@@ -1,0 +1,20 @@
+inline entity WooInitialDownload extends ECommerceInitialDownload {  
+  field service: WooCommerceIntegration by initialDownload
+  field categories: Bool = true
+  field tags: Bool = true
+  field brands: Bool = false
+  field products: Bool = true
+  field shippingClasses: Bool = true
+  field stocktakeStore: IStore? =? IStore.onlyOne
+  
+  back func categoryJobs: [SystemJob]? = [DownloadCategoriesJob(service = service)]
+  back func tagJobs: [SystemJob]? = [DownloadTagsJob(service = service)]
+  back func brandJobs: [SystemJob]? = [DownloadBrandsJob(service = service)]
+  back func productJobs: [SystemJob]? = [DownloadProductsJob(service = service)]
+  back func shippingClassJobs: [SystemJob]? = [DownloadShippingClassesJob(service = service)]
+  view form = grid {
+    row {products categories tags brands}
+    row {shippingClasses}
+    stocktakeStore
+  }
+}

@@ -1,0 +1,167 @@
+object SNSWebhookRouter extends WorkspaceRouter[SNSWebhookData] {
+  impl back func parse(request: IncomingHttpRequest): SNSWebhookData = {
+    request.body!.parseJson[SNSWebhookData]
+  }
+  impl back func keys(request: IncomingHttpRequest, data: SNSWebhookData): [String]? = {
+    if(let tarn = request.header("x-amz-sns-topic-arn")) [tarn]
+  }
+}
+
+inline entity SNSWebhookEndpoint extends WorkspaceEndpoint[SNSWebhookData] {
+  impl field service: SMSService by snsWebhookEndpoint
+  
+  impl func keys = if(let arn = service.snsTopicArn)[arn]
+  impl func router = SNSWebhookRouter
+  
+  
+  impl back func process(request: IncomingHttpRequest, data: SNSWebhookData): Future[Any] = {
+    //request.body!.log("sns request body")
+    //data.json.log("sns webhook data")
+    
+    //let sigOK <- checkSignature(data)
+    
+    guard(
+	  //sigOK
+      let tp = data.requestType) 
+    else return {
+      Future(HttpResponse(code = 401, request = HttpRequest(url = request.url, ssl = request.ssl)))
+    }
+
+    
+    if(tp == "SubscriptionConfirmation") {
+      ConfirmSubscriptionJob(
+        service = this.service,
+        url = data.subscribeURL.dropPrefixes(["http://", "https://"])
+      ).enqueue
+    }
+    
+    let _ <- if(tp == "Notification" && !data.message.isEmpty) {
+
+      let msg = data.message!.parseJson[SNSMessage]
+      //msg.json.log("message")
+
+      let timestamp = AWSDateString.unapply(data.timestamp!)
+      //let timestamp = data.timestamp!
+      
+      if(let on = msg.originationNumber){
+        if(let c = IPhoneContact.all.find(on.endsWith(_.phone))) {
+          
+          let _ <- ExtMsg(
+            channel = SMS
+            from = ExtMsgContact(channel = SMS, address = c.phone)
+            to = ExtMsgContact(channel = SMS, address = c.phone)
+            date = timestamp
+            plainText = msg.messageBody
+            isSpam = false // ???
+          ).proc
+          
+        } else {
+          Activity.comment("incoming sms message from unknown number ${on}: ${msg.messageBody}")
+        }
+      }
+
+    }
+
+    HttpResponse(code = 200, request = HttpRequest(url = request.url, ssl = request.ssl))
+  }
+  
+  /*back func checkSignature(data: SNSWebhookData): Future[Bool] = {
+    //data.json.log("check signature data")
+    
+  	guard(
+      let sigVer = data.signatureVersion where sigVer == "1"
+      let tp = data.requestType
+      let tArn = data.topicArn
+      let mId = data.messageId
+      let m = data.message 
+      let ts = data.timestamp
+      let scUrl = data.signingCertURL.dropPrefixes(["http://", "https://"])
+    ) else return {false}
+    
+    let stringToSign = if(tp == "Notification"){
+      let msg = m.parseJson[SNSMessage]
+      
+      "Message\n" + m + "\n" +
+      "MessageId\n" + mId + "\n" +
+      if(let s = msg.subject) "Subject\n" + s + "\n" else "" +
+      "Timestamp\n" + ts + "\n" +
+      "TopicArn\n" + tArn + "\n" +
+      "Type\n" + tp + "\n"     
+    } else if (tp == "SubscriptionConfirmation"){          
+      "Message\n" + m + "\n" +
+      "MessageId\n" + mId + "\n" +
+      "SubscribeURL\n" + data.subscribeURL + "\n" +
+      "Timestamp\n" + ts + "\n" +
+      "Token\n" + data.token + "\n" + 
+      "TopicArn\n" + tArn + "\n" +
+      "Type\n" + tp + "\n"
+    } else ""
+    
+    stringToSign.log("stringToSign")
+    
+    let certRes <- HttpRequest(url = scUrl, ssl = true).get()
+    // certRes.code.log("cert res code")
+    // certRes.body.log("cert res body")
+    
+    true
+  }*/
+}
+
+object AWSDateString extends Mapper[Date, String] {
+  impl func apply(v: Date): String = v.format("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
+  impl func unapply(v: String): Date = Date(v, "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
+}
+
+object AWSDateStringOpt extends Mapper[Date?, String?] {
+  impl func apply(v: Date?): String? = if(let v) AWSDateString.apply(v) 
+  impl func unapply(v: String?): Date? = if(let v) AWSDateString.unapply(v) 
+}
+
+class SNSWebhookData {
+  extFieldNaming = UpperCamelCase
+  
+  field requestType: String? {extName="Type"}
+  
+  field signatureVersion: String?
+  field signature: String?
+  field signingCertURL: Url?
+  
+  field message: String?
+  field messageId: String?
+  field topicArn: String?
+  field timestamp: String? //Date? {jsonMap = AWSDateStringOpt}
+  
+  // SubscriptionConfirmation
+  field subscribeURL: Url?
+  field token: String?
+  
+  // Notification
+  field subject: String?
+  field unsubscribeURL: Url?
+}
+
+class SNSMessage {
+  field originationNumber: Phone?
+  field destinationNumber: Phone?
+  field messageBody: String?
+  field messageKeyword: String?
+  field subject: String?
+}
+
+back class ConfirmSubscriptionJob extends SystemJob {
+  impl field service: SMSService
+  field url: Url?
+  
+  impl func do = {
+    guard(let u = url) else return {}
+    
+    let r <- HttpRequest(ssl = true, url = u).get()
+    if(r.code == 200) {
+    	Activity.comment("SNS Subscription confirmed.")
+    } else {
+    	throw "SNS Subscription confirmation error.\nCode: ${r.code}\n${r.body}"
+    }
+  }
+}
+
+

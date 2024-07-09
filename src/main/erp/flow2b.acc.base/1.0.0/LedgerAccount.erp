@@ -1,0 +1,52 @@
+enum LedgeAccountType {
+  case Asset
+  case Liability
+  case Capital
+  
+  case Revenue
+  case Expenses
+}
+
+enum LedgerAccount(number: Int, type: LedgeAccountType) {
+  case Cash(number = 10100, type = Asset)
+  case Receivable(number = 12100, type = Asset)
+  case PrepaidAsset(number = 15300, type = Asset)
+    
+  case Payable(number = 21000, type = Liability)
+  case UnearnedRevenue(number = 24500, type = Liability)
+   
+  case Trading(number = 90100, type = Revenue)
+  case TradingGain(number = 91800, type = Revenue)
+}
+
+register CashLedger extends Ledger {
+  func account: LedgerAccount = Cash
+  func currency: Currency = financeAccount.currency
+      
+  key field financeAccount: FinanceAccount
+}
+
+register ReceivableLedger extends Ledger {
+  func account: LedgerAccount = Receivable
+  key field currency: Currency
+  key field customer: LegalEntity
+}
+
+register PrepaidAssetLedger extends Ledger {
+  func account: LedgerAccount = PrepaidAsset
+  key field currency: Currency
+  key field vendor: LegalEntity
+}
+
+register PayableLedger extends Ledger {
+  func account: LedgerAccount = Payable
+  key field currency: Currency
+  key field vendor: LegalEntity
+}
+
+register UnearnedRevenueLedger extends Ledger {
+  func account: LedgerAccount = UnearnedRevenue
+  key field currency: Currency
+  key field customer: LegalEntity
+}
+

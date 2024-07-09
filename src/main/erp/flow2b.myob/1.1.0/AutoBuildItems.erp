@@ -1,0 +1,32 @@
+object AutoBuildItemsImport extends Entity with SheetImportSchema {
+  impl func title = "MYOB: Auto Build Items Import"
+  
+  impl back func process(file: File, data: [String?]?) = {
+    var method: Method?
+    data.drop(8)
+      .takeWhile(_)
+      .map(split(rules = CSV))
+      .foreach{d =>
+        if (let code = d("B")) {
+          let p = IProductInv.all.find(p => p.refNum == code).result.get.alt(throw "Cannot find product $code")
+          if (d("A").startsWith("Quantity to build: ")) {
+            method = Method(outputs = [MethodOutput(outputProduct = p.makeOutput, unit = p.unit, qty = d("A")(": " .. ].toUNum!)]).save
+          } else {
+            var qty = d("D").toUNum.as[UQty[p.unit]]
+            if (qty != d("D").toUNum) {
+              p.superProduct.as[ISuperProduct with IAltUnits]?.unit = Part
+              p.save
+              qty = d("D").toUNum.as[UQty[p.unit]]
+            }
+            //(try? 
+            MethodMaterial(method = method!, material = p.makeMaterial, unit = p.unit, qty = qty!).save
+            //).alt(throw "Cannot create material $code")
+          }
+        }
+      }
+  } 
+
+  
+  impl func header = ',Item Number,Item Name,Assemble,Average Cost,On Hand'
+  impl func headerRow = 6
+}

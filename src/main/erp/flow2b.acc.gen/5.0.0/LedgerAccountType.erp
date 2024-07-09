@@ -1,0 +1,27 @@
+enum LedgerAccountType(number: Int, isIncome: Bool, debit: Bool, credit: Bool, isError: Bool) {
+  case Asset(number = 100, isIncome = false, debit = true, credit = false, isError = false){background = "#b6d7e2" color = "black"}
+  case Liability(number = 200, isIncome = false, debit = false, credit = true, isError = false){background = "#fbd79d" color = "black"}
+  case Equity(number = 300, isIncome = false, debit = false, credit = true, isError = false){background = "#dec4ee" color = "black"}
+  
+  case Revenue(number = 400, isIncome = true, debit = false, credit = true, isError = false){background = "#dea" color = "black"}
+  case Expense(number = 500, isIncome = true, debit = true, credit = false, isError = false){background = "#fcc" color = "black"}
+
+  case Trading(number = 600, isIncome = true, debit = true, credit = true, isError = false){background = "#ed9" color = "black"}
+
+  case Error(number = 900, isIncome = true, debit = true, credit = true, isError = true) {background = "#fb786d" color = "#500"}
+}
+ 
+enum LedgerAccount(template: AccTemplate, debits: [LedgerSubAccount]?, credits: [LedgerSubAccount]?, structureSpecific: Bool, closeWithPeriod: Bool, money: Bool) {
+  object func retainedEarnings: LedgerAccount = throw "No Retained earnings account"
+  
+  func subs = debits + credits
+  func debit = debits.first
+  func credit = credits.first
+  func contains(s: LedgerSubAccount): Bool = debits.contains(s) || credits.contains(s)
+}
+
+enum LedgerSubAccount(account: LedgerAccount, number: Int, type: LedgerAccountType) {
+  func template = account.template
+  func closeWithPeriod = account.closeWithPeriod
+}
+

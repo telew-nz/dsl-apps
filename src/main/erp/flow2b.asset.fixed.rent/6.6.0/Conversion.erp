@@ -1,0 +1,8 @@
+back object Conversion extends IConversion {
+  func do(version: [Int?]?) = {
+    if (version < [6,5,0]) {
+      fixBackRefs(ContinuousProductPrice, product) 
+      fixBackRefs(SlottedProductPrice, product) 
+    }
+  }   
+}   

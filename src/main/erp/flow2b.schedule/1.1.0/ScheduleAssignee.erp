@@ -1,0 +1,5 @@
+trait ScheduleAssignee {
+  field schedule: Schedule?
+  func correctForward(period: Period): Period = schedule?.correctForward(period).alt(period)
+  func isWorking(period: Period): Bool = schedule?.isWorking(period).alt(true)
+}

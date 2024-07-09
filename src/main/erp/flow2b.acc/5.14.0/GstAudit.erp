@@ -1,0 +1,53 @@
+report GstAudit {
+  plural = "GST Audit"
+  field legalEntity: OurLegalEntity =? onlyOne
+  field start: Date = Date.now[Date[millisecond]].start(year)
+  field end: Date = Date.now[Date[millisecond]].end(year)
+  system field rate: Percent[2]??
+  system field special: Bool
+  system field gstFilter: Bool
+  field category: GstReturnCategory?
+  compute gstRate: GstRate? {
+    value = if (gstFilter) if (special) Special else GstRate.all.find(r => r.rate == this.rate).alt(Special)
+    update = {
+      if (let r = new) {
+        gstFilter = true
+        rate = r.rate
+        special = r == Special
+      } else {
+        special = false
+        gstFilter = false
+      }
+    }
+  }
+  compute specialRate: Percent[2]? {
+    visible = gstRate == Special || special
+    value = rate.alt(0)
+    update = {
+      rate = new
+    }
+  }
+  impl view list = LTax.all
+    .filter(tax == Gst && !isTaxPayment && legalEntity == this.legalEntity && 
+            (journal.is[DebtOrigin] || isInstantPayment))
+    .groupBy(mainOrigin = if (let mo = journal.as[DebtOrigin]?.mainOrigin) mo else journal)
+    .flatMap{o =>
+      GstReport.processOrigin(legalEntity, start, end, o.mainOrigin.as[DebtOrigin], o.items)
+    }
+    .filter(category ==? this.category && (!this.gstFilter || _.amount.rate == this.rate))
+    .map(date, category, journal, rateName = if (!amount.rate) "Exempt" else amount.rate!.as[UPercent[2]].toString, 
+         rate = amount.rate, tax = amount.baseTax, taxedAmount = amount.baseTaxedAmount)
+    .sortBy(date)
+  >>  
+  nav {
+    table (action = journal.form.open) {
+      date
+      journal.title >> field(label = "Journal")
+      rateName >> field(width = 0.4, showEmpty = true, align = Right) 
+      taxedAmount >> field(width = 0.3, showEmpty = true showPlus = true, label = "Taxed Amount excl GST")
+      tax >> field(width = 0.3, showEmpty = true, label = "GST Amount", showPlus = true)
+      taxedAmount + tax >> field(width = 0.3, showEmpty = true, label = "Amount incl GST", showPlus = true)
+    }
+      
+  }
+}

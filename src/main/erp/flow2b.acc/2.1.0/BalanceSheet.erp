@@ -1,0 +1,31 @@
+report BalanceSheet {
+  plural = "Balance Sheet"
+  field legalEntity: LegalEntity? = (LegalEntity.ours.onlyOne) {from = LegalEntity.ours}
+  field date: Date?
+  func baseCurrency = legalEntity?.getCurrency.alt(LegalEntity.ours.first!.getCurrency)
+    
+  view list = GeneralLedger.at(date)
+    .filter(
+      legalEntity ==? this.legalEntity
+    )
+    .groupBy(account = if (account.type.isIncome || account.closeWithPeriod  || account == CurrencyTrading) LedgerAccount.IncomeSummary else account, currency)
+    .agg(balance.sum)
+    .sortBy(account.number)
+    .groupBy(account)
+    .map{i => 
+      let balances  <- (i.#1*.balance*.to[Money[baseCurrency]](this.date.alt(now)).allCompleted)
+      (i.account, balance = balances.sum)
+     }
+     .groupBy(account.type).subtotal(balance.sum)
+    >> 
+  nav {
+    subtotal {
+      row {type, balance}
+      table(action = Reflection.object[AnalitTrialBalance]("TB$(account)")
+            .new(legalEntity = legalEntity, date = this.date)
+            .list.open) {
+         account >> field(width = 0.5, background = ""), balance  >> field(width = 0.3)
+      }
+    }
+  }
+}

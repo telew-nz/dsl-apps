@@ -1,0 +1,87 @@
+entity Maintenance extends AssetOperation {
+  func title = "FAM $asset ${period.start.date}"
+  func journalDate = period.start
+  ref field asset: IFixedProductAsset by maintenances
+  ref field status: MaintenanceStatus {
+    default = Planned
+    update = {
+      if (new == InProgress) {
+        period = if (period.end < now) Period(start = now, end = period.end) else period.move(now)
+      } else if (new == Complete) {
+        period = Period(start = period.start, end = now)
+      }
+    }
+  }
+  field type: MaintananceType?
+  field description: Text?
+  ref compute overdueState: MaintenanceOverdueState {
+    value = {
+      if (status == Planned && Date.now > period.start) Overdue
+      else if (status == InProgress && Date.now > period.end) Overdue
+      else NoOverdue
+    } 
+    visible = overdueState == Overdue
+  }
+  field nextUnit: DateUnit {
+    default = week
+    from = DateUnit.all.filter(isDate).toSet
+  }
+  field nextDelta: Duration[nextUnit]? {
+    label = "Repeat Maintenance Every"
+  }
+  const field nextMaintenance: Maintenance?
+  ref field period: Period = Period(start = now, end = Date.now + 1_day)
+  event onSave = {
+    if (updated(status) && nextDelta && status == Complete) {
+      if (!nextMaintenance) nextMaintenance = Maintenance(this, status = Planned)
+      if (nextMaintenance!.status == Planned ) {
+        nextMaintenance!.period = period + nextDelta
+      }
+    }
+  }
+  
+  view form = nav{grid{
+    asset
+    type
+    x(label = "State"){status, overdueState}
+    period >> field(frame = false)
+    row{nextDelta >> field(canEditUnit = true, width = 0.3) space(width = 0.7)}
+    nextMaintenance
+    description
+  }}
+  
+  register out = if (status != Canceled) {
+    FAReg(asset = asset, date = period.start, toAvailable = -1, toInUse = -1, document = this, isFuture = status == Planned)
+  }
+  register in = if (status != Canceled) {
+    FAReg(asset = asset, date = period.end, toAvailable = 1, document = this, isFuture = status != Complete)
+  }
+  report Report {
+    field status: [MaintenanceStatus]?
+    view list = Maintenance.all.filter((!this.status || this.status.contains(status))).sortBy(period.start) >> nav{list{grid(labels = None){
+      row{asset >> field(width = 0.333) period >> field(width = 0.667, frame = false)}
+      x{status overdueState}
+    }}}
+  }
+  view ref = x {status overdueState title}
+}
+
+entity MaintananceType {
+  field title: String
+  field description: Text?
+}
+
+enum MaintenanceStatus {
+  case Planned {background = "#ed9"}
+  case InProgress {background = "#dea"}
+  case Complete {
+    color = "white"
+    background = "#090"
+  }
+  case Canceled {background = "#ddd"}
+}
+
+enum MaintenanceOverdueState {
+  case NoOverdue {background = "#dea"}
+  case Overdue {background = "#e99"}
+}

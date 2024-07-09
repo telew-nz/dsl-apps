@@ -1,0 +1,18 @@
+extend role Salesperson {    
+  menu Sales {
+    entity SalesAssetReturn = "Rented Assets Returns"
+    entity AssetsAvailability
+  }
+} 
+ 
+extend entity FixedAsset {
+  extend object view widget = extend("Asset") {
+    button("Rentals Availability") {AssetsAvailability().list.open}
+  }
+}
+
+extend entity SalesOrder {
+  extend object view widget = extend("Stock") {
+    button("Rentals") {AssetsAvailability().list.open}
+  }
+} 

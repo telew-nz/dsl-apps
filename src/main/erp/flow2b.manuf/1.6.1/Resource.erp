@@ -1,0 +1,13 @@
+trait Resource extends RefEntity {
+  field methodResources: [MethodResource]? inline by resource {
+    deleteCascade = false
+  }
+}
+entity MachineResource extends Resource {
+  field title: String
+  field description: Text?
+}
+entity LabourResource extends Resource {
+  field title: String
+  field description: Text?
+}

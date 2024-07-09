@@ -1,0 +1,11 @@
+extend enum OpportunityRole {
+  case DecisionMaker {
+    background = "#fe9"
+  }
+  case Champion {
+    background = "#afa"
+  }
+  case Influencer{
+    background = "#bcf"
+  }
+}

@@ -1,0 +1,3 @@
+trait IProductItem extends Entity {
+  func product: IProduct
+}

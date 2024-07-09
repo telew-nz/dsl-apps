@@ -1,0 +1,48 @@
+inline entity SalesBondItem extends ISalesItem {
+  background = "#d68400"
+  singular = "Bond"
+  func orderDeliveryItem: IOrderDeliveryItem? = null
+  
+  view form = grid(margin = None, width = 1.2, labels = Top) {
+    row (labels = false) {
+      label("Bond", width = 1.0)
+      amountEditor >> field(width = 0.2, align = Right)
+    }
+    invoice >> field(visible = ui.isSelected && this.order.invoices.count > 1)
+  }
+  field itemsReturned: Bool
+  compute itemsReturned1 = (active && invoice?.assetReturned) || (!active && itemsReturned)
+  func orderAmount: Money[currency]? = 0
+  compute invoiceAmount: Money[currency]? = if (itemsReturned1) 0 else amount
+  /*ref compute state: BondState = {
+    if (!(try? amount) || !paid) NotLodged
+    else if (creditUnpaid > 0) Lodged
+    else if (creditUnpaid < 0) OverRefunded
+    else Refunded
+  }*/
+  view rowView = group {
+    row{label("Bond", span = 3, align = Right)
+        invoiceAmount >> field(align = Right)
+    }
+  }
+  func ledgerAccount: LedgerAccount = BondsHolded
+  func needsRevision: Bool = {
+    if (active) itemsReturned = invoice?.assetReturned
+    updated(sAmount) || updated(itemsReturned)
+  }
+  event onSave = {
+    if (active) itemsReturned = invoice?.assetReturned
+  }
+}
+
+account BondsHolded(template = "Debt", number = 240, type = Liability, money = true) 
+//extend enum CashFlowCategory {
+//  case Bonds(type = CashUsedOrProvided)
+//}
+
+/*enum BondState {
+  case NotLodged {background = "#ed9"}
+  case Lodged {background = "#dea"}
+  case Refunded {color = "white" background = "#090"}
+  case OverRefunded {background = "#f99"}
+}*/

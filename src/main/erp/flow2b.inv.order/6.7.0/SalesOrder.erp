@@ -1,0 +1,173 @@
+entity SalesOrder extends Order {
+  background = "#a73e6c"
+  func orderCustomer: LegalEntity? = customer
+  func orderVendor: LegalEntity? = vendor
+
+  func hasSalesIssues = {
+    status != Canceled 
+    && (availability.isIssue || deliveryOverdueState == DeliveryOverdue || invoices.exists(hasSalesIssues))
+  }
+  field deliveries: [ISalesDelivery]? inline by salesOrders {
+    default = [SalesDelivery(primary = true, salesOrders = [this])]
+    visible = preEntered
+    from = ISalesDelivery.all.filter(i => i.legalEntity == legalEntity)
+    update = {
+      setDefaultDelivery()
+    }
+  }
+  field invoices: [SalesInvoice]? inline by orders {
+    default = [SalesInvoice(primary = true, orders = [this])]
+    visible = preEntered
+    from = SalesInvoice.all.filter(i => i.vendor == vendor && i.customer == customer)
+    update = {
+      setDefaultInvoice()
+    }
+  }
+  ref field vendor: LegalEntity {
+    default =? LegalEntity.ours.onlyOne
+    available(All).for(All).with(priceModels)
+    from = LegalEntity.ours
+    update = {
+      items*.orderDeliveryItem*.updateGst()
+    }
+  }
+  ref field customer: LegalEntity? by salesOrders {
+    update = {
+      this.currency =? try? customer?.currency.alt(vendor.getCurrency)
+      if (deliveries) deliveries.foreach(_.receiver = null)
+    }
+    validate = if (!isCustomerValid) "Customer cannot be empty for incomplete orders"
+  }
+  func isCustomerValid = customer || !state.active
+  func isTheir = customer?.isTheir.alt(false)
+  field allItems: [ISalesItem]? inline by order
+  compute items: [ISalesItem]? {
+    value = allItems.filter(active || wasCanceled)
+    update = {
+      allItems = new + allItems.filter(!active && !wasCanceled)
+    }
+    init = {
+      new.order = _
+    }
+    visible = preEntered
+  }
+  ref compute availability: GoodAvailability {
+    value = {
+      if (status == Canceled) Available
+      else if (deliveries.exists(status == Planned && _.availability == Unavailable)) Unavailable
+      else if (deliveries.exists(status == Planned && _.availability == AvailableLater)) AvailableLater
+      else Available
+    }
+	visible = availability.isIssue
+  }
+  
+  compute preEntered = (try? vendor)
+  ref compute number: String {
+    value = manualNumber.alt("SO" + n)
+    update = {manualNumber = new}
+  }
+  func title = "$number $customer"
+  func legalEntity: LegalEntity = vendor
+  
+  //Views
+  view form = nav{
+    tabs {
+      posView
+      grid(labels = Top, width = 1.2, label = "Deliveries"){  
+        deliveries >> list{nav{inline{deliveryHeader.removeField(salesOrders)}}}
+        extension("deliveries")
+      }
+      grid(labels = Top, width = 1.2, label = "Invoices"){  
+        invoices >> list{nav{
+          inline{invoiceHeader}
+          invoiceButtons
+        }}
+        extension("invoices")
+      }
+      grid(labels = Top, width = 1.2, label = "More"){ 
+        row {referenceNumber space space}
+	    extension
+      }
+      extension("tabs")
+    }
+    //button("Update Prices") {updatePrices()}
+  }
+  
+  view statusesView = x {
+    state
+    invoiceIssueState
+    paymentState 
+    paymentOverdueState
+    deliveryState
+    deliveryOverdueState
+    availability
+    dropShipState
+  }
+  
+  compute sd {
+    value = deliveries.onlyOne?.as[SalesDelivery]
+    update = {
+    }
+  }
+  compute si {
+    value = invoices.onlyOne?.as[SalesInvoice]
+    update = {
+    }
+  }
+  
+  view posView = grid (labels = Top, label = "Main", width = 1.2) {
+    row {number >> field(noTab) date >> field(noTab) vendor}
+    statusesView 
+    row { sd!.source >> field(visible = sd, label = "Store") sd!.dispatchDate >> field(noTab, visible = sd) sd!.deliveryDate >> field(noTab, visible = sd && sd!.shipTo)}
+    extension("delivery")
+    
+    row {customer sd!.shipTo >> field(visible = sd) space} 
+//    sd.posView >> field(visible = deliveries.onlyOne?.is[SalesDelivery].alt(false))
+    extension
+    
+    //yscroll (stretch = 1, margin = TopBottom) {
+    items >> list(mode = EditSelect) {
+      form 
+    }
+    
+    //}
+    grid(labels = Top, width = 1.2){ 
+      total >> field(canEditUnit = true, fontStyle = H2)  
+    }
+    si!.posView // >> field(visible = invoices.onlyOne)
+  } 
+ 
+  
+  
+  report Report {
+    field superProduct: ISuperProduct?
+    field product: IProduct?
+    field customer: LegalEntity? {auto = true}
+    field withIssues: Bool
+    field salesPerson: Person? {
+      from = Person.all.filter(is(Salesperson))
+    }
+    
+    view list = SalesOrder.all.filter(
+      (!withIssues || hasSalesIssues) && isFor(salesPerson, Salesperson)
+      && ((!this.product && !this.superProduct) || items*.as[OrderProductItem].exists(product ==? this.product && product.superProduct ==? this.superProduct))
+    ) 
+      >> nav{list{grid(labels = None) {
+        row{number, date.as[Date[day]]!, customer, total}
+        statusesView
+      }}}
+  }
+  
+  object view widget = SalesOrder.all.filter(hasSalesIssues && isForCurrent(Salesperson)).sortBy(date) 
+    >> nav(label = "Sales", limit = 5, more = SalesOrder.Report(withIssues = true, salesPerson = Person.current).list.open) {
+       list {}
+       button("Stock") {StockReport().list.open}
+       extension("Stock")
+       button("Customers") {Actor.list.open}
+       add("Person") {Person().form.open} 
+       add("Company") {Company().form.open}
+       button("Product Sales") {ProductSalesReport().list.open}
+       extension("Button")
+    }
+  view ref = x{title total statusesView}
+}

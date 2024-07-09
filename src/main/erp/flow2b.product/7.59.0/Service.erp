@@ -1,0 +1,25 @@
+entity Service extends IBasicProduct {
+  impl func isTangible = false
+  impl field title: String
+  
+  impl field status: ProductStatus = default
+  
+  impl field description: Text?
+  impl func skuPrefix = "SRV"
+  impl ref field unit: ProductUnit = Item
+  impl func weightSize: IWeightSize? = null
+  
+  impl view mainView = grid (labels = Top, label = "Main") {
+    photos >> field(height = 10, label = "")
+    statusView
+    title >> field(label = "", fontStyle = H1)
+    row {sku refNum space}
+
+    unit
+    barcodes
+
+    baseMainView
+    extension
+    description
+  }
+}

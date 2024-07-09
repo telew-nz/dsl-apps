@@ -1,0 +1,26 @@
+extend trait LegalEntity {
+  field salesOrders: [SalesOrder]? read by customer 
+  field purchaseOrders: [PurchaseOrder]? read by vendor 
+}
+
+extend entity Company {
+  extend view form = extend ("buttons") {
+    button("Sales Orders") {
+      SalesOrder.Report(customer = this).list.open
+    }
+    button("Purchase Orders") {
+      PurchaseOrder.Report(vendor = this).list.open
+    }
+  }
+}
+
+extend entity Person {
+  extend view form = extend ("buttons") {
+    button("Sales Orders") {
+      SalesOrder.Report(customer = this).list.open
+    }
+    button("Purchase Orders") {
+      PurchaseOrder.Report(vendor = this).list.open
+    }
+  }
+}

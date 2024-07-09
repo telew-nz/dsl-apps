@@ -1,0 +1,16 @@
+extend role Bookkeeper {
+  entity BankStatementUpload = readWrite
+  
+  menu Finance {
+    entity BankStatementUpload
+  }
+  
+  extend view dashboard = 
+    BankStatementUpload.all
+      .filter(state == Error).sortBy(date) 
+    >> nav(limit = 5, label = "Bank Statement Upload Errors", 
+           more = CashMovement.Report(state = [BankStatementUploadState.Error]).list.open
+       ) { 
+         list{}
+    	}
+}

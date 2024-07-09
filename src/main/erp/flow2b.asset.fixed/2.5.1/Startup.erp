@@ -1,0 +1,54 @@
+entity AssetsStartup {
+  background = "#56940b"
+  func title = "Assets Startup $store"
+  ref field date: Date = now
+  field legalEntity: LegalEntity {
+    default =? try? LegalEntity.ours.onlyOne!
+    from = LegalEntity.ours
+  }
+  ref field store: Store {
+    default =? Store.ours.onlyOne
+    from = Store.ours
+  }
+  field products: [AssetsStartupProduct] inline by startup
+  view form = nav{grid(labels = Top, width = 1.2) {
+    date
+    legalEntity
+    store
+
+    products >> list(frame = false){tabs {
+      good.assetsStartup
+      assets >> table(margin = Around){
+        number >> field(width = 0.5) creation.cost >> field(width = 0.5, label = "Book Value")
+      }   
+    }}
+  }}
+}
+
+extend entity Good {
+  view assetsStartup = group {
+    grid (label = "Good", labels = Right) {
+      title 
+      categories
+    }
+    depreciation >> field(visible = true)
+  }
+}
+
+inline entity AssetsStartupProduct {
+  singular = "Product"
+  system field startup: AssetsStartup
+  field good: Good inline {deleteCascade = false}
+  field assets: [FixedAsset]? inline {
+    init = {
+      new.product = good
+    }
+  }
+  compute count = assets.count.as[Qty[ProductUnit.Item]]
+  event onSave = {
+    assets.foreach{asset =>
+      asset.creation.adjustment = true
+      asset.creation.date = startup.date
+    }
+  }
+}

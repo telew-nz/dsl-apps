@@ -1,0 +1,48 @@
+report ProductSalesReport {
+  plural = "Product Sales"
+  field legalEntity: OurLegalEntity? 
+  field start: Date?
+  field end: Date?
+  field category: ProductCategory?
+  
+  impl view list = LSales.all
+  	.filter(
+          !cor && start ?<= date && date <=? end
+       && legalEntity ==? this.legalEntity
+       && (!category || this.category.in(product?.superProduct?.categories))
+       && product
+    )
+    .groupBy(product = product?.superProduct, unit).agg(-amount.sum, qty.sum)
+    .leftJoin(
+       LProduct.all
+         .filter(
+               !cor && account == CostOfGoodsSold 
+            && start ?<= date && date <=? end
+            && (!category || this.category.in(product?.superProduct?.categories))
+         )
+         .groupBy(product = product?.superProduct).agg(amount.sum),
+       on = left.product == right.product && left.unit == right.product?.unit,
+       map = (left.product, sales = left.amount, cost = right?.amount, qty))
+    .map(product, sales, cost, grossProfit = sales - cost, 
+         grossMargin = if (let sales) ((sales - cost).as[Percent[2]]/sales),
+         qty, salesPrice = if (let qty) sales/qty, costPrice = if (let qty) cost/qty, profitPerUnit = if (let qty) (sales - cost)/qty)
+  	//.total(sales.sum, cost.sum)
+	//.map(sales, cost, grossProfit = sales - cost, 
+    //     grossMargin = if (sales) ((sales - cost).as[Percent[2]]/sales).as[Percent[2]], items) 
+  >> nav(background = "#d68400"){
+    //total {
+    //  row {space, sales, cost, grossProfit, grossMargin, space, space, space, space}
+      table {
+        product >> field(width = 0.5) 
+        sales  >> field(width = 0.25) 
+        cost  >> field(width = 0.25) 
+        grossProfit  >> field(width = 0.25) 
+        grossMargin >> field(width = 0.15)
+        qty >> field(width = 0.2, label = "Quantity Sold") 
+        salesPrice >> field(width = 0.25)  
+        costPrice >> field(width = 0.25) 
+        profitPerUnit >> field(width = 0.25) 
+      }
+  //  }
+  }
+}

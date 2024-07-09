@@ -1,0 +1,23 @@
+extend entity Company {
+  impl event onSave = {
+    if (updated(title) || updated(altNames)) {
+      PaymentReprocessJob().enqueue
+    }
+  }
+}
+
+extend entity Person {
+  impl event onSave = {
+    if (updated(title) || updated(altNames)) {
+      PaymentReprocessJob().enqueue
+    }
+  }
+}
+
+extend trait PaymentMethod {
+  impl event onSave = {
+    if (updated) {
+      PaymentReprocessJob().enqueue
+    }
+  }
+}

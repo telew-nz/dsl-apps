@@ -1,0 +1,21 @@
+trait IBarcode extends AnyEntity {
+  func number: String
+  func barcodeItem: RefEntity
+  func unit: ProductUnit = Item
+  func qty: Qty[unit] = 1.as[Qty[unit]]!
+}
+inline entity Barcode extends IBarcode {
+  func barcodeItem: RefEntity = item
+  field item: ISubProduct by barcodes
+  compute unitOne: Qty[unit] {
+    label = "Unit"
+    value = 1.as[Qty[unit]]!
+    canEditUnit
+  } 
+  field unit: ProductUnit {
+    default = item.unit
+    from = item.units
+  }
+  field number: String
+  view form = x{unitOne number >> field(stretch = 1)}
+}

@@ -1,0 +1,77 @@
+entity SalesAssetReturn extends AssetReturn with IIncomingDelivery {
+  background = "#2e8e67"
+     
+  field primary: Bool
+  func deliverySource: Store? = null
+  const ref field n: Int? = if (primary) order.n else increment(Order.gen)
+    
+  func orders = salesOrders
+  field salesOrders: [SalesOrder] by assetReturns {
+    available(Inline).for(Inline)
+  }
+  func deliveryDst = destination 
+  func stockTypeDst = Inventory
+  func multiupdate = salesOrders
+  func canBeDeliveredInstantly(store: IStore): Bool = false
+  func entityNumbers = [number, trackingNumber]
+  field destination: IStore {
+    default =? (try? orders*.deliveries*.as[SalesDelivery].first?.source!).or(IStore.onlyOne)
+  }
+  field pickUpLocation: ILocation? {
+    from = Query(supplier?.legalEntity).flatMap(deliveryLocations)
+    visible = supplier
+  }   
+  func pathSrc = pickUpLocation
+  func hasInTransit: Bool = pickUpLocation
+  func deliverySupplier = supplier?.legalEntity
+  func deliveryReceiver = order.legalEntity.legalEntity
+  ref compute number: String {
+    value = manualNumber.alt(if (primary) "SAR" + orders.first.nakedN else "SAR" + n)
+    update = {manualNumber = new}
+  }  
+  ref compute supplier {
+    value = order.orderCustomer
+    label = "Customer"
+  }
+  func legalEntity = order.legalEntity
+  func title = "$number $(try? supplier?.title)"
+  func deliveryDateLabel = "Return Date"
+  
+  view returnHeader = grid(width = 1.2){
+    statusesView
+    row {pickUpLocation, destination, dispatchDate}
+    row {space, space,  deliveryDate}
+    freightView
+    items >> list(editMode = AlwaysRead){form}    
+  }
+  view form = nav{grid(width = 1.2, labels = Top) {
+    number
+    salesOrders
+    returnHeader }
+    generalLedgerButton
+  } 
+  object view list = SalesAssetReturn.all >> nav{list(canAdd = false){grid(labels = None){
+    row{number >> field(width = 0.2) deliveryDate >> field(visible = true, width = 0.3) supplier >> field(width = 0.25) destination  >> field(width = 0.25)}
+    statusesView
+    refItems
+  }}}
+  view statusesView = x {status overdueState} 
+  
+  view ref = x{status >> field(editMode = AlwaysEdit) title deliveryDate >> field(visible = true)}
+  view dash = y {
+    deliveryDate >> field(visible = true)
+    x{status >> field(editMode = AlwaysEdit) title}
+    refItems
+  }  
+  event onSave = {
+    if (primary) n = order.n 
+    else if (!n) n = increment(Order.gen)
+    if (salesOrders.all(canceled)) status = Canceled
+    salesOrders*.touch
+    1
+  }
+  
+  ref compute refItems {
+    value = RefProductItems.create(items*.as[IDeliveryProductItem].map(RefProductQty(product = product, qty = qty)))
+  }
+}

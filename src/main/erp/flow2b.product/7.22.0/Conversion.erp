@@ -1,0 +1,15 @@
+back object Conversion extends IConversion {
+  func do(version: [Int?]?) = {
+    if (version < [7,20,0]) {
+      ISubProduct.all.foreach{pr =>
+        if (let barcodes = field[[ConvEntity]?](pr, "barcodes")) {
+          pr.barcodes = []
+          barcodes.foreach {br => 
+            Barcode(item = pr, unit = br.field("unit"), number = br.field("number")).save
+          }
+        }
+      }
+      
+    }
+  }   
+}   

@@ -1,0 +1,43 @@
+interface MailTemplate {
+  func links: EmailLinks = HtmlLinks
+  back func apply(from: Contact, to: [IEmailContact], subject: String?, text: Text?): Html?
+}
+
+enum EmailLinks {
+  case HtmlLinks
+  case TextLinks
+  case NoLinks
+}
+
+interface IMailTemplateStd extends MailTemplate {
+  func closing: String = "Regards"
+  func exposePhone: Bool = true
+  impl back func apply(from: Contact, to: [IEmailContact], subject: String?, text: Text?): Html? = {
+    let person: Html? = if (let pn = from.as[EmailContact]?.person.or(from.as[User]?.person)?.name) "$pn<br/>"
+    let cp = from.as[EmailContact]?.addressee?.as[CompanyPerson]
+    let company: Actor? = cp?.company.or(from.as[EmailContact]?.addressee?.as[Actor]).or(OurActor.our?.actor)
+    let jobTitle: Html? = {
+      if (let t = cp?.jobTitle) "$t, $(cp!.company.title)<br/>" 
+      else if (let com = company) "$(com.title)<br/>"
+    }
+    let phone: Html? = if (exposePhone) if (let t = cp?.contacts*.as[PhoneContact].or(company?.contacts*.as[PhoneContact])*.phone.first) "$t<br/>"
+    let companyUrl: Html? = if (let t = company?.contacts*.as[WebsiteContact]*.url.first) {
+      if (links == TextLinks) "$(t)<br/>" 
+      else if (links == HtmlLinks) '<a href="$t">$(if (t.contains("//")) t("//" .. ] else t)</a><br/>'
+    }
+'$text
+<p></p>
+<p class="flow2b-signature">$closing,<br/>$person$jobTitle$phone$companyUrl</p>
+'
+  }
+}
+
+class MailTemplateStandard extends IMailTemplateStd {
+  singular = "Standard"
+  impl field closing: String = "Regards"
+  impl field exposePhone: Bool = true
+  impl field links: EmailLinks {
+    default = HtmlLinks
+    label = "Links format (less chance to be determined as spam)"
+  }
+}

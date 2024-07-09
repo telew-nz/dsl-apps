@@ -1,0 +1,39 @@
+analytic FinanceAccount(dataType = "FinanceAccount")
+ 
+acctemplate Cash {
+  func currency: Currency = financeAccount.currency
+  key field financeAccount: FinanceAccount {label = "Account"}
+  field cashFlowCategory: CashFlowCategory
+}
+
+account Bank(template = "Cash", number = 100, type = Asset)
+account Cash(template = "Cash", number = 105, type = Asset) 
+
+entity CashAccount extends FinanceAccount {
+  background = "#d68400"
+  func title = "$legalEntity: $name"
+  ref field name: String
+  func ledgerAccount: LedgerAccount = Cash
+  view form = nav{grid{
+    legalEntity
+    name
+    currency
+    balance
+  }}
+}
+  
+entity BankAccount extends FinanceAccount {
+  background = "#d68400"
+  func title = "$legalEntity: $name"
+  ref field name: String
+  func ledgerAccount: LedgerAccount = Bank
+  field number: String?
+  view form = nav{grid{
+    legalEntity
+    name
+    number
+    currency
+    balance
+  }}
+}
+

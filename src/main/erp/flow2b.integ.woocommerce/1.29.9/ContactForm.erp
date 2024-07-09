@@ -1,0 +1,87 @@
+//TODO: change to `flow2b.api.contactform` app in OInt
+// object
+entity TSTContactService extends SystemService {
+  impl func title = "ContactFormService"
+  impl func canRead = true
+  //impl func canWrite = true
+  
+  field contactRole: Role {
+  	default = Salesperson
+  }
+  
+  
+  back func postFormTest(name: String?): HttpResponse = {
+    //let name = params("name")
+    
+  	HttpResponse(
+      code = 200,
+      headers = ["Content-Type" -> "text/octet-stream"], 
+      body = "OK $name".toData)
+  }
+  
+  
+  back func postTest(body: ContactData): HttpResponse = {
+    // ???
+    // Doesn't work: body.json.log("request body")
+    // Deos work: Activity.comment("tst comment")
+    
+    let p = Person.all.find(
+      contacts.exists(_.as[EmailContact]?.email == body.email)
+    ).result.get.alt{
+      let newP = Person(name = body.name)
+      newP.addEmail(body.email)
+      newP.save()
+      newP
+    }
+    
+    let t = Ticket(
+      //channel = msg.channel
+      status = Entered
+      subject = "Message from ${body.name} <${body.email}>"
+      description = body.message
+      roles = [contactRole]
+      ticketPerson = p
+    ).save
+    
+    p.addEmail(body.email)?.join(t)
+    
+    ContactFormResponse.send(t)
+    
+    HttpResponse(
+      code = 200,
+      headers = ["Content-Type" -> "text/octet-stream"], 
+      body = "OK".toData)
+  }
+  
+  compute endpointUrl: Url {
+    value = back{this.apiUrl("test")}
+  }
+  
+  impl view form = nav{grid(labels = Top){
+    issuesView
+    serviceState
+    errorsCount >> field(editMode = AlwaysRead)
+    contactRole
+    
+    endpointUrl
+  }}
+}
+
+class ContactData {
+  field name: String
+  field email: Email
+  
+  field message: Text
+}
+
+extend entity Ticket {
+  field ticketPerson: Person?
+}
+object ContactFormResponse extends NotifyTemplate[Ticket] {
+  impl func title = "Contact Form Response"
+  impl func supported = [EMail]
+  impl func preferred = [EMail]
+  impl func to(data: Ticket) = if (let p = data.ticketPerson) [p]
+  impl func subject(data: Ticket, channel: CommChannel) = "Tst contact form reply"
+  impl func text(data: Ticket, channel: CommChannel) = "We recieved message from you..."
+}

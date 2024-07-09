@@ -1,0 +1,81 @@
+object FinanceNotificator extends SystemService {
+  impl func title = "Finance Notificator"
+  field sendInvoiceToCustomers: Bool = false
+  field sendStm: Bool {
+    default = false 
+    label = "Generate and send statement of customer accounts"
+  }
+  func serviceAccess: [Role]? = [Admin]
+  impl view form = nav{grid(labels = Top){
+    issuesView
+    serviceState
+    errorsCount >> field(editMode = AlwaysRead)
+    
+    sendInvoiceToCustomers
+    sendStm
+    contacts
+  }}
+  field contacts: [IContact]? {
+    validate = if ((sendInvoiceToCustomers || sendStm) && !contacts) {
+      "Contacts should be selected in order to send invoices"
+    }
+  }
+  impl func ourContacts = contacts
+}
+
+class NewInvoiceNotif extends SystemJob {
+  impl func service = FinanceNotificator
+  field invoice: Invoice
+  impl func do = {
+    if (let c = invoice.order.payer?.invoiceContact) {
+      c.join(invoice)
+      invoice.touch
+      Activity.current!.setMainEntity(invoice)
+      Activity.current!.makePublic("New ${invoice.name}")
+    }
+  }
+}
+
+class NewStmNotif extends SystemJob {
+  impl func service = FinanceNotificator
+  field stm: CustAccStm
+  impl func do = {
+    if (let c = stm.customer?.invoiceContact) {
+      c.join(stm)
+      stm.touch
+      Activity.current!.setMainEntity(stm)
+      Activity.current!.makePublic("Statement of account")
+    }
+  }
+}
+
+extend trait IOrder extends DeferredJob {
+  func service = FinanceNotificator
+  func jobDate = if (!closed && !canceled) {
+    let ud = {
+      if (let dd = dueDate) if (let ua = due.update) dd.min(ua) else dd
+      else due.update
+    }
+    if (ud > now) ud
+  }
+  func do = {
+    updateDue()
+    save
+    
+    /*if (let dd = dueDate) {
+      Activity.current!.setMainEntity(this)
+      let t = if (let dueIn = (dd - Date.now).days.round(floor, 0)) {
+        if (dueIn > 0) "Invoice is due in $dueIn"
+        else "Invoice is overdue by $(-dueIn)"
+      } else {
+        "Invoice is due today"
+      }
+      if (isPurchase) {
+        Activity.current!.comment(t)
+      } else {
+        //payer?.invoiceContact?.join(this)
+        Activity.current!.makePublic(t)
+      }
+    }*/
+  }
+}

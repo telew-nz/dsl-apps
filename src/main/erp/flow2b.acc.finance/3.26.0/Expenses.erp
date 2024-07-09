@@ -1,0 +1,35 @@
+analytic ExpenseType(dataType = "IExpenseType")
+
+acctemplate Expenses {
+  key field expenseType: IExpenseType
+}
+
+account GeneralExpenses(template = "Expenses", number = 600, type = Expense)
+account NonClaimableExpenses(template = "Expenses", number = 605, type = Expense)
+
+trait IExpenseType extends Entity {
+  field gstRate: GstRate? = null
+  field specialGstRate: Percent[2]? {
+    visible = gstRate == Special
+  }
+  ref compute getGstRate: Percent[2]?? {
+    value = {
+      if (gstRate == Special) specialGstRate
+	  else if (gstRate) gstRate!.rate 
+    }
+    views = []
+  }
+  func forceGstRate(vendor: LegalEntity): Percent[2]?? = if (vendor.forceHasGst) {
+    getGstRate.or(vendor.defaultGstRate.rate)
+  } 
+  func forceHasGst(vendor: LegalEntity): Bool = forceGstRate(vendor)
+}
+ 
+entity ExpenseType extends IExpenseType {
+  background = "#d68400"
+  field title: String
+  
+  field description: Text?
+}
+
+account DiscountsReceived(template = "Counterparty", number = 670, type = Expense) 

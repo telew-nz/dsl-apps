@@ -1,0 +1,34 @@
+trait IIncomingDelivery extends IDelivery {
+  background = "#2e8e67"
+  singular = "Incoming Delivery"
+  plural = "Incoming Deliveries"
+  
+  func pathCanExecute: Bool = deliveryStatus == Planned || deliveryStatus == InTransit
+  report Report {
+    field activeOnly = true
+    field warehouseOperative: Person? {
+      default = Person.current.filter(is(WarehouseOperative))
+      from = Person.all.filter(is(WarehouseOperative))
+    }
+    view list = IIncomingDelivery.all.filter(isFor(warehouseOperative, WarehouseOperative) && (!activeOnly || active)) >> nav{list(canAdd = false){}}
+  }
+  func dispatchDateLabel = if (this.hasInTransit) "Pickup Date" else "Date"
+}
+
+inline trait IIncomingDeliveryItem extends IDeliveryItem {
+  var product: ISubProduct 
+  func unit: ProductUnit
+  func qty: Qty[unit]
+  func active: Bool
+  
+
+  register inStocks: [StockRegister]? {
+    value = if (itemDelivery && itemDelivery!.is[IIncomingDelivery] && itemDelivery!.status != Canceled && active) product.tangibleProductQtys(qty).mapOpt(inStock(_.product, _.qty))
+    availableFor = Inline
+    available(Inline).for(Inline)
+    autoRecalc = true
+  }
+  
+  func inStock(product: IProduct, baseQty: Qty): StockRegister?
+  compute baseQty: Qty[product.unit] = product.toBase(qty)
+}

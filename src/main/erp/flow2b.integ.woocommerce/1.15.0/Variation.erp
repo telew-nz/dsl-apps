@@ -1,0 +1,122 @@
+back class UploadVariationsJob extends SystemJob {
+  field service: WooCommerceIntegration
+  field superProduct: ISuperProduct
+  field change: BatchChange[ProductUpdate[IComplexSubProduct]] 
+  func do: Future[Any] = {
+    change.regroup(service)
+    if (let pid = superProduct.extId(service)) {
+      let u = BatchVariationUpdate(
+        create = change.created.map(VariationData.create(service, _)),
+        update = change.updated.map(VariationData.create(service, _)),
+        delete = change.deleted*.product*.extId(service)
+      )
+      let response <- service.https("/products/$pid/variations/batch").post(u.json)
+      let r = response.body!.parseJson[BatchVariationResponse]
+      change.updateExtIds(service, r.create.map(id))
+      change.updateExtUrls(service, r.create.map(permalink), r.update.map(permalink))
+      r.check(this, u, change){
+        if (code == "product_invalid_sku") {
+          RetrieveVariationId(service = service, variation = item.product).run
+          true
+        } else {
+          false
+        }
+      }
+      (u.create + u.update).zip(r.create + r.update, (ll, rr) => {
+        if (let left = ll.image, let right = rr.image) {
+          left.updateExtId(service, right)
+        }
+      })
+     
+      service.variationsUploaded(change)
+    } else {
+      change.deleteAllExtItems(service)
+    }
+  }
+}
+
+back class RetrieveVariationId extends SystemJob {
+  field service: WooCommerceIntegration
+  field variation: IComplexSubProduct
+  
+  func do = {
+    let sp = variation.superProduct
+    if (let pid = sp.extId(service)) {
+      let response <- service.https("/products/$pid/variations").param("sku", variation.sku).get
+      let items = response.body!.parseJson[[VariationData2]?]
+      let item = items.find(i => i.sku == variation.sku).alt(throw "Cannot find sku ${variation.sku} for $variation")
+      variation.updateExtId(service, item.id!)
+      variation.updateExtUrl(service, item.permalink!)
+      variation.updateECommerce(service)
+      variation.save
+    }
+  }
+}
+
+extend trait ISubProduct {
+  back func wooAttrValues(service: WooCommerceIntegration): [WooProductAttrValue]? = attrTerms.map{v =>
+    let attrId = v.object.extId(service)!
+    WooProductAttrValue(id = attrId, name = v.object.attrName, option = v.title)
+  }
+}
+ 
+back class BatchVariationUpdate {
+  field create: [VariationData]?
+  field update: [VariationData]?
+  field delete: [Int]?
+}
+
+back class BatchVariationResponse extends WooResponse[VariationData2] {
+  field create: [VariationData2]?
+  field update: [VariationData2]?
+  field delete: [VariationData2]?
+}
+back class VariationData extends WooData {
+  extFieldNaming = Underscore
+  field id: Int?
+  field sku: String
+  field regularPrice: String? 
+  field permalink: Url?
+  field salePrice: String? 
+  field stockQuantity: Int?
+  field manageStock: Bool
+  field inStock: Bool
+  field visible: Bool
+  field menuOrder: Int? {extRequired}
+  field image: WooImage? {extRequired}
+  field attributes: [WooProductAttrValue]? {extRequired}
+ 
+  object func create(service: WooCommerceIntegration, u: ProductUpdate[IComplexSubProduct]): VariationData = {
+    let p = u.product
+    VariationData(
+      id = service.extId(u.product), sku = p.sku,
+      regularPrice = u.price.regular, salePrice = u.price.current, 
+      stockQuantity = u.stock, 
+      image = p.variationPhotos.first.map{f => 
+        WooImage.create(service, f, 0)
+      },
+      menuOrder = p.superProduct.subProducts.indexOf(p) + 1,
+      visible = u.enabled,
+      manageStock = !p.alwaysAvailable, inStock = u.stock > 0 || p.alwaysAvailable,
+      attributes = p.wooAttrValues(service)
+    )
+  }
+}
+
+back class VariationData2 extends WooData {
+  extFieldNaming = Underscore
+  field id: Int?
+  field sku: String?
+  field regularPrice: String? 
+  field permalink: Url?
+  field salePrice: String? 
+  field stockQuantity: Int?
+  field inStock: Bool
+  field visible: Bool
+//  field manageStock: Bool
+  field menuOrder: Int? 
+  field image: WooImage? 
+  field attributes: [WooProductAttrValue]?
+  
+  func toString = "Variation $id $sku"
+}

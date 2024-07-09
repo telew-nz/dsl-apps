@@ -1,0 +1,43 @@
+entity ContinuousPriceModel extends IContinuousPriceModel with TRentPriceModel {
+  field title: String
+  ref field date: Date[day] = now
+  func currency: Currency = vendor.getCurrency
+  field durations: [RentDuration]
+  field overnightUnit: RentDurationUnit = default
+  field overnightCharge: Qty[overnightUnit]? {
+    label = "Night Charge"
+    canEditUnit
+  }
+  field openedPeriod: TimePeriod {
+    default = TimePeriod(start = Time(0, 0, 0), end = Time(0, 0, 0))
+    label = "Opened period (usual without breaks)"
+  }
+  field pricesIncludingGst: Bool = vendor.pricesIncludingGst
+  field products: [ContinuousProductPrice]? inline by model {
+    available(All)
+  }
+  func createProduct(product: AssetRentService, prices: [DurationPrice]?, bond: Money[currency]?): ContinuousProductPrice = {
+    ContinuousProductPrice(model = this, product = product, prices = prices, bond = bond)
+  }
+  func superProductPrice(superProduct: ISuperProduct): IPrice? = {
+    products.find(product == superProduct)
+  }
+  
+  view form = nav{grid{
+    title
+    row {
+      date
+      vendor
+      pricesIncludingGst
+    }
+    openedPeriod >> field (frame = false)
+    overnightCharge
+    durations 
+    products >> list(mode = EditSelect){formEx}
+  }}
+}
+
+inline entity ContinuousProductPrice extends TRentProductPrice with IContinuousProductPrice {
+  system field model: ContinuousPriceModel by products
+  
+}

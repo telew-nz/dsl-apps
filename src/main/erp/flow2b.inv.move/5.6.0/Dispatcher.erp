@@ -1,0 +1,10 @@
+role Dispatcher {
+  menu Dispatch {
+    entity IOutgoingDelivery = "Outgoing Deliveries"
+  }
+  view dashboard = 
+    IOutgoingDelivery.all.filter(dispatchState == ToDispatch).sortBy(dispatchDate) 
+      >> nav(label = "Deliveries to Dispatch", maxHeight = 25){list(canAdd = false) {
+       x {dispatchDate ref}
+    }}
+}

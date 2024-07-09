@@ -1,0 +1,67 @@
+report DebtRecon {
+  singular = "Debt Reconciliation"
+  field legalEntity: OurLegalEntity =? onlyOne 
+  field counterparty: LegalEntity {
+    update = {
+      currency = new.getCurrency
+    }
+  }
+  field currency: Currency = (try? counterparty.getCurrency).alt(our)
+  impl view list = 
+    LMoneyDebt.all
+      .filter{d => 
+           d.counterparty == this.counterparty
+        && d.legalEntity == this.legalEntity
+        && d.currency == this.currency
+      }
+      .map{d =>
+        (d.date, d.journal, d.sortNum, d.amountDue, d.balanceDue, d.dueDate, 
+         d.origin.as[IOrderRevision]?.paymentState, d.origin.reconState,
+         d.origin.as[IOrderRevision]?.overdueState,
+         debtOriginAmounts = d.journal.as[DebtOrigin]?.debtOriginAmounts.filter(_.origin)
+        )
+      }
+      .sortBy(sortNum.desc) 
+    >>   nav{
+    table(label = "Transactions") {
+      header{
+        label("Document", width = 0.35)  
+        label("Amount", align = Right, width = 0.2) 
+        label("Due Date", width = 0.2)  
+        label("Balance", align = Right, width = 0.25)
+      }
+      body {
+        row{
+          y (rowSpan = 4, margin = None) {
+            date >> field(fontStyle = Label)
+            journal >> field(title = title) 
+          }
+          amountDue >> field( label = "Amount Due")
+          dueDate?.date
+          balanceDue >> field(label = "Balance", showEmpty, rowSpan = 3)
+        }
+        row {
+          paymentState >> field(visible = paymentState != Paid)
+          overdueState >> field(visible = overdueState == PaymentOverdue)
+        }
+        row {
+          reconState >> field(visible = !journal.is[IOrderRevision] && reconState != Recon)
+          space
+        }
+        row {
+          panel(collapsed = true, span = 3, align = Left, label = "Reconcilation", frame = false, visible = debtOriginAmounts) {
+            debtOriginAmounts >> list {grid (labels = None, frame = false, width = 0.55) {
+              origin >> field(title = title, width = 0.3) 
+              x (margin = None, width = 0.25, align = Right, label = "Amount") {
+                amount
+                x (visible = origin && origin!.debtAmount != amount, flow = false) {
+                  label("of", fontStyle = Label, stretch = 1) origin!.debtAmount
+                }
+              } 
+            }
+                                      }
+          }
+        }
+      }
+    }}
+}

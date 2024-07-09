@@ -1,0 +1,77 @@
+entity DropShipDelivery extends IPurchaseDelivery with ISalesDelivery {
+  icon = "truck-moving"
+  const ref field n: Int? = increment(Order.gen)
+  
+  impl func stockTypeSrc = null
+  impl func stockTypeDst = null
+  func deliverySource: Store? = null
+  impl ref compute number: String {
+    value = manualNumber.alt("DD" + n.format(3, 0))
+    update = {manualNumber = new}
+  }
+  impl func entityNumbers = [number, trackingNumber]
+  override func isInstant = false
+  impl func pathSrc = null
+  impl func pathDst = null
+  impl func deliverySrc: IStore? = null
+  impl func deliveryDst: IStore? = null
+  override func pathCanBeExecuted: Bool = false
+  
+  impl func orders: [Order] = ((try? purchaseOrders) + (try? salesOrders))!
+  impl list compute vendor = purchaseOrders.first.vendor
+  impl list compute customer = salesOrders.first.customer
+  override func deliverySupplier = supplier?.legalEntity
+  override func deliveryReceiver = receiver?.legalEntity
+  impl func legalEntity: OurLegalEntity = salesOrders.first.legalEntity
+  impl func title = "$number $(try? receiver?.title)"
+  impl func defaultSalesOrders: [SalesOrder]? = [SalesOrder(deliveries = [this], vendor = purchaseOrders.first.customer)]
+  impl func defaultPurchaseOrders: [PurchaseOrder]? = [PurchaseOrder(deliveries = [this], customer = salesOrders.first.vendor)]
+  impl func updateSupplier(): Void = {
+    if (!purchaseOrders.first.id) purchaseOrders.first.vendor = getSupplier?.as[Vendor]
+  }
+  impl func updateReceiver(): Void = {
+    if (!salesOrders.first.id) salesOrders.first.customer = getReceiver?.as[Customer]
+  }
+  impl field shipTo: ILocation? {
+    from = Query(getReceiver?.legalEntity).flatMap(deliveryLocations)
+    visible = getReceiver
+  }
+  func debtDueDate = deliveryDate
+  override func ledgers(journal: Journal, date: Date): Future[[Ledger]?] = {
+    let sl <- salesLedgers(journal, date)
+    let pl <- purchaseLedgers(journal, date)
+    sl + pl
+  }
+  impl view deliveryHeader = grid(width = 1.2){
+    issuesView
+    status
+    row {supplier, receiver, dispatchDate}
+    row {space, shipTo, deliveryDate}
+    row {space,  space,  dueDate}
+    freightView
+    salesOrders
+    purchaseOrders
+    items >> list(editMode = AlwaysRead){form}
+  }
+  impl view form = nav{grid(width = 1.2, labels = Top) {
+    salesOrders
+    purchaseOrders
+    number
+    status
+    row {getSupplier, getReceiver, dispatchDate}
+    row {space, shipTo, deliveryDate}
+    row {space,  space,  dueDate}
+    freightView
+    items >> list(editMode = AlwaysRead){form}
+  } generalLedgerButton} 
+  
+  impl view ref = x{title status}
+  impl event onSave = {
+    orders*.touch
+  }
+  
+  impl object view list = DropShipDelivery.all >> nav{list(canAdd = false){grid(labels = None){
+    row{number >> field(width = 0.2) deliveryDate >> field(visible = true, width = 0.3) vendor >> field(width = 0.25) customer >> field(width = 0.25)}
+    x{status}
+  }}}
+}

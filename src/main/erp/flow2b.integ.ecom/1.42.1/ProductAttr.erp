@@ -1,27 +1,40 @@
-extend trait ProductAttr extends HasExtId 
-extend trait ProductAttrTerm extends HasExtId {
-  impl event onSaveOrDelete = {
+extend trait IProductAttr extends HasExtId {
+	impl event onSaveOrDelete = {
   	if (touched) {
       ECommerceIntegration.all.map {service =>
-        if (!this.is[ProductAttrTerm with IBrand] || !service.hasBrands) {
+        if (this != BrandAttr.attr || !service.hasBrands) {
           if (service.userEnabled) {
-            service.uploadAttrTermJobs(BatchChange.create(service, [this]))*.enqueue
+            service.uploadAttrJobs(BatchChange.create(service, [this]))*.enqueue
           }
         }
       }.result
     }
   }
 }
+extend trait IProductAttrTerm extends HasExtId {
+    impl event onSaveOrDelete = {
+      if (touched) {
+        ECommerceIntegration.all.map {service =>
+          if (!this.is[IProductAttrTerm with IBrand] || !service.hasBrands) {
+            if (service.userEnabled) {
+              service.uploadAttrTermJobs(BatchChange.create(service, [this]))*.enqueue()
+
+            }
+          }
+        }.result
+      }
+    }
+}
 
 extend trait ECommerceIntegration {
   back func uploadAllAttrs(): Void = {
-    let attrs: [ProductAttr]? = ProductAttrTerm.subObjects*.as[ProductAttr].filter(_ != Brand || !this.hasBrands)
-    let b: BatchChange[ProductAttr] = BatchChange.create[ProductAttr, ID](this, attrs)
+    let attrs: [IProductAttr]? = IProductAttr.all
+    let b: BatchChange[IProductAttr] = BatchChange.create[IProductAttr, ID](this, attrs)
     if (!b.isEmpty) uploadAttrJobs(b)*.enqueue()
   }
   
   back func uploadAllAttrTerms(): Void = {
-    let terms = ProductAttrTerm.all.filter(!_.is[ProductAttrTerm with IBrand] || !this.hasBrands).result.get
+    let terms = IProductAttrTerm.all.filter(!_.is[IProductAttrTerm with IBrand] || !this.hasBrands).result.get
     let b = BatchChange.create(this, terms)
     if (!b.isEmpty) uploadAttrTermJobs(b)*.enqueue()
   }

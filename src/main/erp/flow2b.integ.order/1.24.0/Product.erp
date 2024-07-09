@@ -1,0 +1,49 @@
+extend trait IBaseProduct extends HasExtId
+
+back interface ESuperProduct[ID] {
+  func extId: ID
+  func extUrl: Url? = ""
+  func isTangible: Bool
+  func photos: [EFile[ID]]? = []
+  func title: String
+
+  func categoryItems: [EProductCategory[ID]]? = []
+  func categoryIds: [ID]? = []
+  
+  func brandItems: [EBrand[ID]]? = []
+  func brandIds: [ID]? = []
+  
+  func tagItems: [EProductTag[ID]]? = []
+  func tagIds: [ID]? = []
+  
+  func stock: Qty? = 0
+  func salesPrice: SalesPrice? = null
+  func description: Text? = ""
+  
+  func newProduct(service: ExtIdSource[ID]): ISuperProduct = {
+    if (isTangible) Good(title = title, description = description, photos = photos*.make(service)*.as[Image]).as[ISuperProduct]
+    else Service(title = title, description = description, photos = photos*.make(service)*.as[Image])
+  }
+  func make(service: ExtIdSource[ID], stocktake: Stocktake): StocktakeItem = {
+    StocktakeItem(stocktake = stocktake, product = make(service).as[ISuperProduct with IProductInv]!, qty = stock.positive).save
+  }
+  func postInit(product: ISuperProduct): Void = {
+  }
+  func make(service: ExtIdSource[ID]): ISuperProduct = {
+    service.findExtId(extId, _.as[ISuperProduct])
+      .or {
+        let title = this.title.lower.trim
+        ISuperProduct.all.find(pc => pc.title.lower.trim =%= title).result.get
+      }.alt {
+        let prod = newProduct(service)
+        prod.categories = if (let categoryItems) categoryItems*.make(service) else categoryIds.mapOpt(id => service.findExtId(id, _.as[ProductCategory]))
+        prod.tags = if (let tagItems) tagItems*.make(service) else tagIds.mapOpt(id => service.findExtId(id, _.as[ProductTag]))
+        prod.brands = if (let brandItems) brandItems*.make(service) else brandIds.mapOpt(id => service.findExtId(id, _.as[Brand]))
+        prod.salesPrice = salesPrice        
+        prod.updateExtId(service, extId)
+        prod.updateExtUrl(service, extUrl)
+        postInit(prod)
+        prod.save
+    }
+  }
+}

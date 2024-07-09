@@ -1,0 +1,106 @@
+interface IIOrderTerms {
+  func target: [PurchaseSale]? = [Purchases, Sales]
+  func isPurchase = target.contains(Purchases)
+  func isSales = target.contains(Sales)
+  func due(order: IOrder): Due
+  func orderState(order: IOrder): OrderState
+  func canDispatch(state: OrderState) = state != Quote
+
+  func dispatchDate(order: IOrder): Date? = null
+  
+  func hasAcceptance: Bool = false
+  func acceptedByDefault: Bool = false
+  func reserveQuote: Bool = false
+  func updatableStates(order: IOrder): [OrderState]
+}
+enum PurchaseSale {
+  case Purchases
+  case Sales
+}
+class Due {
+  field amount: Money?
+  field date: Date?
+  field update: Date?
+  impl func toString = "Due($amount due $date update $update)"
+}
+
+trait IOrderTerms extends RefEntity with IIOrderTerms {
+  impl event onSave = {
+    IOrder.all.filter(terms == this)*.touch
+  }
+}
+
+extend entity CptAccTerms {
+  field _orderTerms: IOrderTerms? {views = []}
+  compute orderTerms: IOrderTerms? {
+    value = _orderTerms.or(Workspace.current.salesOrderTerms)
+  }
+}
+
+extend entity Customer {
+  field _orderTerms: IOrderTerms? {views = []}
+  compute orderTerms: IOrderTerms? {
+    from = IOrderTerms.all.filter(isSales)
+    value = _orderTerms.or(
+      legalEntity.cptAccs*.terms*.orderTerms.first.or(Workspace.current.salesOrderTerms)
+    )
+  }
+}
+
+extend entity Vendor {
+  field _orderTerms: IOrderTerms? {views = []}
+  compute orderTerms: IOrderTerms? {
+    from = IOrderTerms.all.filter(isPurchase)
+    value = _orderTerms.or(Workspace.current.purchaseOrderTerms)
+    update = {
+      _orderTerms = if (new != Workspace.current.purchaseOrderTerms) new
+    }
+  }
+}
+
+extend trait Workspace {
+  field salesOrderTerms: IOrderTerms? {
+    from = IOrderTerms.all.filter(isSales)
+    label = "Default sales order terms" 
+    views = []
+  }
+  field purchaseOrderTerms: IOrderTerms? {
+    label = "Default purchase order terms" 
+    from = IOrderTerms.all.filter(isPurchase)
+    views = []
+  }
+  extend view form = extend("main") {
+    salesOrderTerms
+    purchaseOrderTerms
+  }
+}
+
+
+object DefaultOrderTerms extends IIOrderTerms {
+  impl func orderState(order: IOrder): OrderState = {
+    if (order.dlvIs(Complete) && order.paid) Closed
+    else if (let ds = order.orderStateDelivery) ds
+    else if (order.totalDue && order.unpaidAmount <= 0) Prepaid    
+    else if (order.accepted) Accepted
+    else if (order.isEmpty) Quote
+    else Quote
+  }
+  impl func due(order: IOrder): Due = {
+    let ds = order.orderStateDelivery
+    Due(amount = if (order.accepted || ds) order.invoiceTotal)
+  }
+  impl func hasAcceptance: Bool = true
+  impl func acceptedByDefault: Bool = true
+  impl func reserveQuote: Bool = true
+  
+  impl func updatableStates(order: IOrder): [OrderState] = {
+    let s = order.calcState
+    if (s == Canceled) [OrderState.Canceled]
+    else {
+      let dss: [OrderState] = order.dlvStates
+      let ass: [OrderState] = (if (order.paid && order.invoiceTotal) [OrderState.Prepaid] else [OrderState.Quote, OrderState.Accepted])
+      dss + ass + OrderState.Canceled
+    }
+  }
+  
+}

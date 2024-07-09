@@ -92,3 +92,4 @@ inline entity PurchaseItem extends IPurchaseProductItem with FProductItemsInline
     }
   }
 }
+

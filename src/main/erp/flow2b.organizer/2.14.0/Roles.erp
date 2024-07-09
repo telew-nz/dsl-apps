@@ -1,0 +1,16 @@
+extend role UserRole {
+  entity Task {
+    read = isFor(User.current)
+    write = isFor(User.current)
+  }
+  entity Appointment {
+    read = contains(Person.current)
+    write = contains(Person.current)
+  }
+  extend view menu = menu("Organizer"){
+    Task >> item(fastAdd)
+    Discussion >> item(fastAdd)
+    Event >> item("Calendar" fastAdd)
+    extension("Organizer")
+  }
+} 

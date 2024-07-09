@@ -1,0 +1,49 @@
+back object Conversion extends IConversion {
+  func convert(version: [Int?]): Future[Any] = {
+    if (version < [16,8,2]) {
+      IOrder.all*.updateDue
+    }
+    if (version < [16,9,0]) {
+      FinanceNotificator.default(salesReminders)
+      FinanceNotificator.default(purchaseReminders)
+      FinanceNotificator.save
+      Invoice.all.filter(debtUnpaidAmount)*.touch
+    }
+    if (version < [16,14,0]) {
+      AutoSend.all.filter(failedSend)
+        .foreach{
+          failedSend = !activities*.deliveries.exists(status != Failed)
+          updateDashboard
+        }
+    }
+    if (version < [16,14,3]) {
+      Invoice.all.filter(i => i.prev && i.prev!.totalDue == i.totalDue && !i.prev!.deletedItems && !i.items.exists(invoices.first == i)).foreach {i =>
+        if (let next = i.order.invoices.find(oi => oi.prev == i)) {
+          next.prev = i.prev
+        }
+        i.delete
+      }
+    }
+    if (version < [16,20,0]) {
+      //renameEntity(CustAccStm, "flow2b.acc.finance.CustAccStm")
+      //renameField(Customer, accountStatements, "flow2b.acc.finance.accountStatements")
+      
+      IOrderRevision.all
+        .filter((paymentState == Account || paymentState == Unpaid)  && overdueState == Paid)
+        .update(overdueState = {
+          if (let dd = dueDate) {
+            if (dd < now) PaymentOverdue else NoPaymentOverdue
+          } else NoPaymentOverdue 
+        })
+      //CustAccStm.all.update(date = field[Period](_, "period").end)
+    }
+    if (version < [16,21,0]) {
+      dropEntity("flow2b.acc.finance.CustAccStm")
+      dropEntity("flow2b.invoice.CustAccStm")
+      CptAccTerms.all*.touch
+    }
+    if (version < [16,26,0]) {
+      renameField(ISuperProduct, invoiceDesc, "flow2b.invoice.invoiceDesc")
+    }
+  }     
+}    

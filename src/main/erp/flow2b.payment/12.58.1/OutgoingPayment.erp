@@ -141,3 +141,4 @@ entity OutgoingPayment extends Payment with OPReasonOwner {
   override view posViewDebit = x{account mAmount}
   override view posViewCredit = x{account amount}  
 }
+

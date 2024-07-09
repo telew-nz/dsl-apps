@@ -1,0 +1,180 @@
+trait IOrderDlvItem extends InlineEntity {
+  func purchase: IPurchaseItem?
+  func sales: ISalesItem?
+  
+  func storeRequired: Bool = false
+  func updateAmount(): Future[Void] = {}
+  func updateGst(): Void = {}
+  
+  func order: Order = (try? sales!)?.order?.as[Order].alt(purchase!.order)
+  func active = (!purchase || purchase!.consider) && (!sales || sales!.consider)
+  
+  field delivery: OrderDlv by allItems {
+    default = order.deliveries.first
+    from = {
+      if (let s = sales) s.order.deliveries
+      else purchase!.order.deliveries
+    }
+    update = {
+      if (!sales || (!delivery.is[ISalesDelivery])) this.default(sales) 
+      if (!purchase || (!delivery.is[IPurchaseDelivery])) this.default(purchase)
+    }
+  }
+  
+  impl event onSave = {
+    if (registerUpdated) {
+      delivery?.updateRegisters
+    }
+  }
+}
+
+inline trait IDlvProductItem extends IOrderDlvItem {  
+  func product: ISubProduct
+  func unit: ProductUnit
+  func qty: UQty[unit]
+  func needsRevision: Bool
+  func sameAsPrev(prev: IDlvProductItem): Bool
+  
+//  final func isReserved = order.state != Quote || order.getTerms.reserveQuote
+  impl func preComputeItems = sales?.order.toSeq + purchase?.order.toSeq
+  impl func storeRequired = product.isTangible
+  
+  
+  impl func updateAmount(): Future[Void] = {
+    let _ <- if (let s = sales) {
+      let currency = s.order.currency
+      let vendor = s.order.vendor
+      let customer = s.order.customer
+      let amount <- Query(vendor).map{
+        if (let pr = price(product)) pr.salesAmount(currency, customer, qty, s.order.pricesIncludingGst)
+      }.result
+      if (let a = amount) s.amountEditor = a.current
+    }
+    
+    let _ <- if (let p = purchase) {
+      let currency = p.order.currency
+      let customer = p.order.customer
+      let _ <- if (let vendor = p.order.vendor) {
+        let amount <- Query(vendor).map{
+          if (let pr = price(product)) pr.salesAmount(currency, customer, qty, p.order.pricesIncludingGst)
+        }.result
+        if (let a = amount) p.amountEditor = a.current
+      }
+    }
+    updateGst()
+  }
+  impl func updateGst(): Void = {
+    if (let s = sales?.as[ISalesItem with OrderProductItem]) {
+      s.gstRate = product.gstRate(s.order.orderVendor)
+    }
+    if (let p = purchase?.as[IPurchaseItem with OrderProductItem]) {
+      p.gstRate = product.gstRate(p.order.orderVendor)
+    }
+  }
+  
+  compute baseQty: UQty[product.unit] = product.toBase(qty)
+  
+  func productItems: [ProductItem]? = []
+}
+
+inline entity DeliveryItem extends IDlvProductItem  {
+  impl field product: ISubProduct {
+    available(Ref).with(unit, altUnits, vendors, productCost, invoiceDesc)
+    from = ISubProduct.all.filter{p =>
+       (!purchase || p.forPurchase) && (!sales || p.forSale) && (p.is[IProduct] || !purchase?.delivery?.is[PurchaseDelivery])
+    }
+    update = {
+      this.silentUpdate(_.unit, new.unit)
+      this.qty = this.qty.as[UQty[this.unit]]
+    }
+  }
+  impl field unit: ProductUnit {
+    from = product.units
+    update = {
+      updateAmount()
+    }
+  }
+  impl field qty: UQty[unit] {
+    default = 1
+    label = "Quantity"  
+    update = {
+      if (old) {
+        if (let s = sales) s.sAmount = s.sAmount*(new.as[UDec[12]]/old!)
+        if (let p = purchase) p.sAmount = p.sAmount*(new.as[UDec[12]]/old!)
+      }
+      updateAmount()
+    }
+  }
+  impl func needsRevision: Bool = updated(product) || updated(qty) || updated(unit)
+  
+  impl func sameAsPrev(prev: IDlvProductItem): Bool = {
+    let p = prev.as[DeliveryItem]!
+    p.product == product && p.qty == qty && p.unit == unit
+  }
+
+  impl field sales: SalesItem? inline by deliveryItem {
+    default = if (let d = delivery?.as[ISalesDelivery]) {
+      SalesItem(deliveryItem = this, order = d.salesOrders.first)
+    }
+  }
+  impl field purchase: PurchaseItem? inline by deliveryItem {
+    default = if (let d = delivery?.as[IPurchaseDelivery]) {
+      PurchaseItem(deliveryItem = this, order = d.purchaseOrders.first)
+    }
+  }
+  
+  func clearSales: Void = sales = null
+  func clearPurchase: Void = purchase = null
+  
+  impl compute productItems {
+    value = {
+      if (let p = purchase) p.productItems
+      else sales!.productItems
+    }
+    update = {
+      if (let p = purchase) {
+        p.productItems = new
+      } else {
+        sales!.productItems = new
+      }
+    }
+  }
+    
+  /*impl view form = grid(labels = None, width = 1.2, margin = TopBottom) {
+    row{product, x{qty, stockDesc >> field(visible = delivery?.is[SalesDelivery])}}
+    availableView >> field(visible = delivery?.is[SalesDelivery])
+    purchase!.snView >> field(editMode = Original, visible = ui.isSelected && product.trackItems && purchase)
+    sales!.snView >> field(editMode = Original, visible = ui.isSelected && product.trackItems && !purchase)
+    button("Print Labels", visible = ui.isSelected) {
+      printLabels()
+    }
+  } */
+
+  
+  
+  func splitRest(qty: UQty): DeliveryItem = {
+    if (qty < 0 || qty >= this.qty) throw "Cannot split $qty from $(this.qty)"
+    let oldQty = this.qty
+    let rest = (oldQty - qty).positive!
+    this.qty = qty
+    let di = DeliveryItem(product = product, unit = unit, qty = rest, sales = null, purchase = null, delivery = delivery).save()
+    sales.map{s => 
+      let a = s.amountEditor
+      s.amountEditor = a/oldQty*qty
+      SalesItem(order = s.order, deliveryItem = di, amountEditor = (a - s.amount).positive).save()
+    }
+    purchase.map{s => 
+      let a = s.amountEditor
+      s.amountEditor = a/oldQty*qty
+      PurchaseItem(order = s.order, deliveryItem = di, amountEditor = (a - s.amount).positive).save()
+    }
+    di
+  }
+
+}
+
+
+class ProdProdItem(product: ISubProduct, unit: ProductUnit, item: ProductItem?) {
+  impl func form = if (let i = item) i.labelView else product.labelView
+}
+

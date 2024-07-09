@@ -1,0 +1,43 @@
+entity CashTransfer extends CashMovement {
+  background = "#d68400"
+  func legalEntity = from.legalEntity
+  func journalDate = date
+  func sourceAccount: FinanceAccount? = from
+  func destinationAccount: FinanceAccount? = to
+    
+  func reconcileState: ReconcileState = Reconciled
+  const ref field n: Int? = increment(Payment.gen)
+  func title = number
+  func number: String = "CTR" + n
+  field date: Date = now
+  field from: FinanceAccount {from = FinanceAccount.ours}
+  field outcome: Money[from.currency]
+  field to: FinanceAccount {from = FinanceAccount.ours}
+  field income: Money[to.currency]
+    
+  object view list = CashTransfer.all >> nav{list{grid(labels = None, width = 1.2){
+    row{number, date.as[Date[day]]!, legalEntity, from, to, space}
+    row{stateView >> field(width = 0.6), -outcome >> field(width = 0.2), income >> field(width = 0.2), space}
+  }}}
+  
+  view form = nav{
+    grid{
+      row {number, date}
+      stateView >> field(visible = hasStates, label = "State")
+      row {from, to}
+      row {outcome, income}
+    }
+    generalLedgerButton
+  }
+  func hasStates = false
+  
+  view stateView = x{}
+  
+  register outcomeLedger = LCash(account = from.ledgerAccount, financeAccount = from, journal = this, legalEntity = from.legalEntity, trAmount = -outcome, cashFlowCategory = Exchange)
+  register incomeLedger = LCash(account = to.ledgerAccount, financeAccount = to, journal = this, legalEntity = to.legalEntity, trAmount = income, cashFlowCategory = Exchange)
+  register trading: [Ledger]? <- CurrencyTrading.trade(this, income, outcome)
+  register intercompanyDebts: [LDebt]? = if (from.legalEntity == to.legalEntity) [] else [
+    LDebt(account = IntercompanyDebts, journal = this, legalEntity = from.legalEntity, currency = to.currency, counterparty = to.legalEntity, trAmount = income),
+    LDebt(account = IntercompanyDebts, journal = this, legalEntity = to.legalEntity, currency = to.currency, counterparty = from.legalEntity, trAmount = -income)
+  ]
+}

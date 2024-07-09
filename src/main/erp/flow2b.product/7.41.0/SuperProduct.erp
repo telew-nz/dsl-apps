@@ -1,0 +1,44 @@
+trait ISuperProduct extends IBaseProduct {
+  plural = "Products"
+  singular = "Product"
+  width = 0.45
+  
+  impl field rentStatus: ProdRentStatus {
+    views = []
+    default = NotForRent
+  }
+  
+  impl func trackItems: TrackItems? = null
+  impl final func parent: IBaseProduct? = null
+  impl final func superProduct: ISuperProduct = this
+  impl func subProducts: [ISubProduct]? = child*.subProducts
+  impl func collectPhotos: [Image]? = collectPhotosDown
+  impl func collectPhotosUp: [Image]? = collectPhotosDown
+  impl func collectPhotosDown: [Image]? = if (let p = photos) p else child*.collectPhotosDown
+  override final func variationPhotos: [Image]? = []
+  
+  impl func description: Text? = ""
+  
+  impl func isValid: Bool = true
+  func obsolete: Bool = false
+  func weightInGrams: Number? = 0
+  
+  object field gen: Int?
+  const field n: Int? = increment(ISuperProduct.gen)
+  impl ref compute sku = skuPrefix + n
+  func skuPrefix: String = "PR"
+  impl func kits: [IKit]? = subProducts*.kits
+  
+  impl func productItems: [ProductItem]? {
+    default value = subProducts*.productItems
+  }
+
+  impl event onSave = {}
+  report Report {
+    field status: [ProductStatus]? {auto}
+    impl view list = ISuperProduct.all >> nav{list{}}
+  }
+}
+
+
+

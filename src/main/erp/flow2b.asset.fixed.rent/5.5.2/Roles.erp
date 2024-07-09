@@ -1,0 +1,11 @@
+extend role Salesperson {    
+  extend view menu = extend("Sales") {
+    AssetsAvailability >> item("Rentals Availability")
+  }
+} 
+extend role StoreOperative {
+  extend view menu = extend("Assets") {
+    AssetsAvailability >> item("Rentals Availability")
+  }
+}
+ 

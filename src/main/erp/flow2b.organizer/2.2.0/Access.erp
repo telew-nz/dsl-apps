@@ -1,0 +1,16 @@
+extend access UserRole {
+  entity Task {
+    read = owner == current
+    write = owner == current
+  }
+  entity Appointment {
+    read = contains(Person.current)
+    write = owner == current
+  }
+  menu Organizer {
+    trait Todo = "Todo"
+    report Calendar
+    entity Discussion
+    report RecentActivity
+  }
+}

@@ -1,0 +1,16 @@
+extend trait ISuperProduct {
+  field depreciation: DepreciationMethod?
+}
+
+extend trait IProduct {
+  field assets: [IFixedAsset]? read by product
+}
+
+extend entity Good {
+  extend view form = extend("tabs") {
+    grid (labels = Top, label = "Assets"){
+      depreciation
+      assets
+    }
+  }
+}

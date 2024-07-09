@@ -1,0 +1,96 @@
+trait IVariableSuperProduct extends ISuperProduct {
+  back func attrOptions: [ProductAttrOptions]? = attrOptions(subProducts)
+  back func attrOptions(products: [ISubVariation]?): [ProductAttrOptions]? = {
+    let thisObjs = attrTerms*.object
+    products*.attrTerms.filter(!(_.object in thisObjs)).groupBy(_.object).toSeq.map(k => ProductAttrOptions(attr = k.#0, options = k.#1))
+  }
+  
+  var variations: [ISubVariation]?  
+  impl func subProducts = variations
+  
+  func mainView: Layout
+  impl view form = nav{
+    tabs {
+      grid (labels = None, label = "Main") {
+        mainView
+      }
+      superProductTabView
+      extension("tabs")
+    }
+    superProductNavView
+    nfcWriteBtn
+    extension("nav")
+  }
+  
+  impl compute productCost {
+    availableFor = Inline
+    value = subProducts.mapOpt(productCost).sortBy(cost.desc, date.desc).first
+  }
+}
+
+alias IComplexSubProduct = ISubVariation {
+  deprecated(use = "ISubVariation")
+}
+trait ISubVariation extends ISubProduct { 
+  impl ref compute title = subTitle(superProduct.title)
+  impl func superProduct: IVariableSuperProduct
+  impl func subTitle(superTitle: String): String = "$superTitle $(attrTerms.join(" "))"
+  
+  field subRentStatus: ProdRentStatus?
+  impl compute rentStatus: ProdRentStatus {
+    views = []
+    value = subRentStatus.alt(superProduct.rentStatus)
+    update = {
+      subRentStatus = if (new != superProduct.rentStatus) new
+    }
+  }
+   
+  impl ref compute sku = superProduct.sku + "." + skuN
+  
+  const field skuN: Int? = increment(superProduct.skuGen)
+  impl event onSave = {}
+  
+  impl func isValid: Bool = superProduct.isValid
+  impl func isTangible: Bool = superProduct.isTangible
+  func weightInGrams: Number? = superProduct.weightInGrams
+  impl func description: Text? = superProduct.description
+  func obsolete: Bool = superProduct.obsolete
+  impl func unit: ProductUnit = superProduct.unit
+  impl func units = superProduct.units
+  override func collectPhotos: [Image]? = if (let p = photos) p else superProduct.collectPhotos.first(1)
+  
+  field subStatus: ProductStatus?
+  impl compute status: ProductStatus {
+    from = superProduct.status.subs
+    value = {
+      let ps = superProduct.status
+      if (let ss = subStatus) if (ps.subs.contains(ss)) ss else ps
+      else ps
+    }
+    update = {
+      subStatus = if (new != superProduct.status) new
+    }
+  }
+  
+  func mainView: Layout
+}
+
+trait IVariation extends ISubVariation with IProductInv {
+  impl view form = nav(onBarcode = if (ui.edit) addBarcode(barcode)){
+    tabs {
+      grid (labels = None, label = "Main") {
+        mainView
+      }
+      grid (labels = Top, label = "Related") {
+        kits
+        extension("rel")
+      }
+      subProductTabView
+      productTabView
+      extension("tabs")
+    }
+    productNavView
+    extension("nav")
+  }
+}
+

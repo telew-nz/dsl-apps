@@ -1,0 +1,77 @@
+object SMSEventsWebhookRouter extends WorkspaceRouter[SMSEventsWebhookData] {
+  impl back func parse(request: IncomingHttpRequest): SMSEventsWebhookData = {
+    request.body!.parseJson[SMSEventsWebhookData]
+  }
+  impl back func keys(request: IncomingHttpRequest, data: SMSEventsWebhookData): [String]? = {
+    [data.application.appID]
+  }
+}
+
+inline entity SMSEventsWebhookEndpoint extends WorkspaceEndpoint[SMSEventsWebhookData] {
+  impl field service: SMSService by smsEventsWebhookEndpoint
+  
+  impl func keys = [service.awsPinpointAppId]
+  impl func router = SMSEventsWebhookRouter
+  
+  impl back func process(request: IncomingHttpRequest, data: SMSEventsWebhookData): Future[Any] = {
+    //data.json.log("smsEventData")
+    
+    guard(data.eventType.lower.startsWith("_sms.")) else return {
+      Future(HttpResponse(code = 200, request = HttpRequest(url = request.url, ssl = request.ssl)))
+    }
+    
+    //data.attributes.messageID.log("messageID")
+    
+    let a <- Activity.all.find{a =>
+      a.deliveries.find(d => d.channel==SMS && d.messageId == data.attributes.messageID)
+    }.result
+    
+    if(let a
+       let d = a.deliveries.find(d => d.channel==SMS && d.messageId == data.attributes.messageID)) {
+      
+      let prevStatus = d.status
+      let isDelivered = (data.eventType.lower == "_sms.success" && 
+                         data.attributes.recordStatus.lower=="delivered")
+      
+      d.numberOfParts = data.attributes.numberOfMessageParts
+
+      if(isDelivered) {
+      	if(d.deliveredParts) d.deliveredParts += 1 else d.deliveredParts = 1
+        if(d.deliveredParts >= d.numberOfParts) {
+          d.awsCost = data.metrics.priceInMillicentsUSD.as[Money[USD]].as[Money[5]] / 100000.0
+          d.status = Delivered
+        }
+      } else d.status = Failed
+      
+      a.touch
+      if (prevStatus != d.status && d.status == Failed) {
+        a.entities.first?.observers*.notify()
+      }
+      a.entities.first?.touch
+      a.save      
+    } else Activity.comment("No sms message (delivery) with id = ${data.attributes.messageID}")
+    
+    HttpResponse(code = 200, request = HttpRequest(url = request.url, ssl = request.ssl))
+  }
+}  
+
+class SMSEventsWebhookData {
+  field eventType: String {extName="event_type"}
+  field application: SMSEventsApplication
+  field attributes: SMSEventAttributes
+  field metrics: SMSEventMetrics
+}
+
+class SMSEventsApplication {
+  field appID: String {extName="app_id"}
+}
+
+class SMSEventAttributes {
+  field messageID: String {extName="message_id"}
+  field recordStatus: String {extName="record_status"}
+  field numberOfMessageParts: Int {extName="number_of_message_parts"}
+}
+
+class SMSEventMetrics {
+  field priceInMillicentsUSD: Int {extName="price_in_millicents_usd"}
+}

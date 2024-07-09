@@ -1,0 +1,19 @@
+extend entity Customer {
+  field debtAllowance: Money[this.getCurrency]? {views = []}
+  extend view form = extend {
+    debtAllowance
+    legalEntity.debtReport(money = true) >> field(label = "Money Debt")
+    legalEntity.debtReport(money = false) >> field(label = "Delivery Debt")
+  }
+}
+
+extend entity Vendor {
+  field debtAllowance: Money[this.getCurrency]? {views = []}
+  extend view form = extend {
+    debtAllowance
+    legalEntity.debtReport(money = true) >> field(label = "Money Debt")
+    legalEntity.debtReport(money = false) >> field(label = "Delivery Debt")
+  }
+}
+ 
+ 

@@ -1,0 +1,20 @@
+back object Conversion extends IConversion {
+  func convert(version: [Int?]): Future[Any] = {
+    if (version < [7,8,0]) {
+      VariableKit.all.update(status = ForSale)
+      VariableGood.all.update(status = ForSale)
+    }
+    if (version < [7,14,0]) {
+      renameField(GoodVariation, superProduct, "variableGood")
+      renameField(KitVariation, superProduct, "variableKit")
+      
+      //renameField(GoodVariation, _color, "color")
+      //renameField(GoodVariation, _size, "size")
+      //renameField(GoodVariation, _condition, "condition")
+      
+      //renameField(KitVariation, _color, "color")
+      //renameField(KitVariation, _size, "size")
+      //renameField(KitVariation, _condition, "condition")
+    }
+  }   
+}    

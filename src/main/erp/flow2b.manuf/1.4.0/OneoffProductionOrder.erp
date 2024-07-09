@@ -1,0 +1,81 @@
+entity OneoffProductionOrder extends IProductionOrder with IMethod {
+  func number = "OPRO" + n
+  func title: String = if (let n = refNum) "$number ($n) $mainProduct" else "$number $mainProduct"
+  field materials: [OproMethodMaterial]? inline by order
+  field resources: [OproMethodResource]? inline by order {
+    singular = "Resource"
+  }
+  field outputs: [OproMethodOutput] inline by order
+  func items = materials
+  func method = this
+  func qtyK: Dec[8] = 1
+  
+  view form = nav {
+    grid(width = 1.2){
+      issuesView
+      row{number space space}
+      x {status >> field(editMode = AlwaysEdit) availability}
+      row {dispatchDate deliveryDate space}
+      row {legalEntity supplier >> field(visible = ui.edit || sSupplier || sReceiver) receiver >> field(visible = ui.edit || sSupplier || sReceiver)}
+      row {factory materialStore >> field(visible = ui.edit || sMaterialStore || sOutputStore) outputStore >> field(visible = ui.edit || sMaterialStore || sOutputStore)}
+      outputs >> table{
+        outputProduct >> field(width = 0.5) qty >> field(width = 0.25) gstEditor >> field(width = 0.25, visible = sReceiver, label = "Transfer GST") costWeight  >> field(width = 0.2)
+      }
+      materials >> table{
+        header{label("Product", width = 0.5)  label("Quantity", align = Right, width = 0.25) label("Transfer GST", width = 0.25, visible = sSupplier) label("", width = 0.2) }
+        body{
+          row {material >> field(rowSpan = 3) qty gstEditor >> field(width = 0.2, visible = sSupplier) }
+          row {y(span = 4, visible = status == Planned || !isAvailableNow){stockDesc}}
+          row {y(span = 4, visible = !isAvailableNow){availableView}}
+        }
+      }
+      resources >> table{
+        resource >> field(width = 0.5) duration >> field(width = 0.25) space(width = 0.25, label = "")
+      }
+    }
+    generalLedgerButton
+  }
+  view ref = x{status >> field(editMode = AlwaysEdit) availability title}
+}
+
+inline entity OproMethodMaterial extends HasProductQty with IAmountQtyItem with IOutgoingDeliveryItem with IMethodMaterial {
+  field order: OneoffProductionOrder
+  field material: Material {
+    available(Ref).with(product.unit, product.altUnits)
+    update = {
+      productUpdated()
+    }
+  }
+  func baseProduct = material.product
+  func itemDelivery = order
+  func active = order.status != Canceled
+  func product = material.product
+  func updateGstRate(): Void = {
+    gstRate = product.gstRate(order.supplier)
+  }
+}
+
+inline entity OproMethodOutput extends HasProductQty with IIncomingDeliveryItem with IMethodOutput {
+  field order: OneoffProductionOrder
+  field outputProduct: OutputProduct {
+    label = "Product"
+    available(Ref).with(product.unit, product.altUnits)
+    update = {
+      productUpdated()
+    }
+  }
+  field costWeight: Dec[2] = 1
+  func baseProduct = outputProduct.product
+  func itemDelivery = order
+  func active = order.status != Canceled
+  func product = outputProduct.product
+  func updateGstRate(): Void = {
+    gstRate = product.gstRate(order.legalEntity)
+  }
+}
+
+inline entity OproMethodResource extends IMethodResource {
+  field order: OneoffProductionOrder
+  field resource: Resource
+  field duration: Duration[DateUnit.hour]
+}

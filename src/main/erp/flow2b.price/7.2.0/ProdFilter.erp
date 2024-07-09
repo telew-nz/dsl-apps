@@ -1,0 +1,12 @@
+trait IProdFilterOwner extends AnyEntity {
+  system  field filters: [IProdFilter]? inline by owner
+  
+  func filterProd(prod: IBaseProduct): Bool = filters.all(_.filter(prod))
+}
+
+trait IProdFilter extends InlineEntity {
+  system field owner: IProdFilterOwner
+  
+  func filter(prod: IBaseProduct): Bool
+}
+

@@ -1,0 +1,129 @@
+back class ExtMsg {
+  field channel: CommChannel
+  field date: Date
+  field messageId: String?
+  field refMessageIds: [String]?
+  field refActivities: [Activity]? inline = refMessageIds.mapOpt{refMessageId =>
+    Activity.findByMessageId(refMessageId)
+  }
+  
+  field isSpam: Bool
+  field from: ExtMsgContact
+  field to: ExtMsgContact
+  field cc: [ExtMsgContact]?
+  
+  field subject: String?
+  field richText: Text?
+  field plainText: PlainText?  
+  
+  field flow2b: ExtMsgFlow2b?
+  field attachs: [ExtMsgAttach]?
+  field unsubscribes: [Url]?
+  
+  func proc: Bool = {
+    var msg: ExtMsg = this
+    MsgProc.subObjects*.as[MsgProc.object with MsgProc].sortBy(_.priority.desc).exists{p =>
+      if (let m = p.proc(msg)) {
+        msg = m
+        false
+      } else {
+        true
+      }
+    }
+  }
+  
+  func fillActivity(proc: MsgProcActivity): Bool = {
+    let recipients0: [Contact]? = channel.findContacts(to.address)*.as[ActorContact]
+       *.addressee*.systemContact
+    let recipients: [Contact]? = {
+      if (let recipients1 = recipients0*.as[Dashboard]) recipients1
+      else if (let recipients1 = recipients0*.as[IContactGroup]) recipients1
+      else if (let recipients0) recipients0 
+      else channel.defaultRecipients()
+    }
+    guard (let recipients) else return false
+    
+    let a = Activity.current!
+    a.channel = channel
+    
+    let men: Text = recipients*.atMention.join(" ").as[Text]
+
+    let mhtml: Html? = "<p>$men</p>"
+    let toHtml: Html? = if (!recipients0) "<p>To: ${to}</p>"    
+    let ccHtml: Html? = if (cc) "<p>Cc: $(cc)</p>" 
+    if (let copyOf = Activity.findByMessageId(messageId)) return {
+      a.from = copyOf.from
+      a.comment = toHtml + mhtml + ccHtml
+      a.entities = copyOf.entities
+      true
+    } 
+
+    let refs = proc.refs(this)
+    let from = if (let address = from.address) {          
+      channel.makeContact(from.name, address)
+    } 
+    guard (let item = proc.item(this, from, recipients, refs)) else return false
+    
+    a.from = from?.save
+    a.messageId = messageId
+    
+    a.from?.join(item)
+    var files = attachs*.make
+    
+    let text: Text? = if (let html = richText) {
+      let d = html.parseHtml
+      if (refs) clean(d)
+      let body = d.select("body")!.first
+      body.prepend(mhtml)
+      if (toHtml) body.prepend(toHtml)
+      if (ccHtml) body.prepend(ccHtml)
+      let ret = d.innerHtml
+      if (ret.length > 30000) {
+        files = [FileGeneric(name = "Content.html", contentType = "text/html", content = html.toData)] + files
+        a.comment = toHtml + mhtml + ccHtml
+      } else {
+        a.comment = ret
+      }
+    } else {
+      var r: Text? = plainText
+      if (!recipients0) r = toHtml + r
+      r = mhtml + r
+      r = ccHtml + r
+      if (r.length > 30000) {
+        files = [FileGeneric(name = "Content.txt", contentType = "text/plain", content = plainText.toData)] + files
+        a.comment = toHtml + mhtml + ccHtml
+      } else {
+        a.comment = r
+      }
+    }
+    a.entities = [item] 
+      + a.from?.realEntity.toSeq
+      + (if (!refs.onlyOne) refs)
+      + files
+    true
+  }
+  
+  func clean(elem: HtmlElement): Void = {
+    if (let quotes = elem.select("blockquote:last-child, br:last-child, gmail_quote")) {
+      quotes*.delete
+      clean(elem)
+    }
+  }
+}
+
+back class ExtMsgFlow2b(workspace: String, dslType: String, id: String) {
+  compute url = "$(System.url)#$(workspace)/$(dslType)/form/$id"
+}
+back class ExtMsgAttach(name: String, contentType: String?, content: Data?) {
+  func make: File = {
+    File.obj(name).new(name = name, contentType = contentType, content = content).save
+  }
+}
+                                                      
+back class ExtMsgContact(name: String?, address: String?) {
+  impl func toString = {
+    if (let name, let address) "$name <$address>"
+    else if (let address) address
+    else name
+  }
+}

@@ -1,0 +1,31 @@
+extend entity Company {
+  field legalInfo: LegalInfo {views = []}
+  field legalStructure: LegalStructure? inline by company {
+    visible = isOur
+    validate = if (isOur && !legalStructure) "Legal Structure for our company should be set"
+    views = []
+  }
+  ref compute pricesIncludingGst: Bool {
+    value = if (let ls = legalStructure) ls.pricesIncludingGst else true
+    views = []
+  }
+  ref compute gstStatus: GstStatus? {
+    value = legalInfo.gstStatus
+    views = []
+  }
+
+  func forceLegalStructure: LegalStructure = legalStructure.alt(throw "Set legal structure for $(this)")
+  func specificAccounts: [LedgerAccount] = forceLegalStructure.specificAccounts
+  func canCloseIncomeSummary: Bool = legalStructure?.canCloseIncomeSummary.alt(false)
+  func incomeSummaryClosing(journal: Journal, balance: Money[getCurrency]): [Ledger]? = {
+    forceLegalStructure.incomeSummaryClosing(journal, balance)
+  }
+  extend view form = extend("tabs") {
+    grid(labels = Top, label = "Legal") {
+      legalInfo >> field(label = "", frame = false)
+      legalStructure
+      extension("legalInfo")
+    }
+  }
+  extend view form = accounts
+}

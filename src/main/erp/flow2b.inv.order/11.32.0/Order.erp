@@ -1,0 +1,192 @@
+trait Order extends Entity with Journal with HasDebtCounterparty with IOrder with NewEngine with HasN {
+  background = "#a73e6c"
+  impl func orderCustomer: ICustomer?
+  impl func orderVendor: IVendor?
+  compute priceLevel: IPriceLevel = orderCustomer?.as[Customer]?.priceLevel.alt(PriceLevelDefault)
+  object field gen: Int?
+  impl func nextN = increment(Order.gen)
+  impl ref field currency: Currency {
+    default = Currency.our
+  }
+  compute rentPeriod: Period? = {
+    let pers = deliveries.map(_.rentPeriod)
+    if (pers.all(i => i)) {
+      pers.mapOpt(i => i).distinct.onlyOne
+    }
+  }
+  
+  override func processFixes =  [
+    Fix(text = "Mark as processed and remove from the dashboard", acts = [
+       Act(label = "Mark as processed", icon = "check", color = "#090", do = {
+         procState = Processed
+         UI.save(this)
+       })
+    ])
+  ]
+  override func cancelFixes = []
+  impl compute activeState: ActiveState {
+    value = procState.ast
+    update = {
+      procState = OrderProcState.all.find(ast == new)!
+    }
+  }
+
+  
+  compute referenceNumber {
+    value = refNum
+    deprecated(use = "refNum")
+  }
+  compute dlvStart: Date = deliveries*.start.min
+  ref compute total: UMoney[currency]? {
+    canEditUnit
+    value = items*.orderAmount.sum.positive
+  }
+  compute totalWithGst: UMoney[currency]? {
+    canEditUnit
+    label = "Total incl GST"
+    value = items*.orderAmountWithGst.sum.positive
+  }
+  compute totalNoGst: UMoney[currency]? {
+    canEditUnit
+    label = "Total excl GST"
+    value = items*.orderAmountNoGst.sum.positive
+  }
+  compute gst: UMoney[currency]? {
+    label = "GST"
+    value = (totalWithGst - totalNoGst).positive
+  }
+  override func entitySubject = title
+  impl func references = refNums
+  
+  func isQuote = state == Quote
+  func pricesIncludingGst = if (let v = orderVendor) v.pricesIncludingGst else legalEntity.pricesIncludingGst
+
+  ref compute deliveryOverdueState: DeliveryOverdueState {
+    value = {
+      if (canceled) NoDeliveryOverdue
+      else if (let od = maxDispatchDate) if (od < dlvDate(InTransit).alt(now)) DeliveryOverdue else NoDeliveryOverdue
+      else NoDeliveryOverdue
+    } 
+    visible = deliveryOverdueState == DeliveryOverdue
+  }
+  override func itemOrder: NativeOrd = ("DateDesc", date.desc)
+  
+  func preEntered: Bool
+  impl ref field date: Date = now
+  impl func deliveries: [OrderDlv]
+  
+  func nakedN: String = n.format(3, 0)!
+  impl var allItems: [OrderItem]?
+  impl var items: [OrderItem]?
+
+  impl func calcInstant: Bool = if (let d = deliveries.onlyOne) {
+    d.dlvState == Complete 
+        && !d.hasProgress
+    	&& (d.start - this.date).abs <= 3600.as[Duration[second]]
+        && (this.isInstantPaid || (if  (front) created else false))
+        && (if (let r = invoices.onlyOne) (r.date - this.date).abs <= 3600.as[Duration[second]] else !invoices)
+  }
+
+  impl event onSave = {
+    deliveries*.touch    
+  }
+  
+  ref stored compute deliveryState: OrderDeliveryState {
+    value = {
+      if (deliveries.all(dlvState == Complete)) Delivered
+      else if (deliveries.exists(dlvState == Complete)) PartiallyDelivered
+      else if (deliveries.exists(dlvState.started)) InTransit
+      else if (canceled) NotDelivered
+      else Planned
+    }
+    visible = deliveryState == PartiallyDelivered
+  }
+  
+  ref compute dropShipState: DropShipState {
+    value = {
+      if (deliveries.exists(_.is[DropShipDelivery])) {
+        if (deliveries.all(_.is[DropShipDelivery])) DropShip
+        else PartialDropShip
+      } else NotDropShip
+    }
+  	visible = dropShipState != NotDropShip
+  }
+  
+  front func procBarcode(s: String): Future[Void] = {
+    let r <- back{IBarcode.find(s)}
+    guard (let r) else return UI.info("No barcode $s found")
+    
+    if (let p = r.barcodeItem.as[ISubProduct]) {
+      addQty(p, r.qty, [])
+    } else if (let p = r.barcodeItem.as[ProductItem]) {
+      addQty(p.product, r.qty, [p])
+    } else {
+      UI.info("Barcode item is not product $(r.barcodeItem)")
+    }
+  }
+  front func procNfc(nfc: NfcMessage): Future[Void] = {
+    let items <- nfc.records*.item.allCompleted
+    let addedItems <- items.mapOpt{i => 
+      if (let p = i.as[ISubProduct]) {
+        Option.some(addQty(p, 1.as[UQty[p.unit]], []))
+      } else if (let p = i.as[ProductItem]) {
+        Option.some(addQty(p.product, 1.as[UQty[p.product.unit]], [p]))
+      }
+    }.allCompleted
+    if (!addedItems) {
+      UI.info("No products found in the NFC label")
+    }
+  }
+  
+  func addQty(product: ISubProduct, qty: UQty, productItems: [ProductItem]?): Future[OrderItem] = {
+    guard (
+      let ii = items*.as[OrderProductItem].find(i => i.product == product && i.unit == qty.unit)
+      let i = ii?.deliveryItem?.as[DeliveryItem]
+    ) else return {
+      addItem(product, qty, productItems)
+    }
+
+    i.qty = i.qty + qty
+    i.productItems = i.productItems + productItems
+    ii
+  }
+  func addItem(product: ISubProduct, qty: Qty, productItems: [ProductItem]?): Future[OrderItem]
+    
+  /*func orderDate = date
+  func orderCurrency = currency
+  func orderTotal = totalWithGst*/
+  impl event preDelete: Void = {
+    deliveries*.as[DropShipDelivery]*.purchaseOrders*.delete
+    deliveries*.as[DropShipDelivery]*.salesOrders*.delete
+  }
+  compute refItems {
+    availableFor = List
+    value = RefProductItems.create(
+      items*.as[OrderProductItem]
+        .sortBy(amount.desc)
+        .map(RefProductQty(product = product, qty = qty))
+    )
+  }
+  impl compute itemImage = refItems.photo
+  
+  impl back func deliveryInstantLedgers(journal: Journal, date: Date): Future[[Ledger]?] = {
+    deliveries.first.ledgers(journal, date)
+  }
+  
+  impl func updateDispatchDate(dd: Date): Void = {
+    deliveries.foreach{d => 
+      if (d.dlvState == Planned) {
+        d.start = dd
+      }
+    }
+  }
+  
+  func priceRequest = PriceRequest(
+    currency = currency, level = priceLevel, inclGst = pricesIncludingGst,
+    order = PriceOrder(
+      customer = orderCustomer, 
+      items = items*.priceOrderItem
+    )
+  )
+}
+

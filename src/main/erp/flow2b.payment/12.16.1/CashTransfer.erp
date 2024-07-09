@@ -1,0 +1,71 @@
+entity CashTransfer extends CashMovement {
+  singularShort = "Transfer"
+  background = "#d68400"
+  impl func itemRoles = [Accountant, BusAdmin]  
+  
+  impl func legalEntity = from.legalEntity
+  impl func srcAccount: FinAccount? = from
+  impl func dstAccount: FinAccount? = to
+  impl compute srcAmount: Number? {
+    value = -outcome
+    update = {outcome =? (-new).positive}
+  } 
+  impl compute dstAmount: Number? {
+    value = income
+    update = {income =? new.positive}
+  }
+  impl compute srcBankData: BankData?{
+    value = outgoingBankData
+    update = {outgoingBankData =? new}
+  }
+  impl compute dstBankData: BankData? {
+    value = incomingBankData
+    update = {incomingBankData =? new}
+  }
+  impl ref compute hasBankAccount: Bool = from.hasBankData || to.hasBankData
+  
+  impl func reconState: ReconState = Recon
+  const ref field n: Int? = increment(Payment.gen)
+  impl func title = number
+  func number: String = "CTR" + n
+  impl func entityNumbers = [number]
+  impl field date: Date = now
+  field from: FinAccount
+  field outcome: UMoney[from.currency] {label = "Outgoing Amount"}
+  field to: FinAccount 
+  field income: UMoney[to.currency]  {label = "Incoming Amount"}
+  field outgoingBankData: BankData {
+    visible = from.hasBankData
+  }
+  field incomingBankData: BankData {
+    visible = to.hasBankData
+  }
+    
+  object view list = CashTransfer.all >> nav{list{grid(labels = None, width = 1.2){
+    row{number, date.as[Date[day]]!, legalEntity, from, to, space}
+    row{stateView >> field(width = 0.6), -outcome >> field(width = 0.2), income >> field(width = 0.2), space}
+  }}}
+  
+  view form = nav{
+    grid{
+      row {number, date}
+      stateView >> field(visible = hasStates, label = "State")
+      row {from, to}
+      row {outcome, income}
+      row {outgoingBankData, incomingBankData}
+      fees >> field(visible = fees)
+    }
+    generalLedgerButton
+  }
+  func hasStates = false
+  
+  view stateView = x{}
+  
+  register outcomeLedger = LCash(account = from.ledgerAccount, finAccount = from, journal = this, legalEntity = from.legalEntity, trAmount = -outcome, cashFlow = to.cashFlow)
+  register incomeLedger = LCash(account = to.ledgerAccount, finAccount = to, journal = this, legalEntity = to.legalEntity, trAmount = income, cashFlow = from.cashFlow)
+  register trading: [Ledger]? <- CurrencyTrading.trade(this, income, outcome)
+  register intercompanyDebts: [LInterDebts]? = if (from.legalEntity == to.legalEntity) [] else [
+    LInterDebts(journal = this, legalEntity = from.legalEntity, currency = to.currency, counterparty = to.legalEntity.legalEntity, trAmount = income),
+    LInterDebts(journal = this, legalEntity = to.legalEntity, currency = to.currency, counterparty = from.legalEntity.legalEntity, trAmount = -income)
+  ]
+}

@@ -1,0 +1,14 @@
+extend entity Activity {
+  back event onDeliveryEvent(delivery: ActivityDelivery, event: ActivityDeliveryEvent): Void = {
+     
+  }
+  
+  back func fromContacts(channel: CommChannel): [IContact]? = {
+    template?.from(getTemplateEntity, channel).toSeq
+      .or(user.ourContacts.filter(c => c.channel == channel))
+  }
+}
+
+extend entity Entity {
+  func canAttachReply: Bool = true
+}

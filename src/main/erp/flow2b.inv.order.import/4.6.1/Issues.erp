@@ -1,0 +1,29 @@
+extend enum DashboardIssue {
+  case POINoVendor(role = BusAdmin, priority = major) = "Vendor is not found"
+  case POINoLegalEntity(role = BusAdmin, priority = major) = "Legal Entity is not found"
+  case POINoStore(role = BusAdmin, priority = major) = "Store is not found"
+  case POINoProduct(role = BusAdmin, priority = major) = "Product is not found"
+}
+ 
+extend entity POIInvoice {
+  extend override func issues = {
+    if (poi.state == Complete) {
+      if (let issues0) issues0
+      else {
+          (if (!vendor) [DashboardIssue.POINoVendor]) 
+        + (if (!legalEntity) [DashboardIssue.POINoLegalEntity]) 
+        + (if (!store && items.all(product) && items.exists(!product?.isTangible)) [DashboardIssue.POINoStore]) 
+        + (if (items.exists(!product)) [DashboardIssue.POINoProduct]) 
+      }.toSet
+    }
+  }
+  
+  extend override func fixes(issue: DashboardIssue) = {
+    if (let f = fixes0(issue)) f 
+    else if (issue in [POINoVendor, POINoLegalEntity, POINoStore, POINoProduct] ) {
+      [
+        Fix(text = "Edit and select the correct value")
+      ]
+    } 
+  }
+}

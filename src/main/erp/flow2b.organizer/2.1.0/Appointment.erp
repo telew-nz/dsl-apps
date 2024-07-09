@@ -1,0 +1,88 @@
+entity Appointment extends Event {
+  field title: String
+  field owner: Person = Person.current!
+  field start: Date[minute] = (Date.now.start(of = hour) + 1_hour) {
+    update = {
+      end = start + (end - old!)
+    }
+  }
+  list compute state: AppointmentState = {
+    let requiredParticipants = participants.filter(!optional)
+    if (clashes) Clash
+    else if (requiredParticipants.exists(acceptance == Declined)) Declined
+    else if (requiredParticipants.all(acceptance == Accepted)) Accepted
+    else if (requiredParticipants.all(acceptance == Accepted || acceptance == Tenative)) Tenative
+    else Pending
+  }
+  field end: Date[minute] = start + 1_hour
+  compute allParticipants: [Participant]? = participants*.participant
+  func requiredParticipants: [Participant]? = participants.filter(!optional)*.participant
+  field participants: [AppointmentParticipant] inline by appointment = [
+    AppointmentParticipant(participant = Person.current!, acceptance = Accepted)
+  ]
+  func contains(participant: Participant?): Bool = {
+    !participant || participants.exists(i => i.participant == participant && i.acceptance != Declined)
+  }
+  field description: Text?
+  view traitItem = grid(labels = None) {
+    title
+    row {state >> field(width = 0.2) periodText >> field(width = 0.8)}
+  }
+  view form = nav{grid{
+    title
+    state
+    start
+    end
+    owner
+    participants >> list {grid(labels = None) {
+      row{acceptance >> field(editMode = AlwaysEdit, width = 0.23, compact = true) participant >> field(width = 0.57) optional >> field(width = 0.2)}
+    }}
+    
+    clashes
+    description
+  }}
+  
+  func onSave: Void = {
+    allParticipants.filter(!autoAccept)*.as[Addressee]*.join(this)
+  }
+}
+
+enum Acceptance {
+  case Pending {background = "#ed9"}
+  case Declined {background = "#fcc"} 
+  case Tenative {background = "#dea"}
+  case Accepted {
+    color = "white"
+    background = "#090" 
+  }
+}
+
+enum AppointmentState {
+  case Pending {background = "#ed9"}
+  case Declined {background = "#fcc"}
+  case Accepted { 
+    color = "white"
+    background = "#090" 
+  }
+  case Tenative {background = "#dea"}
+  case Canceled {background = "#999"}
+  case Clash { background = "#fcc" }
+
+}
+
+inline entity AppointmentParticipant {
+  singular = "Participant"
+  field appointment: Appointment
+  field optional: Bool
+  field participant: Participant {
+    update = {
+      if (participant.autoAccept) acceptance = Accepted
+    }
+  }
+  field acceptance: Acceptance = (Pending) {
+    from = {
+      if (participant.autoAccept || participant == Person.current) [Acceptance.Pending, Acceptance.Declined, Acceptance.Tenative, Acceptance.Accepted] 
+      else [acceptance]
+    }
+  }
+}

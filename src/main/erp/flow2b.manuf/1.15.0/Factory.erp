@@ -1,0 +1,13 @@
+entity Factory extends IOurStore {
+  order = -1
+  impl field title: String
+  field address: Address?
+  impl func locationAddress = address
+  impl view form = nav{grid(labels = None){
+    title
+    address
+    contacts
+  }}
+  override object func ours = Workspace.current.stores*.as[Factory]
+  override object func onlyOne = ours.onlyOne
+}

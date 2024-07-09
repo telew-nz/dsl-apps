@@ -1,0 +1,14 @@
+back object Conversion extends IConversion {
+  func do(version: [Int?]?) = {
+    if (version < [6,10,0]) {
+      SalesOrder.all.foreach{o =>
+        if (let i = field[[ConvEntity]?](o, "invoices").first) {
+          if (let s = i.field[Signature?]("signature")) {
+            o.signature = s
+            o.save
+          }
+        }
+      }
+    }
+  }   
+}   

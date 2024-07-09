@@ -1,0 +1,47 @@
+trait ISubProduct extends IBaseProduct {
+  plural = "Products"
+  singular = "Product"
+  width = 0.45
+  
+  impl func productItems: [IProductItem]? = []
+  override final func subProducts: [ISubProduct]? = [this]
+  impl func collectPhotos: [Image]? = if (let p = photos) p else superProduct?.photos
+  func variationPhotos: [Image]? = photos
+  
+  impl func trackItems {
+    default value = superProduct.trackItems
+  }
+  func products: [IProduct : UQty]
+  func prodCondition: ProdCondition? = null
+  func isNew: Bool = if (let prodCondition) prodCondition.isNew else true
+  
+  field includedInKitItems: [KitItem]? inline by product {deleteCascade = false}
+  override compute kits = includedInKitItems*.kit.distinct
+  impl func weightSize {
+    default value = superProduct.weightSize
+  }
+  impl func expenseType = superProduct.expenseType
+  impl func revenueType = superProduct.revenueType
+  
+  func productQtys(qty: UQty): [ProdUQty] = {
+    let bq = toBase(qty)
+    products.toSeq.map{i =>
+      ProdUQty(product = i.#0, qty = i.#1*bq)
+    }
+  } 
+  func tangibleProductQtys(qty: UQty): [ProdUQty]? = productQtys(qty).filter(product.isTangible)
+
+  impl event onSave = {}
+  
+  view subProductTabView {
+    layout = group{
+      
+    }
+  }
+}
+
+
+
+
+
+

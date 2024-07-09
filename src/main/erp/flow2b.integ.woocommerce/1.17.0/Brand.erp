@@ -1,0 +1,61 @@
+back class UploadBrandJob extends SystemJob {
+  field service: WooCommerceIntegration
+  field brand: IBrand
+  func do: Future[Any] = {
+    let u = BrandData.create(service, brand)
+    let _ <- service.https("/brands").post(u.json)
+    let response <- service.https("/brands").get
+    let r = response.body!.parseJson[[BrandData]?].find(_.name == u.name)!
+    brand.updateExtId(service, r.termId!)
+  }
+}
+back class DeleteBrandsJob extends SystemJob {
+  field service: WooCommerceIntegration
+  field brands: [IBrand] 
+  func do: Future[Any] = {
+    let response <- service.https("/brands")
+      .header("Content-Type", "application/json")
+      .body(BrandsDeleteRequest(brands = brands.mapOpt(_.extId(service))!).json)
+      .delete
+    brands*.deleteExtId(service)
+  }
+} 
+
+back class DownloadBrandsJob extends SystemJob {
+  field service: WooCommerceIntegration
+  func do: Future[Any] = {
+    let response <- service.https("/products/brands").get
+    response.body!.parseJson[[BrandData2]?]*.make(service)
+  }
+}
+
+back class BrandsDeleteRequest {
+  field brands: [Int]
+}
+
+back class BrandData2 extends WooData with EBrand[Int] {
+  extFieldNaming = Underscore
+  field id: Int?
+  field name: String
+  
+  func extId = id!
+}
+  
+back class BrandData extends WooData {
+  extFieldNaming = Underscore
+  field termId: Int?
+  field name: String
+  field parent: Int? //NOT Working
+  field description: Text? //NOT Working
+  //field logo: WooImage? {extRequired}//NOT Working
+  
+  object func create(service: WooCommerceIntegration, u: IBrand): BrandData = {
+    BrandData(
+      termId = service.extId(u), name = u.name, parent = u.superCategory?.extId(service), description = u.description
+      //,
+      //logo = u.logo.map{f => 
+      //  WooImage.create(service, f, 0)
+      //}
+    )
+  }
+}

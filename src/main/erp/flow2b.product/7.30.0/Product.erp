@@ -1,0 +1,32 @@
+trait IProduct extends ISubProduct {
+  plural = "Products"
+  singular = "Product"
+  width = 0.45
+  
+  field productItems: [ProductItem]? inline by product 
+  
+  ref system const field productCost: ProductCost? {label = "Approximate Cost"} 
+  event onSave = {}
+  func products: [IProduct : Qty] = [this -> 1.as[Qty[unit]]!]
+  func productQtys(qty: Qty): [ProductQty] = {
+    [ProductQty(product = this, qty = toBase(qty))]
+  }
+  func tangibleProductQtys(qty: Qty): [ProductQty]? = if (isTangible) [ProductQty(product = this, qty = toBase(qty))]
+  //func mapProducts[R](qty: Qty, f: (product: IProduct, qty: Qty) => R): [R] = {
+  //  let r: R = f(this, toBase(qty))
+  //  [r]
+  //}
+  view productNavView = x{
+    button("Print Label") {
+      labelView.print
+    }
+  }
+  view productTabView = group{
+    supplyView
+    grid(labels = Top, label = "Serial Numbers", visible = trackItems || productItems) {
+       productItems >> list{itemView}
+    }
+  }
+}
+
+trait IComplexProduct extends IComplexSubProduct with IProduct

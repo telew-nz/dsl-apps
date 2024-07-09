@@ -1,0 +1,76 @@
+trait CashMovement extends Entity with Journal with NewEngine with HasN {
+  background = "#d68400"
+  
+  func srcAccount: FinAccount? {canSort = true}
+  func dstAccount: FinAccount? {canSort = true}
+  var srcAmount: Number?
+  var dstAmount: Number?
+  var srcBankData: BankData?
+  var dstBankData: BankData?
+  
+  impl func nextN = increment(Payment.gen)
+  
+  field fees: [Payment]? by feeTr
+  ref stored compute uploadState: BankUploadState {
+    value = {
+      if (let ss = srcBankData?.uploadState) {
+        if (ss == Missing) Missing
+        else if (let ds = dstBankData?.uploadState) {
+          if (ds == Missing) Missing
+          else if ((ds == Uploaded || !dstAccount!.is[BankAccount]) && (ss == Uploaded || !srcAccount!.is[BankAccount])) Uploaded
+          else NotUploaded
+        }
+        else ss
+      } else dstBankData?.uploadState.alt(NotUploaded)
+    }
+    visible = hasBankAccount 
+  }
+  
+  func date: Date {canSort = true}
+  var dateIn: Date
+  var dateOut: Date
+  func hasAccount(account: FinAccount): Bool = srcAccount == account || dstAccount == account
+  impl func journalDate = date
+  func hasIssue: Bool = reconState.isIssue
+  func hasBankAccount: Bool
+  report Report {
+    field accountant: User? {
+      from = User.all.filter(is(Accountant))
+    }
+    field legalEntity: OurLegalEntity? 
+    field withIssuesOnly: Bool
+    field account: FinAccount?
+    field state: [ReconState]?
+    field from: Date?
+    field to: Date?
+    system field amountCurrency: Currency = Currency.our
+    field amount: Money[amountCurrency]? {canEditUnit = true} 
+    
+    
+    impl view list = CashMovement.all.filter(
+      (legalEntity ==? this.legalEntity)
+      && (!withIssuesOnly || hasIssue)
+      && (srcAccount ==? account || dstAccount ==? account)
+      && journalDate >=? from && journalDate <=? to 
+      && (!this.state || this.state.contains(reconState))
+      && (srcAmount ==? -this.amount || dstAmount ==? this.amount)
+      && isFor(accountant, Accountant)
+    ).sortBy(journalDate.desc) >> nav{
+      list{}
+      extension("nav")
+    }
+  }
+  func reconState: ReconState
+}
+
+extend entity BankAccount {
+  extend view form = button("Movements") {
+    CashMovement.Report(account = this.as[FinAccount]).list.open
+  }
+}
+extend entity CashAccount {
+  extend view form = button("Movements") {
+    CashMovement.Report(account = this.as[FinAccount]).list.open
+  }
+}
+

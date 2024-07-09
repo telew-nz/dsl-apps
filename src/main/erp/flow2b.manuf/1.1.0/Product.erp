@@ -1,0 +1,64 @@
+extend entity IProduct {
+  field outputProduct: OutputProduct? inline by product
+  compute canBeProduced: Bool {
+    value = outputProduct
+    update = {
+      outputProduct = if (new) OutputProduct()
+    }
+  }
+  field material: Material? inline by product
+  compute isMaterial: Bool {
+    value = material
+    update = {
+      material = if (new) Material()
+    }
+  }
+}
+
+entity OutputProduct extends PseudoEntity {
+  func mainEntity = product
+  ref field product: IProduct by outputProduct {
+    from = IProduct.all.filter(isTangible)
+  }
+  field methodOutputs: [MethodOutput]? inline by outputProduct {
+    deleteCascade = false
+  }
+  compute methods: [Method]? {
+    label = "Production Methods"
+    value = methodOutputs*.method
+  }
+  view form = grid(labels = Top){
+    methods
+    add("Method"){
+      Method(outputs = [MethodOutput(outputProduct = this)]).form.open
+    }
+  }  
+}
+
+entity Material extends PseudoEntity {
+  func mainEntity = product
+  ref field product: IProduct by material {
+    from = IProduct.all.filter(isTangible)
+  }
+  field methodMaterials: [MethodMaterial]? inline by material {
+    deleteCascade = false
+  }
+  compute methods: [Method]? {
+    label = "Used in Methods"
+    value = methodMaterials*.method
+  }
+  view form = grid(labels = Top){
+    methods
+  }  
+}
+
+extend entity Good {
+  extend view form = extend("tabs") {
+    grid(label = "Manufacturing", labels = Top, visible = ui.edit || outputProduct || material) {
+      canBeProduced
+      outputProduct!.form
+      isMaterial
+      material!.form
+    }
+  }
+}

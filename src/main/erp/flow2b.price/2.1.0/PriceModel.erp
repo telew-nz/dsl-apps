@@ -1,0 +1,32 @@
+trait PriceModel {
+  func priority: Number? = 0
+  func date: Date[day] = now
+  func currency: Currency = vendor.getCurrency
+  ref field vendor: Actor by priceModels
+    
+  func contains(superProduct: ISuperProduct): Bool = superProductPrice(superProduct)
+  func superProductPrice(superProduct: ISuperProduct): IPrice?
+  func productPrice(product: IProduct): IPrice? = superProductPrice(product.superProduct)
+}
+
+interface IPrice {
+  func superProduct: ISuperProduct
+  func salesPrice(currency: Currency): Future[Money?]
+  func salesAmount(currency: Currency, customer: LegalEntity?, qty: Qty): Future[Money?] = {
+    let p <- salesPrice(currency)
+    p*superProduct.toBase(qty)
+  }
+  func originalPrice(currency: Currency): Future[Money?] = 0
+  func originalAmount(currency: Currency, customer: LegalEntity?, qty: Qty): Future[Money?] = {
+    let p <- originalPrice(currency)
+    p*superProduct.toBase(qty)
+  }
+}
+
+class Price extends IPrice {
+  field superProduct: ISuperProduct
+  field salesPrice: Money?
+  field originalPrice: Money?
+  func salesPrice(currency: Currency): Future[Money?] = salesPrice.to[Money[currency]](now)
+  func originalPrice(currency: Currency): Future[Money?] = originalPrice.to[Money[currency]](now)
+}

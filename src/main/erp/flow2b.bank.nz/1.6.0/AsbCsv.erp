@@ -1,0 +1,34 @@
+class AsbCsvData extends BankStatementItem {
+  field date: Date {format = "yyyy/MM/dd"}
+  field transId: Int
+  field type: String
+  field chequeNumber: String?
+  field payee: String?
+  field memo: String?
+  field amount: Dec[2]?
+
+  func data(account: BankAccount): BankData = {
+    BankData(
+      bankId = transId
+      memo = memo
+      thierName = {
+        if (let i = payee.lastIndexOf(" FROM ")) payee[i + 6 .. ]
+        else payee
+      }
+    )
+  }
+}
+
+extend enum BankStatementType {
+  case AsbCsv(
+    canProcess = file.is("csv") && data.toString.lines(CSV).drop(6).first == "Date,Unique Id,Tran Type,Cheque Number,Payee,Memo,Amount", 
+    process = {
+      let lines = data.toString.lines(CSV)
+      let a = lines.drop(1).first
+      ProcessResult(
+       accountNumber = "$(a[6 .. 7])-$(a[17 .. 20])-$(a[31 .. ' '))",
+       items = lines.drop(8).map(splitTo[AsbCsvData](",", CSV)))
+    }, 
+    knowOurAccount = true
+  )
+}

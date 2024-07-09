@@ -1,0 +1,41 @@
+class EftposCsvData extends BankStatementItem {
+  field name: String?
+  field retailerId: Int?
+  field laneNumber: Int?
+  field sDate: String
+  field sTime: String
+  impl func date: Date = Date("$(sDate[.. ' ')) $sTime", "yyyy-MM-dd HH:mm:ss")
+  field type: String
+  field cardNumber: String?  
+  impl field stmAmount: Dec[2]?
+  field response: String?
+  
+  impl func data(account: FinAccount): BankData = {
+    BankData(
+      type = type,
+      bankId = "$date $cardNumber"
+      cardNumber = cardNumber
+      bankComment = (response[ .. )).trim
+    )
+  }
+}
+
+extend enum BankStatementType {
+  case EftposCsv(
+    canProcess = file.is("csv") && data.toString.lines(CSV).first.alt("")
+      .startsWith("Trading_Name,Retailer_Id,Lane_Number,TransDate,Time,Message_Type_Desc,Masked_PAN,Transaction_Amount,Response_Code")
+    process = {
+      let date = Date((file.name("Transactions " .. "."))!, "yyyyMMdd") - 1_day
+      ProcessResult(
+        directions = [Incoming]
+        account = CardAccount.all.result.get.onlyOne
+        items = data.toString.lines(CSV).drop(1)
+          .map(splitTo[EftposCsvData](",", CSV))
+          .filter(type.containsIgnoreCase("Purchase") && response.containsIgnoreCase("APPROVED")),
+        start = date.start(day)
+        end = date.end(day)
+      )   
+    }, 
+    knowOurAccount = CardAccount.all.result.get.onlyOne
+  )
+}

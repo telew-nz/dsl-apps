@@ -1,0 +1,263 @@
+trait StockCorrection extends Journal with HasNumber {
+  impl func journalDate = date
+  ref field date: Date = now
+  impl field legalEntity: OurLegalEntity {
+    default =? onlyOne
+  }
+  ref field store: IStore =? onlyOne
+  const ref field n: Int? = increment(Stocktake.gen)
+  report Report {
+    field from: Date?
+    field to: Date?
+    impl view list = StockCorrection.all.filter(from ?<= date && date <=? to)
+  }
+}
+
+entity Stocktake extends StockCorrection {
+  background = "#2e8e67"
+  
+  //Fields
+  ref field stockType: StockInvType =? StockInvType.all.onlyOne
+  field type: StocktakeType = Partial
+  object field gen: Int?
+  
+  func assetProducts: [IProductInv: UQty]? = {
+    items.filter(!productItems)
+      .map(product, qty).toMap
+  }
+  
+  
+  field items: [StocktakeItem]? inline by stocktake {
+    validate = if (!items.isUnique(product)) {
+      "Products in stocktake should be unique but ${items.groupBy(product).agg(count).toSeq.filter(count > 1)*.product}"
+    }
+  }
+  
+  //Compute
+  impl func number = "ST" + n
+  impl func title = "$fullNum $(date.date)"
+  impl view ref = x {title stockType}
+  
+  func fillWithCurrentStock: Future[Void] = {
+    let result <- ProdReg.at(0, date)
+      .filter(r => r.legalEntity == this.legalEntity && r.store == this.store && r.stockType == this.stockType.stock && r.fact != 0)
+      .result
+    result.foreach(StocktakeItem(stocktake = this, product = product.as[IProductInv]!, unit = product.unit, qty = fact.positive))
+  }
+  front func addMissingItems: Future[Void] = {
+    let r <- ProdReg.at(0, date)
+      .filter(i => i.legalEntity == this.legalEntity && i.store == this.store && i.stockType == this.stockType.stock && i.fact != 0 && !items.exists(product == i.product))
+      .result
+    if (r) {
+      r.foreach(StocktakeItem(stocktake = this, product = product.as[IProductInv]!, unit = product.unit, qty = 0))
+    } else {
+      UI.info("No missing items found")
+    }
+  }
+  //Views
+  impl object view list = Stocktake.all >> nav{list{grid(labels = None){
+    row{fullNum date.as[Date[day]] legalEntity store}
+    x(label = "State"){stockType type}
+  }}}
+  
+  impl view form = nav(
+    onBarcode = if (ui.edit) this.procBarcode(barcode)
+    onNfc = if (ui.edit) this.procNfc(message)
+  ){
+    grid (width = 1.25) {
+      row {number, refNum, date}
+      row {legalEntity, store, space}
+      stockType
+      stockType.stockDesc >> field(fontSize = 0.8, editMode = AlwaysRead, label = "")
+      type
+      extension
+      items >> table {
+        header {
+          label("Product", width = 0.6)
+          label("Quantity", width = 0.15, align = Right)
+          group(label = "Difference") {
+            label("Δ Quantity", width = 0.16, align = Right)
+            label("One Item Cost", width = 0.16, align = Right)
+            label("Cost", width = 0.18, align = Right)
+          }
+        }
+        body {
+          row{
+            product >> field(rowSpan = 2) 
+            qty >> field(showEmpty) 
+            y (margin = None) {
+              difference >> field(showPlus align = Right showEmpty)  
+              button("Labels", visible = difference > 0 align = Right) {
+                printLabels()
+              }
+            }
+            differencePrice 
+            differenceCost >> field(showPlus align = Right)
+          }
+          row {panel (span = 4, collapsed = id, label = "Product Items", visible = productItems || product.trackItems) {
+            snView
+          }}
+        }
+      }
+    }
+    generalLedgerButton
+    edit {
+      add("Fill with Current Stock", visible = !items) {fillWithCurrentStock} 
+      add("Add Missing Items") {addMissingItems} 
+      add("Transfer", visible = items.exists(difference)) {
+        Transfer.incomplete(
+          legalEntity = legalEntity
+          dispatchDate = date - 1_minute, deliveryDate = date - 1_minute
+          state = Complete
+          destination = store
+          items = items.filter(difference > 0).map {i =>
+             TransferItem(product = i.product, unit = i.unit, qty = i.difference.positive!)
+          }
+        ).form.open
+      } 
+    }
+  }
+  
+  front func procBarcode(s: String): Future[Void] = {
+    let r <- back{IBarcode.find(s)}
+    if (let r) {
+      if (let p = r.barcodeItem.as[ISubProduct]) {
+        p.productQtys(r.qty).foreach{i =>
+          addQty(i.product.as[IProductInv]!, i.qty, [], 0)
+        }
+      } else if (let p = r.barcodeItem.as[ProductItem]) {
+        addQty(p.product, r.qty, [p], 0)
+      } else {
+        UI.info("Barcode item is not product $(r.barcodeItem)")
+      }
+    } else {
+      UI.info("No barcode $s found. Please add a new product.")
+      StocktakeItem.incomplete(stocktake = this, barcode = s)
+    }
+  }
+  
+  front func procNfc(nfc: NfcMessage): Future[Void] = {
+    let items <- nfc.records*.item.allCompleted
+    let addedItems = items.mapOpt{i => 
+      if (let p = i.as[ISubProduct]) {
+        p.productQtys(1.as[UQty[p.unit]] ).foreach{i =>
+          addQty(i.product.as[IProductInv]!, i.qty, [], 0)
+        }
+      } else if (let p = i.as[ProductItem]) {
+        addQty(p.product, 1.as[UQty[p.product.unit]], [p], 0)
+      }
+    }
+    if (!addedItems) {
+      UI.info("No products found in the NFC tag")
+    }
+  }
+  
+  
+  func addQty(product: IProductInv, qty: UQty, productItems: [ProductItem]?, price: Money?): StocktakeItem = {
+    if (let i = items.find(i => i.product == product)) {
+      i.differencePrice = (i.differencePrice*i.qty + price*qty)/(i.qty + qty)
+      i.qty = i.qty + qty
+      i.productItems = i.productItems + productItems
+      i
+    } else {
+      StocktakeItem(
+        stocktake = this, product = product, unit = qty.unit?.as[ProductUnit].alt(product.unit), qty = qty, productItems = productItems, 
+        differencePrice = price
+      )
+    }
+  }
+  
+  impl event onSave = {
+    store.touch
+  }
+}
+
+enum StocktakeType {
+  case Partial {background = "#ed9"}
+  case Full {background = "#b6d7e2"}
+  case Initial {background = "#b6d7e2"}
+}
+
+extend trait ILocation {
+  func initialDate(legalEntity: OurLegalEntity): Date? = initialDates.apply(legalEntity)
+  system stored compute initialDates: [OurLegalEntity: Date]? <- {
+    let r <- Stocktake.all.filter(st => st.type == Initial && st.store == this).groupBy(legalEntity).agg(date.min).result
+    r.toMap
+  }
+}
+
+inline entity StocktakeItem extends InlineEntity with FProductItems {
+  field stocktake: Stocktake by items
+  impl field product: IProductInv {
+    from = IProductInv.all.filter(isTangible)
+    available(Ref).with(unit, altUnits)
+    init = {
+      if (let b = this.barcode) {
+        this.barcode = ""
+        new.addBarcode(b)
+      }
+    }
+    update = {
+      if (let b = this.barcode) {
+        this.barcode = ""
+      }
+      this.unit = new.unit
+      this.qty = this.qty.as[UQty[this.unit]]
+    }
+  }
+  
+  system field barcode: String?
+  func stockProd = product
+  impl field unit: ProductUnit {
+    default =? try? product.unit
+    from = product.units
+  }
+  impl func itemsQty = qty
+  impl func needProductItems: Bool = true
+  field qty: UQty[unit]? {
+    default = 1
+    label = "Quantity"
+    canEditUnit
+  }
+  compute differenceCost: Money[currency]? {
+    value = differencePrice*difference
+    visible = difference > 0
+  }
+  func isDelivered = true
+  field differencePrice: Money[currency]? {visible = difference > 0}
+  
+  
+  //Compute
+  func currency: Currency = stocktake.legalEntity.getCurrency
+  compute baseQty: UQty[product.unit]? = if (let q = qty) product.toBase(q)
+  
+  compute difference: Qty[product.unit]? = stock.stocktakeDifference
+    
+  //Register
+  register stock {
+    value = ProdReg(
+      legalEntity = stocktake.legalEntity, store = stocktake.store, stockType = stocktake.stockType.stock, product = product,
+      sort = 0, isStocktake = true, productItems = productItems,
+      date = stocktake.date, doc = stocktake, docItem = this,
+      qty = baseQty, differencePrice = differencePrice
+    )
+    availableFor = Inline
+    available(Inline).for(Inline)
+    autoRecalc = true
+  }
+  register stockItems: [ProdItemReg]? {
+    value = {
+      productItems.map (
+        ProdItemReg(
+          item = _, date = stocktake.date,
+          newLegalEntity = stocktake.legalEntity, newStore = stocktake.store, newStockType = stocktake.stockType.stock,
+          doc = stocktake, docItem = this, qty = 1
+        )
+      )
+    }
+  }
+  
+  override func labelsQty = difference.positive
+
+}
+

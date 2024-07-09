@@ -1,0 +1,21 @@
+extend role StoreOperative {
+  extend view menu = menu("Inventory") {
+    ISuperProduct >> item(fastSearch)
+    IOutgoingDelivery
+    IIncomingDelivery
+    StockCorrection >> item(fastAdd)
+    StockReport
+    GoodsMovement
+    extension("Inventory")
+  }
+  
+  extend view dashboard = row {
+    IOutgoingDelivery.all.filter(canDispatch && isForCurrent(StoreOperative)).sortBy(dispatchDate) 
+      >> nav(label = "Outgoing Deliveries", limit = 5, more = IOutgoingDelivery.Report(canDispatchOnly = true).list.open){
+        list(canAdd = false) {}
+    }
+    IIncomingDelivery.all.filter(active && isForCurrent(StoreOperative)).sortBy(deliveryDate) 
+      >> nav(label = "Incoming Deliveries", limit = 5, more = IIncomingDelivery.Report(activeOnly = true).list.open){list(canAdd = false) {
+    }}
+  }
+}

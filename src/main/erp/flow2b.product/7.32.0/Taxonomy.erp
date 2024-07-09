@@ -1,0 +1,189 @@
+extend trait ISuperProduct {
+  field categories: [ProductCategory]? by products {
+    available(Inline).for(All)
+  }
+  func autoCategories: [IProductCategory]? = []
+  compute allCategories: [IProductCategory]? {
+    label = "Categories"
+    value = autoCategories + categories
+    update = {
+      this.categories = new.filter(!autoCategories.contains(_))*.as[ProductCategory]
+    }
+  }
+  
+  field tags: [ProductTag]? by products 
+  func autoTags: [IProductTag]? = []
+  compute allTags: [IProductTag]? {
+    label = "Tags"
+    value = autoTags + tags
+    update = {
+      this.tags = new.filter(!autoTags.contains(_))*.as[ProductTag]
+    }
+  }
+  
+  
+  field brands: [Brand]? by products {
+    available(Inline).for(All)
+  }
+  
+  ref field crossSells: [CrossSell]? by products {
+    available(Inline).for(Ref)
+  }
+  func crossSellProducts: [ISuperProduct]? = (crossSells*.products - this).distinct
+  field upsells: [ISuperProduct]? by downsells
+  field downsells: [ISuperProduct]? by upsells
+  
+  view categoriesView = grid(label = "Categories"){
+    allCategories
+    brands
+    allTags
+    crossSells
+    upsells
+    downsells
+    kits
+    shippingClass
+  }
+  field _shippingClass: ShippingClass? by products 
+  compute shippingClass: ShippingClass? {
+    value = _shippingClass.or(allCategories*.shippingClass.first)
+    update = {
+      _shippingClass = if (new != allCategories*.shippingClass.first) new
+    }
+  }
+}
+
+trait IProductTaxonomy extends RefEntity {
+  func photos: [Image]?
+  func superCategory: IProductTaxonomy?
+  func subCategories: [IProductTaxonomy]?
+  func name: String
+  func description: Text?
+  func products: [ISuperProduct]?
+  
+  func collectPhotos: [Image]? = {
+    if (let p = photos) p
+    else if (let p = products*.collectPhotos.first(1)) p
+    else subCategories*.collectPhotos.first(1)
+  }
+}
+
+trait IProductCategory extends IProductTaxonomy {
+  func superCategory: IProductCategory?
+  func subCategories: [IProductCategory]?
+  func shippingClass: ShippingClass? = null
+}
+entity ProductCategory extends Entity with IProductCategory {
+  field photos: [Image]?
+  field superCategory: ProductCategory? by subCategories
+  field subCategories: [ProductCategory]? read by superCategory
+  ref field name: String
+  field description: Text?
+  field products: [ISuperProduct]? by categories
+  ref compute title = if (let s = superCategory) "$s / $name" else name
+  field _shippingClass: ShippingClass? by categories 
+  ref stored compute shippingClass: ShippingClass? {
+    value = _shippingClass.or(superCategory?.shippingClass)
+    update = {
+      _shippingClass = if (new != superCategory?.shippingClass) new
+    }
+  }
+  event onSave = {
+    subCategories*.touch
+    if (updated(_shippingClass)) {
+      products*.touch
+    }
+  }
+  
+  view form = nav{grid{
+    photos
+    superCategory
+    name >> field(label = "" fontStyle = H1)
+    subCategories >> list {field(title = _.name)}
+    shippingClass
+    description
+    products
+  }}
+}
+
+trait IBrand extends IProductTaxonomy {
+  func superCategory: IBrand?
+  func subCategories: [IBrand]?
+}
+entity Brand extends Entity with IBrand {
+  field logo: Image? 
+  field actors: [Actor]?
+  func photos: [Image]? = logo.toSeq
+  func superCategory = superBrand
+  func subCategories = subBrands
+  
+  field superBrand: Brand? by subBrands
+  field subBrands: [Brand]? read by superBrand
+  ref field name: String
+  field description: Text?
+  field products: [ISuperProduct]? by brands
+  ref compute title = if (let s = superBrand) "$s / $name" else name
+
+  view form = nav{grid{
+    logo
+    superBrand
+    name >> field(label = "" fontStyle = H1)
+    subBrands >> list {field(title = _.name)}
+    actors
+    description
+    products
+  }}
+}
+
+extend entity Actor {
+  field brands: [Brand]? by actors
+}
+
+trait IProductTag extends IProductTaxonomy {
+  func photos: [Image]? = []
+  func name = title
+  func superCategory = null
+  func subCategories = []
+}
+entity ProductTag extends Entity with IProductTag {
+  field photos: [Image]?
+  field title: String
+  field description: Text?
+  field products: [ISuperProduct]? by tags
+  view form = nav{grid{
+    photos
+    title >> field(label = "" fontStyle = H1)
+    description
+    products
+  }}
+}
+
+trait ICrossSell extends IProductTaxonomy {
+  func photos: [Image]? = []
+  func name = title
+  func superCategory = null
+  func subCategories = []
+}
+entity CrossSell extends Entity with ICrossSell {
+  field title: String
+  field description: Text?
+  field products: [ISuperProduct]? by crossSells
+
+  view form = nav{grid{
+    title >> field(label = "" fontStyle = H1)
+    description
+    products
+  }}
+}
+
+entity ShippingClass {
+  field title: String
+  field description: Text?
+  field products: [ISuperProduct]? by _shippingClass
+  field categories: [ProductCategory]? by _shippingClass
+
+  view form = nav{grid{
+    title >> field(label = "" fontStyle = H1)
+    description
+    products
+  }}
+}

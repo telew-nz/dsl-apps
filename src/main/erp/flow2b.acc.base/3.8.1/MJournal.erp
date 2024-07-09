@@ -1,0 +1,44 @@
+trait MJournal extends Journal {
+  object field gen: Int?
+  system const ref field n: Int? = increment(MJournal.gen)
+  func number: String
+  ref field date: Date = now
+  func journalDate = date
+  func debitEntry: MLedger? = null
+  func creditEntry: MLedger? = null
+  func shouldBeBalanced = true
+  field entries: [MLedger] inline by journal {
+    default =? defaultEntries
+    canAdd = false
+    validate = {
+      if (shouldBeBalanced && entries.groupBy(currency).toSeq.count == 1 && entries*.amount.sum != 0) "Journal is unbalanced"
+    }
+  }
+  func defaultEntries: [MLedger]? = []
+  
+  ref field legalEntity: LegalEntity {
+    default =? LegalEntity.ours.onlyOne
+    from = LegalEntity.ours
+    update = {
+      entries*.as[MLedgerCurrency].filter(!try? currency).foreach(_.currency = new.getCurrency)
+    }
+  }
+  func cor: Int? = 0
+  report Report {
+    generateFilters = false
+    field legalEntity: LegalEntity? {
+      default = LegalEntity.ours.onlyOne
+      from = LegalEntity.ours
+    }
+    field account: LedgerAccount? {search = true}
+    field from: Date?
+    field to: Date?  
+    view list = MJournal.all.filter(
+          legalEntity ==? this.legalEntity
+       && (!this.account || entries.exists(account == this.account))
+       && from ?<= date && date <=? to
+    ) >> nav{table{
+      number, date
+    }}
+  }
+}

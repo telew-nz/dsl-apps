@@ -1,0 +1,46 @@
+interface IRentPriceModel {
+  func rentReturnDate(delivery: RentDeliveryDesc, returnSchedule: ISchedule, qty: Qty[DurUnit]?): Date = {
+    delivery.dispatchDate + qty.unit!.as[DurUnit]!.defDur*qty
+  }
+  func rentDuration(delivery: RentDeliveryDesc, assetReturn: RentDeliveryDesc, unit: DurUnit?): Qty[DurUnit]? = {
+    let dur = (assetReturn.deliveryDate - delivery.dispatchDate)
+    
+    if (let u = unit?.defDur) {
+      dur.to[Duration[u.unit!]].as[Qty[unit!]]
+    } else {
+      dur.to[Duration[hour]].as[Qty[DurUnit.Hour]]
+    }
+  }
+  
+  func nightsCount(deliveryDate: Date, returnDate: Date): Qty[Night]? = 0
+  
+  func chargeOvernight(delivery: RentDeliveryDesc): Bool = {
+    delivery.items.exists(chargeOvernight)
+  }
+  func rentDurationUnits: [DurUnit]? = DurUnit.all.toSet
+  func hasNight: Bool = false
+  func hasNightCharge: Bool = false
+  back func price(product: IBaseProduct): IPrice? 
+}
+
+object EmptyRentPriceModel extends IRentPriceModel {
+ func price(product: IBaseProduct): IPrice? = null
+}
+extend trait IPriceModel extends IRentPriceModel 
+
+class RentDeliveryDesc {
+  field dispatchDate: Date
+  field deliveryDate: Date
+  field schedule: ISchedule
+  system field items: [RentDeliveryItem]?
+}
+
+extend trait IDelivery {
+  func storeSchedule = deliverySrc.or(deliveryDst)?.schedule.alt(Schedule24)
+  func toRentDeliveryDesc: RentDeliveryDesc = {
+    RentDeliveryDesc(dispatchDate = dispatchDate, deliveryDate = deliveryDate, schedule = storeSchedule, 
+                     items = items*.as[RentDeliveryItem])
+  }
+}
+
+

@@ -1,0 +1,57 @@
+entity RentPriceModel extends IRentPriceModel with PriceModel {
+  func title = "RPM $vendor $date"
+  ref field date: Date[day] = now
+  func currency: Currency = vendor.getCurrency
+  field night: NightDesc?
+  
+  field slots: [TimePeriod]?
+  field pricesIncludingGst: Bool = vendor.pricesIncludingGst
+  field products: [RentProductPrice]? inline by model {
+    available(All)
+  }
+  func superProductPrice(superProduct: ISuperProduct): IPrice? = {
+    products.find(product == superProduct)
+  }
+  
+  view form = nav{grid(width = 1.2){
+    date
+    vendor
+    pricesIncludingGst
+    night
+    products >> table {
+      product >> field(width = 0.4) 
+      grid(labels = Top, width = 0.6, label = "Prices") {
+        prices >> table(label = "") {unit >> field(width = 0.3) price >> field(width = 0.2)}
+        
+      }
+      overnightCharge >> field(width = 0.2)
+    }
+  }}
+}
+
+
+inline entity RentProductPrice extends IRentProductPrice {
+  func superProduct = product
+  system field model: RentPriceModel inline by products
+  field product: AssetRentService
+  field prices: [DurationPrice] = RentDurationUnit.all!.map(u => DurationPrice(unit = u, currency = model.vendor.getCurrency))
+  field overnightCharge: Money[currency]? {
+    visible = model.night
+  }
+  func chargeOvernight = model.night && overnightCharge
+  compute gstRate: Percent[2]? = product.forceGstRate(model.vendor).alt(0)
+    
+  event onSave = product.touch
+  
+  
+  view form = grid(labels = Top) {
+    prices >> table(label = "") {unit >> field(width = 0.3) price >> field(width = 0.3)}
+    overnightCharge
+  }
+}
+
+class DurationPrice {
+  field currency: Currency
+  field unit: RentDurationUnit
+  field price: Money[currency]? {canEditUnit = true}
+}

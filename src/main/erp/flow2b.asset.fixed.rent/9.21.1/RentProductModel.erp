@@ -1,0 +1,49 @@
+trait TRentPriceModel extends IStaticPriceModel {
+  func allDurUnits: [DurUnit]?
+  func products: [TRentProductPrice]?
+  func pricesIncludingGst: Bool
+  func createProduct(product: IBaseProduct, prices: [DurPrice]?, bond: UMoney?): TRentProductPrice
+}
+
+
+trait TRentProductPrice extends IStaticPriceRent  {
+  impl func model: TRentPriceModel
+  field prices: [DurPrice]? {
+    singular = "Price"
+    update = {
+      new.foreach(_.price.currency = this.currency)
+    }
+    init = {
+      new.unit =? model.allDurUnits.first
+    }
+    default = if (front) if (let p = model.allDurUnits.first) [DurPrice.incomplete(unit = p)]
+  }
+  override func levels = model.levels
+  
+  impl field bond: UMoney[currency]? 
+  override compute gstRate: UPercent[2]? = product.gstRate(model.vendor.legalEntity).alt(0)
+  func superProduct = product.superProduct
+    
+  impl event onSave = product.touch
+  
+  back func addDuration(unit: DurUnit, price: UMoney?): Void = {
+    if (let price) {
+      addDuration(1.as[UQty[unit]], SalesPrice(current = price, regular = price))
+    }
+  }
+  back func addDuration(unit: DurUnit, price: SalesPrice): Void = {
+    addDuration(1.as[UQty[unit]], price)
+  }
+  back func addDuration(duration: UQty, price: SalesPrice): Void = {
+    prices = prices + DurPrice(unit = duration.unit!.as[DurUnit]!, dur = duration, price = price)
+  }
+  impl func updateRentPrice(inclGst: Bool, prices: [DurPrice]?): Bool = {
+    this.prices = prices.map{dp =>
+      dp.copy(
+        unit = if (prices.count == 1) model.allDurUnits.first.alt(dp.unit) else dp.unit, 
+        price = dp.price.convertGst(gstRate, inclGst, model.pricesIncludingGst))
+    }
+    save
+    true
+  }
+}

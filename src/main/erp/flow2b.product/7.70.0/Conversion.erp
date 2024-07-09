@@ -1,0 +1,19 @@
+back object Conversion extends IConversion {
+  func convert(version: [Int?]): Future[Any] = {
+    if (version < [7,34,0]) {
+      renameField(ProductItem, serialNum, "manNum")
+    } 
+    if (version < [7,66,0]) {
+      HasNumber.all.foreach{i =>
+        if (let refNum = field[String?](i, "refNum")) {
+          i.refNums = [refNum]
+          i.save
+        }
+      }
+    }
+    if (version < [7,69,0]) {
+      IBaseProduct.all*.touch
+    }
+  }   
+}    
+   

@@ -1,0 +1,103 @@
+entity Schedule {
+  field title: String
+  compute cycle: Duration[day] = period.duration.to[Duration[day, 0]]
+  field period: Period = Period(start = Date.now.start(of = week), end = Date.now.start(of = week) + 1_week) {label = "Sample Period"}
+  field workingPeriods: [Period] {
+    label = "Working Time inside the Sample Period"
+    isValid = workingPeriods.all(period.includes(_))
+    update = {
+      if (!try? new.last.start) {
+        new.last.start =? try? old.last!.start + 1_day
+        new.last.end =? try? old.last!.end + 1_day
+      }
+    }
+  }
+  field exceptions: [Exception]? 
+  field assignees: [ScheduleAssignee]? by schedule
+    
+  class Exception {
+    field period: Period
+    field workingPeriods: [Period]?
+  }
+  
+  func correctForward(period: Period): Period? = {
+    if (let p = workingPeriod(period.start).filter(end <= period.end)) p
+    else if (workingPeriods.exists(duration >= period.duration)) _correctNext(period)
+    else null
+  }
+  func _correctNext(period: Period): Period = {
+    let p = nextPeriod(period.start)
+    if (p.end <= period.end) p
+    else _correctNext(period.move(p.end))
+  }
+  func workingPeriod(date: Date): Period? = {
+    if (let e = exceptions.find(period.contains(date))) {
+      e.workingPeriods.find(contains(date))
+    } else {
+      let delta: Duration[day]? = delta(date)
+      workingPeriods.map(add(delta)).find(contains(date))
+    }
+  }
+  
+  func delta(date: Date): Duration[day]? = {
+    (date.start(of = day).sub(period.start.start(of = day)).to[Duration[day, 0]]/cycle)*cycle
+  }
+  
+  func prevPeriod(date: Date): Period = {
+    let prevException = exceptions.sortBy(period.start.desc).filter(period.start < date)*.workingPeriods.find(end < date)
+    let delta: Duration[day]? = delta(date)
+    let d1 = date - delta
+    let d2 = date - delta + cycle
+    let pers = workingPeriods.sortBy(start.desc)
+    let prevPer = pers.find(end < d1).map(add(delta))
+      .alt(pers.find(end < d2).map(add(delta - cycle))!)
+    if (let e = prevException) e.later(prevPer) else prevPer
+  }
+  
+  func nextPeriod(date: Date): Period = {
+    let nextException = exceptions.sortBy(period.start).filter(period.end > date)*.workingPeriods.find(start > date)
+    let delta: Duration[day]? = delta(date)
+    let d1 = date - delta
+    let d2 = date - delta - cycle
+    let pers = workingPeriods.sortBy(start)
+    let nextPer = pers.find(start > d1).map(add(delta))
+      .alt(pers.find(start > d2).map(add(delta + cycle))!)
+    if (let e = nextException) e.earlier(nextPer) else nextPer
+  }
+  
+  func onSave = {
+    workingPeriods = workingPeriods.sortBy(start)
+    exceptions = exceptions
+      .map(e => Exception(period = e.period, workingPeriods = e.workingPeriods.sortBy(start)))
+      .sortBy(period.start)
+  }
+  func isWorkingPeriod(period: Period): Bool = {
+    if (let p = workingPeriod(period.start)) p.includes(period) else false
+  }
+  func isWorkingDate(date: Date): Bool = workingPeriod(date)
+  func nextWorkingDate(date: Date): Date = {
+    if (isWorkingDate(date)) date
+    else nextPeriod(date).start
+  }
+  func prevWorkingDate(date: Date): Date = {
+    if (isWorkingDate(date)) date
+    else prevPeriod(date).end
+  }
+  
+  view form = nav {grid(labels = Top){
+    title
+    period
+    cycle
+    workingPeriods
+    exceptions >> list {
+      grid {
+        period
+        workingPeriods
+      }
+    }
+  }}
+}
+
+
+
+

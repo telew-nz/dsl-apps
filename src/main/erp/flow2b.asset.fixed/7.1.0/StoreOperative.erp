@@ -1,0 +1,14 @@
+extend role StoreOperative {
+  entity Maintenance = readWrite
+  extend view menu = menu("Assets") {
+    Maintenance >> item(fastAdd)
+    extension("Assets")
+  }
+}
+extend role BusAdmin {
+  entity Maintenance = readWrite
+  extend view menu = menu("Assets") {
+    Maintenance
+    extension("Assets")
+  }
+}

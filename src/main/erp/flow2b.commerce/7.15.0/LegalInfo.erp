@@ -1,0 +1,98 @@
+interface LegalInfo extends AnyRef {
+  field name: String? {label = "Legal Name"}
+  
+  var gstNumber: String?
+  var taxNumber: String?
+  
+  object func newDefault: LegalInfo? = {
+    if (let lob = LegalInfo.subObjects.onlyOne) lob.new()
+  }
+}
+
+enum GstStatus {
+  case Registered
+  case NotRegistered
+}
+
+extend trait LegalEntity extends NewEngine {
+  ref field gstStatus: GstStatus = if (this.is[Company]) Registered else NotRegistered
+  func defaultGstRate: GstRate = Exempt
+  func hasGst: Bool = gstStatus == Registered
+  func legalName: String = legalInfo?.name.alt(title)
+  func legalInfo: LegalInfo?
+  field altNames: [String]? {
+    label = "Alternative Names"
+    singular = "Name"
+  }
+  func isName(name: String?): Bool = {
+    name.trim && (title =%= name || legalInfo?.name =%= name || altNames.exists(_ =%= name))
+  }
+  func addName(name: String?): Void = if (let name = name.trim) {
+    if (!isName(name)) {
+      altNames = altNames + [name]
+      save
+    }
+  }
+  back object func filterByName(name: String?): [LegalEntity]? = if (let name = name.trim) {
+    LegalEntity.all.filter(isName(name)).result.get
+  }
+  view gstView = group {
+  }
+  view gstCustomerView = group {
+  }
+}
+
+extend entity Company {
+  impl field legalInfo: LegalInfo? {
+    default = newDefault
+    views = []
+  }
+  
+  extend view form = extend("tabs") {
+    grid(labels = Top, label = "Legal") {
+      gstStatus
+      legalInfo >> field(label = "Country", frame = false)
+      altNames
+      extension("legalInfo")
+    }
+  }
+}
+
+extend entity Person {
+  impl compute legalInfo = soleTrader
+  override func legalName: String = soleTrader?.name.alt(title)
+  
+  field soleTrader: LegalInfo? {
+    views = []
+  }
+  field idDocs: [PersonIdDoc]? {
+    plural = "IDs"
+    label = "IDs"
+    singular = "ID"
+    views = []
+  }
+  extend view form = extend("tabs") {
+    grid(labels = Top, label = "Legal") {
+      idDocs
+      soleTrader
+      gstStatus 
+      altNames
+      extension("legalInfo")
+    }
+  }
+}
+
+
+class PersonIdDoc {
+  field docType: PersonIdDocType
+  field number: String
+  field expiryDate: Date?
+  impl view form = grid(labels = None){
+    row{docType >> field(compact = true), number, expiryDate}
+  }
+}
+
+enum PersonIdDocType {
+  case Passport
+  case DriverLicence
+}

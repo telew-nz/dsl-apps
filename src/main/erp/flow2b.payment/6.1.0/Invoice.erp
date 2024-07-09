@@ -1,0 +1,20 @@
+trait IInvoice extends Debt {
+  background = "#d68400"
+  plural = "Invoices"
+  singular = "Invoice"
+    
+  report Report {
+    field bookkeeper: Person? {
+      from = Person.all.filter(is(Bookkeeper))
+    }
+    field state: [PaymentState]?
+    field from: Date?
+    field to: Date?
+    
+    view list = IInvoice.all.filter(
+      journalDate >=? from && journalDate <=? to 
+      && (!this.state || this.state.contains(reconcilationState.paymentState))
+      && isFor(bookkeeper, Bookkeeper)
+    ).sortBy(journalDate.desc) >> nav{list(canAdd = false){}}
+  }
+}

@@ -1,0 +1,16 @@
+analytic Tax(dataType = "Tax")
+
+acctemplate Taxes {
+  key field tax: Tax
+  field taxedAmount: Money[currency]?
+  field origin: Journal?
+}
+
+account TaxesPayable(template = "Taxes", number = 220, type = Liability)
+account TaxesPaid(template = "Taxes", number = 630, type = Expense)
+
+enum Tax {
+  case IncomeTax
+  case Gst = "GST"
+  case PayrollTax
+}

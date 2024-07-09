@@ -1,0 +1,27 @@
+class RefProductItems {
+  field items: [RefProductQty]?
+  field count: Int?
+  compute photo: Image? {
+    availableFor = List
+    value = items*.product*.collectPhotos.first
+  }
+  
+  object func create(items: [RefProductQty]?) = {
+    RefProductItems(items = items.first(3), count = items.count)
+  }
+  compute more = count - items.count 
+  impl view form = x(flow, frame = false){
+    items >> list(mode = Static, frame = false, flow){form}
+    more >> field(fontStyle = Label, visible = more)
+    label("More...", fontStyle = Label, visible = more)
+  }
+}
+
+class RefProductQty {
+  field product: IBaseProduct
+  field qty: Qty
+  compute qty1 = if (qty.unit == ProductUnit.Item) qty.noUnit else qty
+  impl view form = x(margin = Right){
+    qty1 >> field(fontStyle = Label) product >> field(title = title) 
+  }
+}

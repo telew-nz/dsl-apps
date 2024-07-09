@@ -1,0 +1,61 @@
+entity CustAccStm extends DashboardItem with AutoSend {
+  singular = "Statement of Account"
+  impl func title = "Statement of Account $customer $(date.date)"
+  override func entitySubject: String = "$legalEntity: Statement of Account" 
+  
+  const ref field date: Date = now
+  field legalEntity: OurLegalEntity =? onlyOne
+  ref field customer: Customer by accountStatements
+  field currency: Currency = (try? customer.getCurrency).alt(our)
+  compute logo: Image? = legalEntity.legalEntity.as[Company]?.logo 
+  compute bankAccounts = {
+    legalEntity.accounts*.as[BankAccount].filter(forCustomerPayments && number && _.currency == this.currency)
+  }
+  compute name = "Customer Account Statement"
+  impl func sendOut(): Void = NewStmNotif(stm = this).enqueue
+  
+  impl view form = nav {
+    grid (labels = None, width = 1.25) {
+      issuesView
+      row {
+        h1(width = 0.5, label = "Statement of Account")
+        y (width = 0.75, margin = Bottom) {
+          logo >> field(height = 4, margin = None, editMode = AlwaysRead)
+          legalEntity.legalEntity.legalName >> field(fontStyle = H1, margin = None, visible = !logo, align = Right)
+        }
+      }
+
+      customer >> field(fontStyle = H1, label = "")
+      customer.legalEntity.debtBalance >> grid(label = "") {
+        row {
+          debt >> field(label = "Balance to Pay", fontStyle = Bold, showEmpty)
+          debitAllowance
+          creditAllowance
+        }
+        bankAccounts >> list {number}
+      }
+      DebtRecon(legalEntity = legalEntity, counterparty = customer.legalEntity, currency = currency).list.unnav
+    }
+  }
+}
+
+class NewStmNotif extends SystemJob {
+  impl func service = FinanceNotificator
+  field stm: CustAccStm
+  impl func do = {
+    if (let c = stm.customer?.invoiceContact) {
+      c.join(stm)
+      stm.touch
+      Activity.current!.setMainEntity(stm)
+      
+      Activity.current!.makePublic(
+"<p>$(stm.legalEntity): Statement of account.</p>
+<p></p>
+<p><b>$(stm.customer.legalEntity.debtBalance.debt)</b> unpaid.</p>
+<p></p>
+<p>Bank accounts:<br/>$(stm.bankAccounts*.number.join("<br/>"))</p>
+<p></p>
+")
+    }
+  }
+}

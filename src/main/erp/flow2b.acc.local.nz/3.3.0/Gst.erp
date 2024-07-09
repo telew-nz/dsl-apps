@@ -1,0 +1,3 @@
+extend enum GstRate {
+  case Standard(rate = 0.15)
+}

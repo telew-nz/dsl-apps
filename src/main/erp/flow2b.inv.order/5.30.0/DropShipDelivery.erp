@@ -1,0 +1,60 @@
+entity DropShipDelivery extends IPurchaseDelivery with ISalesDelivery {
+  const ref field n: Int? = increment(Order.gen)
+  
+  func deliverySource: Store? = null
+  ref compute number: String {
+    value = manualNumber.alt("DD" + n)
+    update = {manualNumber = new}
+  }
+  
+  func orders: [Order] = purchaseOrders + salesOrders
+  func policyOrders: [Order] = salesOrders
+  list compute vendor: LegalEntity = purchaseOrders.first.vendor
+  list compute customer: LegalEntity = salesOrders.first.customer
+  field salesPolicy: IDeliveryPolicy?
+  field purchasePolicy: IDeliveryPolicy?
+  func deliverySupplier: LegalEntity = supplier
+  func deliveryReceiver: LegalEntity = receiver
+  func legalEntity = salesOrders.first.vendor
+  func title = "$number $(try? receiver?.title)"
+  func defaultSalesOrders: [SalesOrder]? = [SalesOrder(deliveries = [this], vendor = purchaseOrders.first.customer)]
+  func defaultPurchaseOrders: [PurchaseOrder]? = [PurchaseOrder(deliveries = [this], customer = salesOrders.first.vendor)]
+  func updateSupplier(): Void = {
+    if (!purchaseOrders.first.id) purchaseOrders.first.vendor = supplier
+  }
+  func updateReceiver(): Void = {
+    if (!salesOrders.first.id) salesOrders.first.customer = receiver
+  }
+  field shipTo: Location? {
+    from = Location.all.filter(l => l.actor == receiver || l.actor == receiver.top || l.mutual)
+    init = {new.actor = receiver}
+  }
+  func debtDueDate = dueDate
+  stored compute dueDate: Date? <- {
+    if (status == Planned && purchasePolicy) dueDate(purchaseOrders, purchasePolicy)  
+    else dueDate(salesOrders, salesPolicy)  
+  }
+  view deliveryHeader = grid(width = 1.2){
+    status
+    salesOrders
+    purchaseOrders
+    row {supplier, receiver, dispatchDate}
+    row {space, shipTo, deliveryDate}
+    row {purchasePolicy,  salesPolicy,  dueDate}
+  }
+  view form = nav{grid(width = 1.2, labels = Top) {
+    number
+    deliveryHeader
+    items >> list(editMode = AlwaysRead){form}
+  } generalLedgerButton} 
+  
+  view ref = x{title status}
+  func onSave = {
+    orders*.touch
+  }
+  
+  object view list = DropShipDelivery.all >> nav{list{grid(labels = None){
+    row{number >> field(width = 0.2) deliveryDate >> field(visible = true, width = 0.3) vendor >> field(width = 0.25) customer >> field(width = 0.25)}
+    x{status, overdueState}
+  }}}
+}

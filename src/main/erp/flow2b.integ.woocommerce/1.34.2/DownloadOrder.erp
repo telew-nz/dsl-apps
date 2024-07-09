@@ -6,11 +6,9 @@ extend entity WooCommerceIntegration  {
   }
 }
 
-inline entity BatchDownloadOrdersSchedule
-
 inline entity DownloadOrdersSchedule extends ScheduledJob {
   impl field service: WooCommerceIntegration by ordersSchedule
-  impl func schedule = "0 0 */6 * * ?" // Every 6 hours
+  impl func schedule = "0 30 0 * * ?" // Every day
   impl func dependsOnRegisters = false
   impl func do = {
     service.downloadNewOrders()
@@ -33,9 +31,9 @@ back class DownloadOrdersJob extends SystemJob {
     }
     let response <- req.get
     let orders = response.body!.parseJson[[OrderData]?]
-    let madeOrders <- orders.filter(shippingLines.all(methodId.isDefined)).filter(status != autoDraft)*.proc(service).allCompleted
+    let madeOrders <- orders.filter(status != autoDraft)*.proc(service).allCompleted
     if (orders.count == 10) {
-        procPage(page + 1)
+      procPage(page + 1)
     }
   }
 }
@@ -161,14 +159,14 @@ back class ShippingLine extends ESalesOrderDeliveryItem[Int] {
   extFieldNaming = Underscore
   field id: Int
   field methodTitle: String?
-  field methodId: String?
+  field methodId: String
   field total: UMoney?
   field totalTax: UMoney?
   
   impl func extId = id
   impl func amount = total
   func gstAmount = totalTax
-  impl func deliveryMethod = methodId!
+  impl func deliveryMethod = methodId
 }
 back class FeeLine {
   extFieldNaming = Underscore
@@ -184,3 +182,4 @@ back class CouponLine {
   field discount: UMoney?
   field discountTax: UMoney?
 }
+

@@ -1,0 +1,13 @@
+inline entity BankFees extends OPReason {
+  icon = "cut"
+  field amount: UMoney[payment.currency] =? payment.unreconAmount.abs.unsigned
+  func cashFlows = [CashFlowAmount(cashFlow = BankFees, amount = amount)] 
+  
+  func ledgers: Future[[Ledger]?] = {
+    [LBankFees(finAccount = payment.account, journal = payment, trAmount = amount)]
+  }
+  
+  view form = grid {
+    row{h3("Bank Fees") amount }
+  }
+}

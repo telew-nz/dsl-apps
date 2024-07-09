@@ -1,0 +1,42 @@
+extend entity Vendor {
+  event onSave = {
+    if (updated(gstStatus) && gstStatus == NotRegistered) {
+      PaymentExpense.all.filter(gstRate && payment.payee == this.legalEntity)
+        .update(gstRate = null) 
+    }
+    if (expense && updated(expense)) {
+      ExpenseReprocessJob(vendor = this).enqueue
+    }
+  }
+  field expense: ExpenseType? {
+    label = "Usual Expense"
+  }
+  
+  
+  extend view form = extend("top") {
+    button("Recode", visible = !ui.edit) {
+      let _ <- OPReason.all.filter(payment.payee == this.legalEntity)
+      .foreach{e => 
+        let ee = e.as[PaymentExpense].alt(e.convertTo(PaymentExpense))
+        ee.expense =? this.expense
+        ee.gstRate = this.expense?.gstRate(this)
+        ee.recode()
+      }.result
+      UI.info("Expense type, claimable percentage and GST rate have been updated in the relevant transactions")
+    }
+    expense
+  }
+}
+
+class ExpenseReprocessJob extends SystemJob {
+  field vendor: Vendor
+  impl func service = FinanceService
+  impl func do = {
+    if (vendor.expense) {
+      OutgoingPayment.all.filter(payee == vendor.legalEntity && !reconAmount && !reasons && !manLinks && !source)
+        .map{p =>
+           p.defaultExpense?.save
+        }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+inline entity Salary extends OPReason {
+  icon = "user-circle"
+  
+  field person: Person? {
+    visible = !payment.payee?.is[Person]
+  }
+  field salaryType: ISalaryType 
+  impl field amount: UMoney[payment.currency] =? payment.unreconAmount.abs
+  impl func cashFlows = [CashFlowAmount(cashFlow = Salaries, amount = amount)] 
+  
+  impl func ledgers: Future[[Ledger]?] = {
+    let baseAmount <- amount.to[Money[payment.legalEntity.getCurrency]](payment.date)
+    [LSalaryExpenses(salaryType = salaryType, counterparty = person.or(payment.payee?.as[Person]), journal = payment, trAmount = baseAmount, currency = payment.legalEntity.getCurrency)]
+  }
+  
+  impl view form = grid {
+    row{salaryType person amount >> field(align = Right)}
+  }
+}

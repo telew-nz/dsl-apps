@@ -1,0 +1,97 @@
+trait IReconRule extends Entity {
+  singular = "Reconciliation Rule"
+  plural = "Reconciliation Rules"
+  
+  field ruleMovements: [CashMovement]? read by rules {
+    label = "Movements"
+    availableFor = Overall
+  }
+  compute movementsCount: UInt? {
+    availableFor = List
+    value = ruleMovements.count
+  }
+  back func backDescr: Text?
+  func pr: Dec[4]?
+  back func run(movements: [CashMovement]?, payment: Payment): CashMovement? = {
+    if (let r = apply(movements, payment)) {
+      r.rules = (r.rules + this).distinct
+      r
+    }
+  }
+  back protected func apply(movements: [CashMovement]?, payment: Payment): CashMovement?
+  back func isCounterparty(actor: LegalEntity, payment: Payment): Bool = false
+  
+  back func run: [CashMovement]? = {
+    Payment.allUnrecon
+      .flatMap {p =>
+         run([], p).toSeq
+      }
+  }
+  
+  field _priority: Dec[4]??
+  ref compute priority: Dec[4]? = _priority.alt(pr)
+  
+  compute frontDescr {
+    value = back{backDescr}
+    availableFor = Inline
+  }
+  
+  
+  ref field state: ReconRuleState = defaultState
+  func defaultState: ReconRuleState = Active
+  
+  impl view ref = x{state title}
+  
+  view movementsView = x(label = "Applied", visible = movementsCount){
+    movementsCount label("times") button(icon = "expand-arrows-alt") {
+      CashMovement.Report(rules = [this]).list.open
+    }
+  }
+  impl view form = nav{
+    grid{
+      x{state title >> field(fontStyle = H2, stretch = 1)}
+      frontDescr >> field(label = "")
+      priority 
+      movementsView
+    }
+    button(icon = "running", "Execute") {
+      let _ <- UI.save(this)
+      back{run}
+    }
+  }
+  report Report {
+    impl view list = IReconRule.all.sortBy(priority.desc) >> nav{list {
+      grid {
+        x{state title }
+        row{priority x(label = "Applied", visible = movementsCount){movementsCount label("times")}}
+      }
+    }}
+  }
+  object back func process(movements: [CashMovement]?, payment: Payment): CashMovement? = {
+    IReconRule.all
+      .filter(state == Active)
+      .sortBy(priority.desc).result.get
+      .fold(null[CashMovement]) {
+        if (let acc) acc
+        else run(movements, payment)
+      }
+  }
+  object back func isCounterparty(actor: LegalEntity, payment: Payment): Bool = {
+    IReconRule.all
+      .filter(state == Active)
+      .sortBy(priority.desc)
+      .exists(_.isCounterparty(actor, payment))
+  }
+}
+
+enum ReconRuleState {
+  case Active {background = "#dea" icon = "robot"}
+  case Inactive {background = "#999" icon = "times-circle"}
+}
+
+extend role Accountant {
+  extend view menu = extend("Finance") {
+    IReconRule
+  }
+}
+

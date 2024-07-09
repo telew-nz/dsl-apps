@@ -1,0 +1,31 @@
+class PurchaseOrderImportJob extends ImportJob {
+  impl field task: PurchaseOrderImport
+  impl func import = {
+    task*.invoices*.delete
+    
+    let text1 <- task.file.plainText
+    let text2 <- task.file.plainText(["sortByPosition" -> false])
+    //text1.trace text2.trace
+    if (let text1) {
+      let textOptions = [text1] + text2.toSeq
+      guard (let processor = OrderProcessor.subObjects
+             .sortBy(_.order)
+             .map(_.new())
+             .find(canProcess(task, textOptions))) 
+      else return throw "No processor found"
+
+      let invs <- processor.process(task, textOptions)
+      invs.foreach{inv =>
+        if (inv.isEmpty) inv.delete
+        else inv.save
+      }
+    }
+  }
+}
+
+back interface OrderProcessor {
+  object func order: Dec[4]?
+  func canProcess(poi: PurchaseOrderImport, textOptions: [PlainText]): Bool
+  func process(poi: PurchaseOrderImport, textOptions: [PlainText]): Future[[POIInvoice]?]
+}
+

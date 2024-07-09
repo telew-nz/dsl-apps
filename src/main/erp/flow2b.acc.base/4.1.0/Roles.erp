@@ -1,0 +1,7 @@
+role Accountant {
+  entity LegalEntity = readWrite
+  entity Company = readWrite
+  entity Person = readWrite
+  entity CompanyGroup = readWrite
+  view dashboard = row{}
+}

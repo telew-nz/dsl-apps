@@ -1,0 +1,48 @@
+entity PriceList extends PriceModel {
+  func title = "PL $vendor $date"
+  ref field date: Date[day] = now
+  field pricesIncludingGst: Bool = vendor.pricesIncludingGst
+  
+  ref field products: [ProductPrice]? inline by priceList {
+    available(All)
+  }
+  func contains(superProduct: ISuperProduct): Bool = products.exists(product == superProduct)
+  func superProductPrice(superProduct: ISuperProduct): IPrice? = {
+    products.find(product == superProduct)
+  }
+  view form = nav{grid{
+    date
+    vendor
+    products >> table {
+      product >> field(width = 0.7) priceEditor >> field(width = 0.3)
+    }
+  }}
+}
+  
+inline entity ProductPrice extends IPrice {
+  func superProduct = product
+  func currency = priceList.vendor.getCurrency
+  system field priceList: PriceList inline by products
+  field product: ISuperProduct
+  field price: Money[currency]?
+  compute gstRate = product.gstRate(priceList.vendor)?.value.withoutUnit
+  compute priceWithGst: Money[currency]? {
+    value = price*(1 + gstRate)
+    update = {
+      price = new/(1 + gstRate)
+    }
+  }
+  compute priceEditor: Money[currency]? {
+    label = "Price"
+    value = if (priceList.pricesIncludingGst) priceWithGst else price
+    update = {
+      if (priceList.pricesIncludingGst) this.priceWithGst = new 
+      else this.price = new
+    }
+  }
+    
+  func onSave = product.touch
+  func salesPrice(currency: Currency): Future[Money?] = price.to[Money[currency]](now)
+  view form = price
+}
+

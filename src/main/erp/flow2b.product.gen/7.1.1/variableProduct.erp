@@ -1,0 +1,160 @@
+generator variableProduct {
+  field intangible: Bool
+  compute tangible = !intangible
+  
+  field skuPrefix: String
+  field noAltUnits: Bool
+  
+  field _variation: variation
+  field _photo: photo?
+   
+  func photos: Dsl? = if (let ph = _photo) {
+    'field variablePhotos: [$(ph.name)]? inline by superProduct
+     impl func photos = variablePhotos.filter(!attrTerms)*.photo'
+  } else if (!decl("photos")) {
+    'impl field photos: [Image]?'
+  }
+  func photosView: Dsl = if (_photo) {
+    'variablePhotos >> list(frame = false, label = "", flow = true, itemWidth = 0.33)'
+  } else {
+    'photos >> field(height = 10, label = "")'
+  }
+  
+//SUPER_PRODUCT {{{{{{{{{{{{{{{{{{{{{{{{{
+  impl func generate: Dsl = '
+entity $name extends IVariableSuperProduct $(if (!noAltUnits) "with IAltUnits") {
+  impl func isTangible = $tangible
+  impl func skuPrefix: String = "$skuPrefix"
+  $photos
+  $(if (!decl("trackItems")) 'impl ref field trackItems: TrackItems? {label = "Track Serial Numbers"}')
+  $(if (!decl("title")) "impl field title: String")
+  $(if (!decl("description")) "impl field description: Text?")
+  $(if (!decl("status")) "impl field status: ProductStatus = ForSale")
+  impl field variations: [$(_variation.name)]? read by superProduct {
+    available(Ref).for(Inline).with(kits)
+  }
+  
+  $decls
+  
+  $(decls*.as[Field].filter(f => !_variation.decls*.as[Field]*.name.contains(f.name) && f.name != "title").map{f => 
+    let v: Dsl = if (f.tp.isOpt) "$(f.name).toSeq" else "[$(f.name)]"
+    "  impl func attr$(f.name.capitalize) = $v"
+  }.join("\n"))
+  
+  $(_variation.decls*.as[Field].filter(f => f.name != "title").map{f => 
+    "  impl func attr$(f.name.capitalize) = variations*.$(f.name)"
+  }.join("\n"))
+  
+  impl view mainView = grid (labels = Top, label = "Main"){
+    $photosView
+    statusView
+    title >> field(label = "", fontStyle = H2) 
+    row {sku refNum trackItems}
+    customView
+    baseMainView
+    variations
+    extension
+    description
+  }
+}
+'
+//}}}}}}}}}}}}}}}}}}}}}}}}}}}} SUPER_PRODUCT
+  
+  generator variation {
+    field kit: Bool
+    
+    func superClass: Dsl = if (kit) "IKit with ISubVariation" else "IVariation"
+    func attrTerms: Dsl = decls*.as[Field].filter(isKey)
+      .map{v => if (v.tp.isOpt) "$(v.name).toSeq" else "[$(v.name)]"}
+      .join(" + ").as[Dsl].alt("[]")
+    
+    func refView: Dsl? = if (decl("color") && !decl("ref")) {
+      if (decl("color")!.tp.isOpt) {
+        'impl view ref = x(flow = false){"   " >> field(background = color?.color, visible = color) title}'
+      } else {
+        'impl view ref = x(flow = false){"   " >> field(background = color.color) title}'
+      }
+    }
+    
+    func keys: Dsl? = decls*.as[Field].filter(isKey).map{f =>
+      if (this[variableProduct].field(f.name)) {
+        if (f.tp.isOpt) {
+         'field _$(f.name): $(f.tp)
+          ref compute $(f.name): $(f.tp) = _$(f.name).or(superProduct.$(f.name))'
+
+        } else {
+         'field _$(f.name): $(f.tp)?
+          ref compute $(f.name): $(f.tp) = _$(f.name).alt(superProduct.$(f.name)!)'
+        }
+      } else {
+        'ref $f'
+      }
+    }.join("\n")
+    
+    func photos: Dsl? = {
+      if (let ph = _photo) {
+        let eqs: Dsl = ph.decls*.as[Field]!.map {f =>
+          "ph.$(f.name) == this.$(f.name)"
+        }.join(" && ")
+        'field _photos: [Image]?
+         impl compute photos: [Image]? = _photos.or(superProduct.variablePhotos.filter(ph => $eqs)*.photo)
+        '
+      } else if (!decl("photos")) {
+        'impl field photos: [Image]?'
+      }
+    }
+    
+//VARIATION {{{{{{{{{{{{{{{{{{{{{{{{{ 
+    impl func generate: Dsl = '
+entity $name extends $superClass {
+  ref impl field superProduct: $(this[variableProduct].name) by variations {
+    available(Inline).for(Inline)
+  }
+  impl func attrTerms = $attrTerms
+
+  $photos
+    
+  $keys
+  $(decls.filter(!_.as[Field]?.isKey))
+  $refView
+  
+  impl view mainView = grid (labels = Top, label = "Main") {
+    photos >> field(height = 10, label = "")
+    statusView
+    superProduct >> field(label = "", noTab, fontStyle = H2)
+    row {sku refNum trackItems}    
+    customView
+    $(if (kit) "items >> table {product >> field (width = 0.7) qty >> field(width = 0.3)}")
+    baseMainView
+    extension
+    description
+  }
+}
+'
+//}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} VARIATION
+  }
+  
+  generator photo {
+    func attrsGrid: Dsl? = decls.map("$name >> field(noTab)").join(" ")
+    func attrTerms: Dsl = decls*.as[Field].filter(isKey)
+      .map{v => if (v.tp.isOpt) "$(v.name).toSeq" else "[$(v.name)]"}
+      .join(" + ").as[Dsl].alt("[]")
+    
+//PHOTO {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{    
+    impl func generate: Dsl = '
+inline entity $name {
+  field superProduct: $(this[variableProduct].name) by variablePhotos
+  field photo: Image
+  func attrTerms = $attrTerms
+  $decls
+  
+  impl view form = grid (labels = None, width = 0.33){
+    photo >> field(height = 10, label = "")
+    $attrsGrid
+  }
+}
+'
+//}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}} PHOTO
+    
+  }
+}

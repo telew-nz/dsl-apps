@@ -1,0 +1,16 @@
+trait Store extends Location {  
+  object func forceOur: Store = our.alt(throw "Please enter a store for your company")
+  object func our: Store? = ours.first
+  object func ours: [Store]? = Actor.our!.stores
+}
+
+entity Warehouse extends Store {
+  field title: String
+  field address: Address?
+  
+  view form = nav{grid{
+    title
+    actor
+    address
+  }}
+}

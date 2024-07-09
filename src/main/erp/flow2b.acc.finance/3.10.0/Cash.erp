@@ -1,0 +1,88 @@
+analytic FinanceAccount(dataType = "FinanceAccount")
+ 
+acctemplate Cash {
+  func currency: Currency = financeAccount.currency
+  key field financeAccount: FinanceAccount {label = "Account"}
+  field cashFlowCategory: CashFlowCategory
+}
+
+account Bank(template = "Cash", number = 100, type = Asset)
+account Cash(template = "Cash", number = 105, type = Asset) 
+
+
+trait FinanceAccount {
+  background = "#d68400"
+  object func ours: [FinanceAccount]? = LegalEntity.ours*.accounts
+  func ledgerAccount: LedgerAccount
+    
+  func title = "$legalEntity: $name"
+  ref field name: String
+  ref field legalEntity: LegalEntity by accounts {
+    default =? LegalEntity.ours.onlyOne
+    from = LegalEntity.ours
+  }
+  ref field currency: Currency
+    
+  ref compute balance: Money[currency]? = cashLedger?.balance
+  system compute lastTransactionDate = cashLedger?.date
+  system compute cashLedger: LCash? = LCash.current.find(financeAccount == this)
+    
+  object view refList = FinanceAccount.all.sortBy(lastTransactionDate.alt(DateTime.min).desc) >> list{grid(labels = None, width = 0.4){
+    row{title >> field(width = 0.25) balance >> field(width = 0.15, align = Right)}
+  }}
+  object view list = FinanceAccount.all.sortBy(title) >> nav{list{grid(labels = None){
+    row{title >> field(width = 0.7) balance >> field(width = 0.3, align = Right)}
+  }}}
+  
+  object view widget = FinanceAccount.all
+    .filter(balance)
+    .map{
+      let baseBalance <- balance.to[Money[legalEntity.getCurrency]](now)
+      (account = _, balance, baseBalance)
+     }
+     .sortBy(account.title)
+     .total(baseBalance.sum) 
+  >> nav(background = "#d68400", more = FinanceAccount.list.open){
+    total {
+      baseBalance >> field(align = Right)
+      list(action = account.form.open){grid(labels = None){
+         row{account.title >> field(width = 0.7) balance >> field(width = 0.3, align = Right)}
+      }}}}
+}
+
+extend entity LegalEntity {
+  field accounts: [FinanceAccount]? {label = "Finance Accounts"}
+}
+
+extend entity Company {
+  extend view form = accounts
+}
+
+extend entity Person {
+  extend view form = accounts
+}
+
+entity CashAccount extends FinanceAccount {
+  background = "#d68400"
+  func ledgerAccount: LedgerAccount = Cash
+  view form = nav{grid{
+    legalEntity
+    name
+    currency
+    balance
+  }}
+}
+  
+entity BankAccount extends FinanceAccount {
+  background = "#d68400"
+  func ledgerAccount: LedgerAccount = Bank
+  field number: String?
+  view form = nav{grid{
+    legalEntity
+    name
+    number
+    currency
+    balance
+  }}
+}
+

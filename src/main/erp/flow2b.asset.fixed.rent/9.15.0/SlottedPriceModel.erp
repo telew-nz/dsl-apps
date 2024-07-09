@@ -1,0 +1,76 @@
+entity SlottedPriceModel extends ISlottedPriceModel with TRentPriceModel {
+  impl field title: String
+  ref impl field start: Date = now
+  impl field end: Date?
+  override func currency: Currency = vendor.getCurrency
+  ref impl field durations: [DurationSlot]
+  impl field period: Period {
+    default = Period(start = Date.now.start(of = day), end = Date.now.start(of = day) + 1_day)
+    label = "Sample Period"
+  }
+  impl field slots: [RentSlot] {
+    validate = validateSlots
+    update = {
+      if (!try? new.last.period.start) {
+        new.last.period.start =? try? old.last!.period.end
+        new.last.period.end =? try? old.last!.period.end + old.last!.period.duration
+        new.last.unit =? try? old.last!.unit
+        new.last.charge =? try? old.last!.charge
+      }
+    }
+  }
+  impl field pricesIncludingGst: Bool = (try? vendor.pricesIncludingGst).alt(true)
+  impl field products: [SlottedProductPrice]? inline by model {
+    availableFor = Overall
+    touchCascade = false
+  }
+  impl func price(level: IPriceLevel, type: PriceType, product: IBaseProduct) = if (type == Rent) {
+    products.find(p => p.product == product)
+  }
+  impl func createProduct(product: IBaseProduct, prices: [DurPrice]?, bond: UMoney[currency]?): SlottedProductPrice = {
+    SlottedProductPrice(model = this, product = product, prices = prices, bond = bond)
+  }
+  
+  impl func supports(product: IBaseProduct): Bool = true
+  impl func findPrice(product: IBaseProduct) = products.find(p => p.product == product)
+  impl func forceNewPrice(product: IBaseProduct): SlottedProductPrice = {
+    SlottedProductPrice(model = this, product = product)
+  }
+ 
+  
+  impl view form = nav{
+    grid{
+      title
+      row{start end}
+      levels
+      row {
+        vendor
+        pricesIncludingGst
+      }
+      durations
+      period
+      slots
+    }
+    pmNavButtons                   
+  } 
+}
+
+inline entity SlottedProductPrice extends TRentProductPrice with ISlottedProductPrice {
+  impl system field model: SlottedPriceModel by products
+  
+  override view form = y{
+    levels >> field(visible = !IPriceLevel.onlyOne)
+    x (visible = !ui.edit) {rentPrices >> field(frame = false) model >> field(title = fullTitle, stretch = 1, align = Right)}
+    grid(visible = ui.edit, labels = None, spacing = false) {
+      model
+      prices >> list(frame = false, margin = None){
+        grid(labels = None, margin = None){row{
+          dur >> field(align = Right, fontStyle = Label, width = 0.3) 
+          price >> field(align = Right, width = 0.7) 
+        }}
+      }
+      row{label("Bond", visible = bond || ui.edit, width = 0.3, align = Right) bond >> field(align = Right, width = 0.7) }
+    }
+  }
+  
+}

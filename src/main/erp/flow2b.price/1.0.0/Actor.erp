@@ -1,0 +1,31 @@
+extend trait Actor {
+  field priceModels: [PriceModel]? read by vendor  
+  func superProductSalesPrice(superProduct: ISuperProduct): Future[Money?] = {
+    if (let p = priceModels.sortBy(date.desc).find(contains(superProduct))) p.superProductSalesPrice(superProduct)
+    else 0
+  }
+  func productSalesPrice(product: IProduct): Future[Money?] = {
+    if (let p = priceModels.sortBy(date.desc).find(contains(product.superProduct))) p.productSalesPrice(product)
+    else 0
+  }
+  func superProductSalesAmount(superProduct: ISuperProduct, qty: Qty, customer: LegalEntity): Future[Money?] = {
+    if (let p = priceModels.sortBy(date.desc).find(contains(superProduct))) p.superProductSalesAmount(superProduct, qty, customer)
+    else 0
+  }
+  func productSalesAmount(product: IProduct, qty: Qty, customer: LegalEntity): Future[Money?] = {
+    if (let p = priceModels.sortBy(date.desc).find(contains(product.superProduct))) p.productSalesAmount(product, qty, customer)
+    else 0
+  }
+}
+
+extend entity Company {
+  extend view form = priceModels
+}
+
+extend entity Person {
+  extend view form = priceModels
+}
+
+extend entity CompanyGroup {
+  extend view form = priceModels
+}

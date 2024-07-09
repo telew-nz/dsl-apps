@@ -1,0 +1,55 @@
+entity PurchaseOrderImport extends ImportTask with NewEngine {
+//  background = "#d68400"
+  
+  override compute number = "POI$n"
+  impl func service = OrderImportService
+  
+  //field text: PlainText?
+  impl func itemRoles = [BusAdmin]
+  
+  ref compute fileName: String {
+    value = file.name
+  }
+  list field invoices: [POIInvoice]? by poi {
+    deleteCascade
+  }
+  func success = invoices.all(_.success)
+  field from: Contact?
+  func vendor: Vendor? = from?.contactLegalEntity?.vendor
+  system const field invGen: UInt? = 0
+  field file: File
+  override func title = "$number $(date.date) $fileName"
+  impl view form = nav{
+    grid{
+      issuesView
+      row {number date from}
+      file
+
+      extension("settings")
+      stateView 
+      invoices >> field(editMode = AlwaysRead)
+    }
+    button("To Ticket", icon = "recycle", visible = issues) {
+      convertTo(Ticket)
+    }
+  }
+  impl func createJob = PurchaseOrderImportJob(task = this)
+  impl func converters = [
+    Converter[Ticket](to = Ticket, convert = {to =>
+      invoices*.delete
+    })
+  ]
+  impl view traitItem = y {
+    x {stateItemView >> field(stretch = 0) date >> field(fontStyle = Label) number >> field(fontStyle = Label, width = 0.1) fileName}
+    invoices >> list{ref}
+  }
+  view stateItemView = x {state}
+  report Report {
+    field state: [ImportTaskState]? {auto}
+    impl view list = PurchaseOrderImport.all >> nav{list {
+      traitItem
+    }}
+  }
+}
+
+

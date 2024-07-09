@@ -1,0 +1,24 @@
+extend trait ProductAttr extends HasExtId 
+extend trait ProductAttrTerm extends HasExtId {
+  impl event onSaveOrDelete = {
+  	if (touched) {
+      ECommerceIntegration.all.map {service =>
+        if (service.userEnabled) service.uploadAttrTermJobs(BatchChange.create(service, [this]))*.enqueue
+      }.result
+    }
+  }
+}
+
+extend trait ECommerceIntegration {
+  back func uploadAllAttrs(): Void = {
+    let attrs: [ProductAttr]? = ProductAttrTerm.subObjects*.as[ProductAttr]
+    let b: BatchChange[ProductAttr] = BatchChange.create[ProductAttr, ID](this, attrs)
+    if (!b.isEmpty) uploadAttrJobs(b)*.enqueue()
+  }
+  
+  back func uploadAllAttrTerms(): Void = {
+    let terms = ProductAttrTerm.all.result.get
+    let b = BatchChange.create(this, terms)
+    if (!b.isEmpty) uploadAttrTermJobs(b)*.enqueue()
+  }
+}

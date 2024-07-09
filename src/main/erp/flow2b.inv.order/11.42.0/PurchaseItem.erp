@@ -1,0 +1,94 @@
+inline trait IPurchaseItem extends OrderItem {
+  impl field order: PurchaseOrder by allItems
+  impl func ledgerAccount: LedgerAccount = PrepaidExpenses
+  impl func cashFlow: CashFlow = Purchases
+  impl func canBeDeleted = if (let p = orderDlvItem?.sales) !p.active else true
+  override func setActive(v: Bool): Void = {
+    if (this.active != v) {
+      this.active = v
+      if (let p = orderDlvItem?.sales) p.active = v
+      orderDlvItem?.forceTouch
+    }
+  }
+  func expenseLedgers(journal: Journal, date: Date, baseAmount: UMoney?): [Ledger]?
+}
+
+inline trait IPurchaseItemWithDelivery extends IPurchaseItem {
+  //func journalDelivery: IDelivery? = delivery
+
+  func deliveryItem: IOrderDlvItem
+  func delivery: OrderDlv = deliveryItem.delivery
+  impl func itemDlv = deliveryItem.delivery
+}
+ 
+inline trait IPurchaseProductItem extends IPurchaseItemWithDelivery with OrderProductItem {
+  impl var deliveryItem: IDlvProductItem
+  //Register
+  impl func expenseLedgers(journal: Journal, date: Date, baseAmount: UMoney?) = {
+    let d = delivery
+    if (!d.is[PurchaseDelivery]) {
+      [LProduct(account = CostOfGoodsSold, journal = journal, date = date, product = product, qty = qty, trAmount = baseAmount)]
+    } else if (product.isTangible) {
+      ProductItem.distribute(product, qty, baseAmount, deliveryItem.productItems) {
+        d.as[PurchaseDelivery]!.stockType.obj.new(
+           journal = journal, date = date, product = product.as[IProductInv]!, 
+           productItem = item, 
+           qty = trQty, trAmount = trAmount)
+      }
+    } else {
+      let et = product.expenseType
+      [LExpenses(journal = journal, date = date, expenseType = et, product = product, qty = qty, trAmount = baseAmount)]
+    }
+  }
+}
+
+inline entity PurchaseItem extends IPurchaseProductItem with FProductItemsInline {
+  icon = "box"
+  singular = "Purchase"
+  impl field deliveryItem: DeliveryItem inline by purchase
+  
+  impl func needProductItems = deliveryItem.needProductItems
+  impl func itemsQty = qty
+  
+  func stockProd = product
+  impl view form = grid(margin = None, width = 1.2, labels = Top) {
+    row (labels = false){
+      deliveryItem.product >> field(width = 0.6, placeholder = "Product, Service or Kit") 
+      deliveryItem.qty >> field(canEditUnit = true, width = 0.2, align = Right) 
+      priceEditor >> field(width = 0.2, align = Right) 
+      amountEditor >> field(width = 0.2, align = Right)
+    }
+    row {
+      space(width = 0.6)
+      taxable >> field(width = 0.2 visible = ui.isSelected && !deliveryItem.product.isTangible align = Right)
+      gstEditor  >> field(visible = ui.isSelected, width = 0.2) 
+      discountEditor >> field(visible = ui.isSelected || discount, width = 0.2, align = Right)
+    }
+    row {
+      itemDesc >> field(width = 1.0, visible = ui.isSelected || desc)
+      total >> field(visible = ui.isSelected && discount, width = 0.2, align = Right)
+    }
+    deliveryItem.delivery >> field(visible = ui.isSelected && this.order.deliveries.count > 1)
+    snView >> field(visible = ui.isSelected && product.trackItems, label = try? product.productItemsLabel) 
+    x(visible = ui.isSelected && ui.edit) {
+      button("Split", visible = qty > 1) {
+        deliveryItem.splitRest(1)
+      }
+    }
+  }
+  
+  impl view rowView = group {
+    row{
+      deliveryItem.product.fullNum >> field (fontStyle = Label, rowSpan = 3)
+      deliveryItem.product >> field (title = title, span = 2, rowSpan = 2)
+      deliveryItem.qty 
+      priceEditor >> field(align = Right)
+      amountEditor >> field(align = Right)
+    }
+    row(visible = discount){label("Discount", span = 2, align = Right) discountEditor}
+    row(visible = invoiceDesc) {
+      invoiceDesc >> field(span = 5)
+    }
+  }
+}
+

@@ -1,0 +1,4 @@
+back class OrderProcessorDefault extends OrderProcessorBase {
+  impl object func order: Dec[4]? = 0
+  impl func canProcess = true
+}

@@ -1,0 +1,77 @@
+extend trait NotifyTemplate[T] {
+  extend override func send(data: T): Void = {
+    if (enabled) {
+      NotifyJob[T](template = this, data = data).enqueue
+    }
+  }
+  extend override func from(data: T, channel: CommChannel): Contact? = {
+    NotifyService.contacts.find(c => c.channel == channel)
+  }
+}
+
+class NotifyJob[T extends Entity] extends SystemJob {
+  field template: NotifyTemplate[T] inline
+  field data: T
+  impl func service = NotifyService
+  impl func toString = "Notify Job $template"
+  impl func do = {
+    guard (template.enabled) else return {}
+    
+    let a = Activity.current!
+    let ent = template.mainEntity(data)
+    guard (let to = template.to(data)
+      .mapOpt{adr =>
+        let contacts = template.contacts(data, adr)
+        template.preferred
+          .filter(template.from(data, _))
+          .mapOpt(channel => contacts.find(c => c.channel == channel))
+          .first
+          .or{
+            contacts.find{contact => 
+              template.supported.toSeq.exists{channel => 
+                template.from(data, channel) && contact.channel == channel
+              }
+            }
+          }
+      }
+    ) else return {
+      if (template.required) {
+        ent.touch
+        ent.saveMain
+        a.template = template
+        a.templateEntity = if (data != ent) data
+        a.deliveries = template.to(data).map{adr =>
+          ActivityDelivery(
+            channel = template.preferred.first.or(template.supported.first).alt(CommChannel.all.first!)
+            contact = adr
+            status = Failed
+            details = "No contacts found"
+          )
+        }
+      }
+    }
+    
+    data.touch
+    ent.touch
+    ent.saveMain
+    
+    a.isPublic = true
+    if (NotifyService.testMode) {
+      a.comment("<p>$(to.join(" ").as[Html])</p>")
+    } else {
+      a.comment("<p>$(to*.atMention.join(" ").as[Html])</p>")
+    }
+    a.comment(template.comment(data))
+    a.template = template
+    a.templateEntity = if (data != ent) data
+    
+    if (NotifyService.testMode) {
+      to*.channel.distinct.foreach {channel =>
+        a.comment("<p>===================</p>")
+        a.comment(template.subject(data, channel))
+        a.comment(template.text(data, channel))
+      }
+    }
+  }
+}
+

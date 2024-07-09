@@ -1,0 +1,26 @@
+class StatementProcessJob extends ImportJob {
+  impl field task: BankStatementUpload
+  impl func import = {
+    task.files.map{file =>
+      let data <- file.content
+      let processor = BankStatementType.all.find(_.canProcess(file, data)).alt(throw "Cannot determine statement type for $file")
+      if (!processor.knowOurAccount && !task.account) {
+        task.unknownAccount = true
+        task.save
+      } else {
+        let result = processor.process(file, data)
+        let account = task.account.or(result.account).or(
+          if (let a = result.accountNumber) {
+            FinAccount.withNumber(a).alt(throw "Account '$(a)' not found")
+          }
+        )
+        let cms <- BankImporter.import(result.copy(ImportRequest, account = account, stmType = processor))
+        cms.foreach {cm =>
+          if (!cm.uploads.contains(task)) {
+            cm.uploads += task
+          }
+        }
+      }
+    }.allCompleted
+  }
+}

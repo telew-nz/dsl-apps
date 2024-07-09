@@ -1,0 +1,180 @@
+extend enum DashboardIssue {
+  case ApptPartUnav(role = null, priority = major) = "Some participants are unavailable"
+}
+
+entity Appointment extends Event with NewEngine {
+  icon = "calendar-check"
+  impl field title: String
+  
+  impl field period: Period = Period(start = Date.now.start(of = hour) + 1_hour, end = Date.now.start(of = hour) + 2_hour)
+  
+  ref field roles: [Role]? = {
+    if (front) if (let c = Dashboard.current) [c.role]
+  }
+  impl func numPrefix = "AP"
+  impl field canceled: Bool = false
+  ref stored compute state: AppointmentState {
+    value = if (canceled) Canceled else calcState
+    from = [calcState, Canceled]
+    update = {
+      canceled = new == Canceled
+    }
+  }
+  impl func issues = if (participants.exists(isUnav && !optional) && period.end > now) [ApptPartUnav]
+
+  func calcState: AppointmentState = {
+    let requiredParticipants = participants.filter(!optional)
+    if (period.end < now) Complete
+    else if (period.start < now) InProgress
+    else if (requiredParticipants.exists(acceptance == Declined)) Declined
+    else if (requiredParticipants.all(acceptance == Accepted)) Accepted
+    else if (requiredParticipants.all(acceptance == Accepted || acceptance == Tentative)) Tentative
+    else Pending
+  }
+  //impl compute allParticipants: [Participant]? = participants*.participant
+  //impl func requiredParticipants: [Participant]? = participants.filter(!optional)*.participant
+  field participants: [AppointmentParticipant] inline by appointment = [
+    AppointmentParticipant(participant = Person.current!, acceptance = Accepted)
+  ]
+  
+  impl view ref = x(flow = false){number >> field(fontStyle = Label) state >> field(editMode = AlwaysEdit) title >> field(stretch = 1)}
+  impl func itemRoles = roles
+  impl func activeRoles = if (state.active) if (let roles) roles else observers*.observer*.as[User].filter(active)*.roles.toSet
+  
+  field description: Text?
+  impl view traitItem = grid(labels = None) {
+    x(flow = false, label = ""){
+      state >> field(editMode = AlwaysEdit, compact)
+      title >> field(stretch = 1)
+      number >> field(fontStyle = Label)
+    }
+    period >> field(frame = false)
+  }
+  impl view form = nav{grid{
+    issuesView
+    x(flow = false, label = ""){
+      state >> field(editMode = AlwaysEdit, compact)
+      title >> field(stretch = 1, fontStyle = H2)
+      number >> field(fontStyle = Label)
+    }
+    period >> field(frame = false)
+    roles
+    extension("fields")
+    participants >> list {y {
+      x{acceptance >> field(editMode = AlwaysEdit) participant >> field(stretch = 1) optional}
+      label ("Unavailable", color = "red", visible = isUnav)
+    }}
+    alerts
+    description
+    tickets
+  }}
+  
+  impl event onSave = {
+    participants*.participant.filter(manualAcceptance)*.user.join(this)
+  }
+}
+
+enum Acceptance(sort: UDec[2]?) {
+  case Pending(sort = 2) {
+    background = "#ed9"
+    icon = "recycle"
+  }
+  case Declined(sort = 0) {
+    background = "#f99"
+    icon = "times"
+  } 
+  case Tentative(sort = 1.5) {
+    icon = "dice"
+    background = "#ecd"
+  }
+  case Accepted(sort = 1) {
+    color = "white"
+    icon = "check-circle"
+    background = "#090"
+  }
+}
+
+enum AppointmentState(active: Bool) {
+  case Pending(active = true) {
+    background = "#ed9"
+    icon = "recycle"
+  }
+  case InProgress(active = true) {
+    background = "#8bf"
+    icon = "spinner"
+  }
+  case Declined(active = true) {
+    background = "#f99"
+    icon = "times"
+  }
+  case Accepted(active = true) { 
+    icon = "check"
+    background = "#dea"
+  }
+  case Tentative(active = true) {
+    icon = "dice"
+    background = "#ecd"
+  }
+  case Canceled(active = false) {
+    background = "#999"
+    icon = "times-circle"
+  }
+  case Complete(active = false) {
+    color = "white"
+    icon = "check-circle"
+    background = "#090"
+  }
+  //case Clash { background = "#fcc" }
+}
+
+trait EventParticipant extends AnyEntity {
+  func event: Event
+  func participant: IProductItem
+  func isUnav = out?.outlook < 0
+  func active: Bool = true
+  func regSort: UDec[2]? = 1
+  register out: ProdItemReg? {
+    autoRecalc
+    availableFor = Inline
+    available(Inline)
+    value = if (active && event.active && participant.canBook) {
+      ProdItemReg(
+        item = participant, date = event.period.start, 
+        doc = event, docItem = this, sort = regSort
+        qty = -1, autoProdReg = true, priorityDate = event.enterDate,
+        isRent = true
+      )
+    }
+  }
+  register in: ProdItemReg? = if (active && event.active && participant.canBook) {
+    ProdItemReg(
+      item = participant, date = event.period.end, 
+      doc = event, docItem = this, sort = regSort
+      qty = 1, autoProdReg = true, priorityDate = event.enterDate,
+      isRent = true
+    )
+  }
+}
+
+inline entity AppointmentParticipant extends EventParticipant {
+  singular = "Participant"
+  field appointment: Appointment
+  field optional: Bool
+  impl field participant: IProductItem {
+    available(Ref).with(products, canBook)
+    update = {
+      if (!participant.manualAcceptance) acceptance = Accepted
+    }
+  }
+  field acceptance: Acceptance {
+    default = Pending
+    from = {
+      if (participant.manualAcceptance || participant == Person.current) {
+        [Acceptance.Pending, Acceptance.Declined, Acceptance.Tentative, Acceptance.Accepted] 
+      } else [acceptance]
+    }
+  }
+  impl func event = appointment
+  impl func active: Bool = acceptance != Declined
+  //impl func regSort: UDec[2]? = acceptance.sort
+}

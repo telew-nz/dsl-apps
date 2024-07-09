@@ -1,0 +1,40 @@
+extend entity Ticket {
+  compute from: IContact? {
+    availableFor = Inline
+    value = activities.first?.from
+    views = []
+  }
+  extend view form = extend("nav") {
+    button(if (Workspace.current?.salesOrderTerms?.hasAcceptance) "To Quote" else "To Sales Order", visible = from, icon = "shopping-cart") {
+      let from = this.from
+      if (let raw = from?.as[RawContact], let name = raw.addresseeName) {
+        let customer <- back {
+          if (!OurActor.ours.exists(_.title =%= name)) {
+            let a = Person(name = name).save
+            if (!a.our) raw.forge(a)
+            a.makeCustomer
+          }
+        }
+        let to = convertTo(SalesOrder)
+        to.customer = customer
+        to
+      } else if (let le = from?.as[ActorContact]?.legalEntity) {
+        let customer <- back {
+          let r = le
+          r.makeCustomer
+        }
+        let to = convertTo(SalesOrder)
+        to.customer = customer
+        to
+      } else {
+        convertTo(SalesOrder)
+      }
+    }
+  } 
+  
+  impl func converters = [
+    Converter[SalesOrder](to = SalesOrder, convert = {to =>
+      to.default(n)
+    })
+  ]
+}

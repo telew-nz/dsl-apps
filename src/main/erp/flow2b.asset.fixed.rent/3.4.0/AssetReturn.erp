@@ -1,0 +1,35 @@
+trait AssetReturn extends IDelivery with Journal {
+  field manualNumber: String?
+  func number: String
+  func order: Order = orders.first
+  func orders: [Order]
+  field items: [RentDeliveryItem]? inline by assetReturn {deleteCascade = false}
+  func journalDate = deliveryDate
+  func calcDeliveryDate: Date = {
+    items.map{
+      order.legalEntity.priceModel(product)
+        ?.rentReturnDate(delivery!.toRentDeliveryDesc, this.deliveryStore!.schedule, toDuration)
+         .alt(delivery!.deliveryDate + toDuration)
+    }.max.alt(Date.now)
+  }
+  func updateDeliveryDate(): Void = {
+    if (status != Delivered) {
+      let dd = calcDeliveryDate
+      if (status == Planned) silentUpdate(dispatchDate, dd)
+      silentUpdate(deliveryDate, dd)
+    }
+  }
+  func canCancel = false
+  
+  extend field dispatchDate: Date {
+    update = {
+      items*.updateDuration()
+    }
+  } 
+  extend field deliveryDate: Date {
+    update = {
+      items*.updateDuration()
+    }
+  }
+}
+

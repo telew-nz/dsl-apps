@@ -1,0 +1,19 @@
+extend trait LegalEntity {
+  func refNum(for: LegalEntity?): String? = ""
+}
+
+extend entity Customer {
+  extend view form = extend("debt") {
+    button("Reconcilation") {
+      DebtRecon.incomplete(counterparty = legalEntity).list.open
+    }
+  }
+} 
+
+extend entity Vendor {
+  extend view form = extend("debt") {
+    button("Reconcilation") {
+      DebtRecon.incomplete(counterparty = legalEntity).list.open
+    }
+  }
+} 

@@ -1,0 +1,107 @@
+trait IPurchaseDelivery extends Delivery {
+  background = "#2e8e67"
+  impl func deliverySupplier = getSupplier?.legalEntity
+  field supplier: IVendor? {
+    update = updateSupplier()
+  }
+  ref compute getSupplier: IVendor? {
+    label = "Supplier"
+    value = supplier.or(vendor)
+    update = {
+      this.supplier = if (new == vendor) null else new
+    }
+  }
+  field purchaseOrders: [PurchaseOrder] by deliveries {
+    available(All)
+    default =? defaultPurchaseOrders
+  }
+  func deliveryHeader: Layout
+  func pickUpLocation: ILocation? = null
+  func defaultPurchaseOrders: [PurchaseOrder]? = []
+  func updateSupplier(): Void = {}
+  impl func ledgers(journal: Journal, date: Date): Future[[Ledger]?] = purchaseLedgers(journal, date)
+}
+
+entity PurchaseDelivery extends IPurchaseDelivery with IIncomingDelivery with RoutePath {
+  icon = "truck"
+  background = "#2e8e67"
+  field primary: Bool
+  field stockType: StockType = Inventory
+  impl func stockTypeDst = stockType
+  const ref field n: Int? = if (primary) order.n else increment(Order.gen)
+  impl func deliveryDst: IStore? = destination
+  impl func pathSrc = pickUpLocation
+  impl func customer = legalEntity
+  ref field destination: IStore? {
+    default = onlyOne
+    validate = if (!destination && items.exists(storeRequired)) "Destination field in delivery $(this) is required"
+  }
+  impl field pickUpLocation: ILocation? {
+    from = Query(getSupplier?.legalEntity).flatMap(deliveryLocations)
+    visible = getSupplier
+  }
+  compute pickUpText {
+    availableFor = List
+    value = pickUpLocation?.locationAddress?.title
+  }
+  func debtDueDate = deliveryDate
+  
+  impl ref compute number: String {
+    value = manualNumber.alt(if (primary) "PD" + orders.first.nakedN else "PD" + n.format(3, 0))
+    update = {manualNumber = new}
+  }
+  impl func entityNumbers = [number, trackingNumber.replace(" ", "")]
+  impl func orders: [Order] = purchaseOrders
+  impl compute vendor = order.orderVendor
+     
+  impl func deliveryReceiver = order.legalEntity.legalEntity
+  impl func legalEntity = order.legalEntity
+  impl func title = "$number $(try? getSupplier?.title)"
+
+  impl view deliveryHeader = grid(width = 1.2){
+    issuesView
+    statusesView
+    row {getSupplier, destination, dispatchDate}
+    row {pickUpLocation, space,  deliveryDate}   
+    stockType >> field(visible = ui.edit || stockType != Inventory)
+    freightView
+    items >> list(editMode = AlwaysRead, mode = EditSelect){form.unnav}
+  }
+  
+  impl view form = nav{grid(width = 1.2, labels = Top) {
+    
+    purchaseOrders
+    number
+    deliveryHeader    
+  } generalLedgerButton } 
+  
+  impl view ref = y {
+    x{title deliveryDate}
+    statusesView
+  }
+  impl view dash = grid(labels = None) {
+    row {
+      y {
+        deliveryDate
+        title
+        statusesView
+      }
+      pickUpText
+    }
+    refItems
+  }
+  
+  impl event onSave = {
+    if (primary) n = order.n 
+    else if (!n) n = increment(Order.gen)
+    purchaseOrders*.touch
+    if (purchaseOrders.all(canceled)) status = Canceled
+  }
+  
+  view statusesView = x{status >> field(editMode = AlwaysEdit)}
+  
+  impl object view list = PurchaseDelivery.all >> nav{list(canAdd = false){grid(labels = None){row{
+    itemImage >> field(miniature = List, width = 0.15)
+    dash >> field(width = 0.85)
+  }}}}
+}

@@ -1,0 +1,17 @@
+extend trait Actor {
+  field locations: [IActorLocation]? inline by actor {visible = !our}
+  
+  back func deliveryLocations: [ILocation]? = {
+    locations + IMutualLocation.all.result.get
+  }
+}
+
+extend entity Company {
+  extend view form = extend("main") {locations}
+}
+extend entity Person {
+  extend view form = extend("main") {locations}
+}
+extend entity CompanyGroup {
+  extend view form = extend("main") {locations}
+}

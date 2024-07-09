@@ -1,0 +1,297 @@
+interface IIOrderTerms {
+  func due(order: IOrder): Due
+  func orderState(order: IOrder): OrderState
+  func canDispatch(state: OrderState) = state != Quote
+
+  func dispatchDate(order: IOrder): Date? = null
+  
+  func hasAcceptance: Bool = false
+  func reserveQuote: Bool = false
+  func updatableStates(order: IOrder): [OrderState]
+}
+
+class Due {
+  field amount: Money?
+  field date: Date?
+  field update: Date?
+  field mark: Int?
+  
+  func updateAt(at: Date): Due = {
+    if (at <? update) {
+      Due(amount = amount, date = date, update = at, mark = mark)
+    } else {
+      this
+    }
+  }
+  impl func toString = "Due($amount due $date, update $update, mark $mark)"
+}
+
+trait IOrderTerms extends RefEntity with IIOrderTerms {
+  impl event onSave = {
+    IOrder.all.filter(terms == this)*.touch
+  }
+}
+
+extend entity Customer {
+  field _orderTerms: IOrderTerms? {views = []}
+  compute orderTerms: IOrderTerms? = _orderTerms.or(if (allowance) Workspace.current.accountOrderTerms else Workspace.current.salesOrderTerms)
+}
+
+extend entity Vendor {
+  field _orderTerms: IOrderTerms? {views = []}
+  compute orderTerms: IOrderTerms? {
+    value = _orderTerms.or(Workspace.current.purchaseOrderTerms)
+    update = {
+      _orderTerms = if (new != Workspace.current.purchaseOrderTerms) new
+    }
+  }
+}
+extend trait Workspace {
+  field salesOrderTerms: IOrderTerms? {label = "Default sales order terms" views = []}
+  field _accountOrderTerms: IOrderTerms? {label = "Default sales order terms for account customers" views = []}
+  compute accountOrderTerms = _accountOrderTerms.or(salesOrderTerms)
+  field purchaseOrderTerms: IOrderTerms? {label = "Default purchase order terms"views = []}
+  extend view form = extend("main") {
+    salesOrderTerms
+    accountOrderTerms
+    purchaseOrderTerms
+  }
+}
+
+
+object DefaultOrderTerms extends IIOrderTerms {
+  impl func orderState(order: IOrder): OrderState = {
+    if (order.dlvIs(Complete) && order.paid) Closed
+    else if (let ds = order.orderStateDelivery) ds
+    else if (order.isEmpty) Quote
+    else if (order.paid) Prepaid
+    else if (order.accepted) Accepted
+    else Quote
+  }
+  impl func due(order: IOrder): Due = Due(amount = order.invoiceTotal)
+  impl func hasAcceptance: Bool = true
+  impl func reserveQuote: Bool = true
+  
+  impl func updatableStates(order: IOrder): [OrderState] = {
+    let s = order.calcState
+    if (s == Canceled) [OrderState.Canceled]
+    else {
+      order.dlvStates + (if (order.paid) OrderState.Prepaid else OrderState.Quote) + OrderState.Canceled + OrderState.Accepted
+    }
+  }
+}
+
+entity OrderTerms extends IOrderTerms {
+  impl field title: String
+  impl ref field reserveQuote: Bool {
+    visible = acceptance || prepayment
+  }
+  ref field acceptance: OTAcceptance?
+  ref field prepayment: OTPrepayment?
+  ref field predelivery: OTPredelivery? {
+    validate = if (predelivery && predelivery?.percent <= prepayment?.percent) "Predelivery percent should be > prepayment percent"
+  }
+  ref field delivery: OTDelivery? {
+    label = "Delivery Terms"
+  }
+  func prePercent = predelivery?.percent.or(prepayment?.percent)
+  ref field postdelivery: OTPostdelivery? {
+    validate = if ((prePercent == 1) != postdelivery.isEmpty) {
+      if (!postdelivery) "Postdelivery is required unless it's full prepayment - 100%"
+      else "Postdelivery should be empty for full prepayment"
+    }
+  }
+  impl func dispatchDate(order: IOrder): Date? = if (let delivery){
+    Date.now + delivery.dueIn
+  }
+  override func canDispatch(state: OrderState) = state != Quote && (!prepayment || state != Accepted)
+  func pres = predelivery.toSeq + prepayment.toSeq + acceptance.toSeq
+  
+  impl view form = nav{grid{
+    title
+    reserveQuote
+    acceptance
+    prepayment
+    predelivery
+    delivery
+    postdelivery
+  }}
+  
+  impl func due(order: IOrder): Due = {
+    if (let ds = order.orderStateDelivery, let post = postdelivery, let date = order.dlvDate(post.trigger)) {
+      Due(amount = order.invoiceTotal, date = post.dueDate(date))
+    } else if (let pres) {
+      pres.first.due(order, pres.drop(1)) 
+    } else {
+      Due()
+    }
+  }
+  impl func orderState(order: IOrder): OrderState = {
+    if (order.dlvIs(Complete) && order.paid) Closed
+    else if (let ds = order.orderStateDelivery) ds
+    else if (order.isEmpty) Quote
+    else if (let pres) pres.first.orderState(order, pres.drop(1))
+    else ToDispatch
+  }
+  impl func hasAcceptance: Bool = acceptance
+  
+  func toDispatchState: OrderState = {
+    if (predelivery) ToDispatch
+    else if (prepayment) Prepaid
+    else if (acceptance) Accepted
+    else ToDispatch
+  }
+  
+  impl func updatableStates(order: IOrder): [OrderState] = {
+    let s = order.calcState
+    if (s == Canceled) [OrderState.Canceled]
+    else if (s == Quote) {
+      if (toDispatchState == Accepted) {
+        order.dlvStates + OrderState.Quote + OrderState.Canceled + OrderState.Accepted
+      } else if (hasAcceptance) {
+        [OrderState.Quote, OrderState.Canceled, OrderState.Accepted]
+      } else {
+        [OrderState.Quote, OrderState.Canceled]
+      }
+    } else {
+      let tds = toDispatchState
+      if (s == Accepted && tds != Accepted) {
+        [OrderState.Quote, OrderState.Canceled, OrderState.Accepted]
+      } else {
+        var dd = order.dlvStates
+        if (tds == Accepted) dd += OrderState.Quote
+        s + dd + tds + OrderState.Canceled
+      }
+    }
+  }
+}
+
+interface OTPre {
+  func due(order: IOrder, pres: [OTPre]?): Due 
+  func orderState(order: IOrder, pres: [OTPre]?): OrderState
+}
+
+class OTAcceptance extends OTPre {
+  singular = "Acceptance"
+  field dueIn: Duration[unit, 0] {canEditUnit}
+  field unit: DateUnit = day
+  impl view form = x{label("In") dueIn}
+  
+  impl func due(order: IOrder, pres: [OTPre]?): Due = Due(date = order.date + dueIn)
+  impl func orderState(order: IOrder, pres: [OTPre]?): OrderState = {
+    if (order.accepted) Accepted 
+    else if (let dd = order.due.date) {
+      if (Date.now >= dd) Unaccepted
+      else Quote
+    } else Quote
+  }
+}
+class OTPrepayment extends OTPre {
+  singular = "Prepayment"
+  field dueIn: Duration[unit, 0] {canEditUnit}
+  field unit: DateUnit = day
+  field percent: UPercent[2] {
+    validate = if (percent > 1) "Cannot be more than 100%"
+  }
+  impl view form = x{percent label("due in") dueIn}
+   
+  impl func due(order: IOrder, pres: [OTPre]?): Due = {
+    if (let pres where !order.accepted) {
+      pres.first.due(order, pres.drop(1))
+    } else {
+      let prevDate = pres.first?.due(order, pres.drop(1))?.date.alt(order.date)
+      Due(amount = order.invoiceTotal*percent, date = prevDate + dueIn, mark = 1)
+    } 
+  }
+  impl func orderState(order: IOrder, pres: [OTPre]?): OrderState = {
+    let isMark1 = order.due.mark == 1
+    let due = if (isMark1) order.due else due(order, pres)
+    
+    if (due.amount && ((isMark1 && order.unpaidAmount <= 0) || (!isMark1 && order.paidAmount >= due.amount))) Prepaid 
+    else if (isMark1 let dd = due.date where Date.now >= dd) Unpaid
+    else if (let pre = pres.first) pre.orderState(order, pres.drop(1))
+    else Quote
+  }
+}
+
+class OTPredelivery extends OTPre {
+  singular = "Predelivery"
+  
+  field dueIn: Duration[unit, 0]? {canEditUnit}
+  field unit: DateUnit = day
+  
+  field issued: Duration[issueUnit, 0] {
+    canEditUnit
+  }
+  field issueUnit: DateUnit = day
+  
+  field percent: UPercent[2] {
+    validate = if (percent > 1) "Cannot be more than 100%"
+  }
+  impl view form = grid(labels = None) {
+    x{percent label("prepayment invoice issued") issued label("before delivery")}
+    x{label("and due in") dueIn}
+  }
+  
+  impl func due(order: IOrder, pres: [OTPre]?): Due = {
+    let dd = order.deliveries*.dlvInTransitDate.min
+    let delta = dd - Date.now
+    if (delta < issued) {
+      Due(amount = order.invoiceTotal*percent, date = dd - issued + dueIn, mark = 2)
+    } else {
+      pres.first?.due(order, pres.drop(1)).alt(Due()).updateAt(dd - issued)
+    }
+  }
+  impl func orderState(order: IOrder, pres: [OTPre]?): OrderState = {
+    if (order.due.mark == 2 && order.unpaidAmount <= 0) ToDispatch
+    else if (let pre = pres.first) {
+      pre.orderState(order, pres.drop(1))
+    } else Quote
+  }
+}
+
+class OTDelivery {
+  singular = "Delivery"
+  field dueIn: Duration[unit, 0]? {canEditUnit}
+  field unit: DateUnit = day
+  impl view form = x {
+    label("Dispatch in") dueIn >> field(canEditUnit = true) label("maximum")
+  }
+}
+interface OTPostdelivery {
+  func trigger: DlvState
+  func dueDate(orderDate: Date): Date
+}
+
+class OTDueIn extends OTPostdelivery {
+  singular = "Full Payment Due"
+  field dueIn: Duration[unit, 0] {canEditUnit}
+  field unit: DateUnit = day
+  impl field trigger: DlvState {
+    default = Complete
+    from = DlvState.all.filter(started).toSet
+  }
+    
+  impl func dueDate(orderDate: Date): Date = orderDate + dueIn
+  impl view form = x {
+    label("In") dueIn >> field(canEditUnit = true) label("after delivery") trigger
+  }
+}
+class OTNextMonth extends OTPostdelivery {
+  singular = "Next Month Payment"
+  field dayOfMonth: Int = 21
+  impl field trigger: DlvState {
+    default = Complete
+    from = DlvState.all.filter(started).toSet
+  }
+  impl view form = x {
+    label("On") dayOfMonth label("after delivery") trigger
+  }
+  
+  impl func dueDate(orderDate: Date): Date = {
+    let dof = dayOfMonth.as[Duration[day]]
+    if (orderDate.day < dof) orderDate.start(of = month) + dof - 1_day
+    else orderDate.start(of = month) + 1_month + dof - 1_day
+  }
+}
+

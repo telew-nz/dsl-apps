@@ -1,0 +1,8 @@
+enum StockInvType(obj: LInvBase.object, acc: LedgerAccount, stock: StockType) {
+  case Inventory(obj = LInventory, acc = LedgerAccount.Inventory, stock = Inventory){
+    background = "#b4eacc"
+  }
+}
+extend enum StockType {
+  func inv: StockInvType? = StockInvType.all.find(stock == this)
+}

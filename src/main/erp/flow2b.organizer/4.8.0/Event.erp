@@ -1,0 +1,52 @@
+extend enum StockType {
+  case Resource
+  case Person
+}
+
+trait Event extends Entity with HasN with DashboardItem with DeferredJob {
+  background = "#498898"
+  icon = "calendar-alt"
+  
+  const system field enterDate: Date = now
+  impl func nextN = increment(Ticket.gen)
+  func period: Period
+  field alerts: [EventAlert]? inline by event {
+    default = [EventAlert()]
+  }
+  impl func service = AlertService
+  impl func jobDate = if (period.end > now) period.end
+  impl func do = {
+    touch
+  }
+  
+  report Report {
+    generateFilters = false
+    field person: Person? {
+      default = Person.current
+      from = Person.all.filter(companies.exists(_.company.our))
+      visible = !productItem
+    }
+    field productItem: IProductItem? {
+      visible = !person
+    }
+    field from: Date? = Date.now.start(hour) - 1_hour
+    field to: Date?  
+    impl view list = ProdItemReg.all
+      .filter(item ==? person && item ==? productItem && date >=? from && date <=? to && qty < 0)
+      .sortBy(date)
+      .map(date, doc)
+      .groupBy(date.date) >> nav{
+        subtotal {
+          x {date}
+          list(canAdd = false, action = doc.form.open) {
+            doc.traitItem
+          }
+        }
+        add("Appointment") {
+          Appointment.incomplete().form.open
+        }
+      }
+  }
+}
+
+

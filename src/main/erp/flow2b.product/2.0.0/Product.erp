@@ -1,0 +1,45 @@
+trait IBaseProduct {
+  func isValid: Bool = true
+  func obsolete: Bool = false
+  func isTangible: Bool
+    
+  func subProducts: [IProduct]?
+  func superProduct: ISuperProduct
+  
+  func description: Text?
+  func unit: ProductUnit = Item
+  func altUnits: [ProductAltUnit]? = []
+  func units: [ProductUnit] = (unit + altUnits*.unit).toSet
+}
+
+trait ISuperProduct extends IBaseProduct {
+  plural = "Products"
+  singular = "Product"
+  width = 0.45
+  
+  object field gen: Int?
+  const field n: Int = increment(ISuperProduct.gen)
+  func superProduct: ISuperProduct = this
+  func description: Text? = ""
+  func sku: String = n
+    
+  field categories: [ProductCategory]? by products
+    
+  func forSale: Bool = true
+  list compute salesPrice: Money? <- {
+    if (let a = Actor.our, let p = a.pricing) p.baseSuperProductPrice(this) else Future.apply(0)
+  }
+}
+
+trait IProduct extends IBaseProduct {
+  plural = "Products"
+  singular = "Product"
+  width = 0.45
+    
+  func subProducts: [IProduct]? = [this]
+  func description: Text? = superProduct.description
+}
+
+trait IBasicProduct extends IProduct with ISuperProduct {
+  func description: Text? = ""
+}

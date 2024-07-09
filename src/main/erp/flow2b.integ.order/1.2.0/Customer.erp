@@ -1,0 +1,50 @@
+extend trait LegalEntity extends HasExtId
+
+back interface ECustomer[ID] {
+  func extId: ID?
+  func personFullName: String?
+  func emails: [Email]?
+  func phones: [Phone]?
+  func billingAddresses: [EAddress]?
+  func deliveryAddresses: [EAddress]?
+  func allAddresses = billingAddresses + deliveryAddresses
+  func allEmails = emails + billingAddresses*.emails + deliveryAddresses*.emails
+  func allPhones = phones + billingAddresses*.phones + deliveryAddresses*.phones
+  func getFullName: String = {
+    personFullName
+      .or(allAddresses.mapOpt(personFullName).first)
+      .or(allAddresses.mapOpt(companyName).first)
+      .or(allEmails.first)
+      .or(allPhones.first)
+      .alt("Untitled")
+  }
+  
+  func make(service: ExtIdSource[ID]): Customer = {
+    let customer = service.findExtId(extId, _.as[LegalEntity])?.makeCustomer.alt(Customer(legalEntity = Person(name = getFullName)))
+    let le = customer.legalEntity
+    if (let person = le.as[Person]) {
+      person.name =? personFullName
+    }
+    allEmails.foreach(EmailContact.add(le, _))
+    allPhones.foreach(PhoneContact.add(le, _))
+    allAddresses*.make(le)
+    if (let ei = extId) customer.legalEntity.updateExtId(service, ei)
+    customer.save
+  }
+}
+
+back interface EAddress {
+  func personFullName: String?
+  func companyName: String?
+  func addressString: Address
+  func phones: [Phone]?
+  func emails: [Email]?
+  
+  func fullAddress(le: LegalEntity): String = { 
+    [personFullName.filter(_ != le.title), companyName.filter(_ != le.title), addressString].filter(!isEmpty).join(" ")!
+  }
+  
+  func make(legalEntity: LegalEntity): IActorLocation = {
+    Location.add(legalEntity, fullAddress(legalEntity))
+  }
+}

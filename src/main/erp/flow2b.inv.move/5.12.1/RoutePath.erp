@@ -1,0 +1,23 @@
+trait RoutePath {
+  background = "#2e8e67"
+  func pathSrc: Location?
+  func pathDst: Location?
+  func pathCanExecute: Bool
+
+  func deliveryDate: Date
+  func dispatchDate: Date
+  
+  func pathSrcAddress = pathSrc?.address
+  func pathDstAddress = pathSrc?.address
+  func pathActive = pathCanExecute && pathSrc && pathDst 
+  report Report {
+    field activeOnly: Bool = true
+    view list = RoutePath.all.filter(!activeOnly || pathActive) >> nav{list(canAdd = false){listItem}}
+  }
+  view listItem = grid{
+    ref
+    row{dispatchDate deliveryDate}
+    row{pathSrc >> field(label = "From") pathDst >> field(label = "To")}
+  }
+}
+

@@ -1,0 +1,20 @@
+role WarehouseOperative {
+  menu Warehouse {
+    trait IOutgoingDelivery
+    trait IIncomingDelivery
+    entity StockCorrection
+  }
+  view dashboard = row {
+    IOutgoingDelivery.all.filter(canDispatch && isForCurrent(WarehouseOperative)).sortBy(dispatchDate) 
+      >> nav(label = "Outgoing Deliveries", limit = 5, more = IOutgoingDelivery.Report(canDispatchOnly = true).list.open){
+        list(canAdd = false) {}
+        add("Stocktake") {Stocktake().form.open}
+        add("Write Down") {InventoryWriteDown().form.open}
+        add("Write Up") {InventoryWriteUp().form.open}
+        button("Stocks") {StockReport().list.open}
+    }
+    IIncomingDelivery.all.filter(active && isForCurrent(WarehouseOperative)).sortBy(deliveryDate) 
+      >> nav(label = "Incoming Deliveries", limit = 5, more = IIncomingDelivery.Report(activeOnly = true).list.open){list(canAdd = false) {
+    }}
+  }
+}

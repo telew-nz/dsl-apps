@@ -1,0 +1,70 @@
+back class UploadAttrsJob extends SystemJob {
+  impl field service: WooCommerceIntegration
+  field change: BatchChange[IProductAttr] 
+  impl func dependsOnRegisters = false
+  impl func do: Future[Any] = {
+    change.regroup(service)
+    change.all.foreach(_.syncStatus = Syncing)
+    if (change.created || change.deleted) {
+      let u = BatchAttrUpdate(
+        create = change.created.map(AttrData.create(service, _)),
+        update = [], //change.updated.map(AttrData.create(service, _)), Due to woo commerce bug
+        delete = change.deleted*.extId(service)
+      )
+      let response <- service.https("/products/attributes/batch").post(u.json)
+      let r = response.body!.parseJson[BatchAttrResponse]
+      change.updateExtIds(service, r.create.map(id))
+      change.all.foreach(_.syncStatus = Synced)
+      r.check(this, u, change.notUpdated) {
+        if (code == "woocommerce_rest_cannot_create") {
+          RetrieveAttrId(service = service, attr = item).enqueueFirst
+          true
+        } else {
+          false
+        }
+      }
+    }
+  }
+}
+
+
+back class RetrieveAttrId extends SystemJob {
+  impl field service: WooCommerceIntegration
+  field attr: IProductAttr inline
+  
+  impl func do = {
+    let response <- service.https("/products/attributes").get
+    let items = response.body!.parseJson[[AttrData]?]
+    let item = items.find(i => i.name =%= attr.attrName || i.slug == attr.attrSlug).alt(throw "Cannot find attribute $attr")
+    if (item.id == attr.extId(service)) {
+      throw "Same id $(item.id) for attribute $(attr)"
+    }
+    attr.updateExtId(service, item.id!)
+    UploadAttrsJob(service = service, change = BatchChange.create(service, [attr])).enqueueFirst
+    attr.save
+  }
+}
+
+
+back class BatchAttrUpdate {
+  field create: [AttrData]?
+  field update: [AttrData]?
+  field delete: [Int]?
+}
+
+back class BatchAttrResponse extends WooResponse[AttrData] {
+  impl field create: [AttrData]?
+  impl field update: [AttrData]?
+  impl field delete: [AttrData]?
+}
+back class AttrData extends WooData {
+  extFieldNaming = Underscore
+  field id: Int?
+  field name: String
+  field slug: String?
+  field type: String?
+   
+  object func create(service: WooCommerceIntegration, u: IProductAttr): AttrData = {
+    AttrData(id = service.extId(u), name = u.attrName, slug = u.attrSlug, type = if (u.attrName == "Color") "color" else "select")
+  }
+}

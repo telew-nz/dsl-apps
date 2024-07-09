@@ -1,0 +1,19 @@
+interface AnalitIncomeStatement[L extends Ledger] extends Report {
+  field legalEntity: LegalEntity? = (LegalEntity.ours.first) {from = LegalEntity.ours}
+  field from: Date = Date.now[Date[millisecond]].start(year)
+  field to: Date = Date.now[Date[millisecond]].end(year)
+
+  func template: AccTemplate
+  field account: LedgerAccount? {from = LedgerAccount.all.filter(i => i.template == template).toSet}
+  
+  func ledger: L.object
+  func query: QueryN[L] = ledger.between(from, to)*.items
+    .filter(legalEntity ==? this.legalEntity && account ==? this.account)
+    
+  func openLedger(l: GeneralLedger.Report): Void = {
+    l.legalEntity = legalEntity
+    l.from = from
+    l.to = to
+    l.list.open
+  }
+}

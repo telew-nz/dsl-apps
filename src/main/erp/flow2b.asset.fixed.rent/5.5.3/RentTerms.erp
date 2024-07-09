@@ -1,0 +1,33 @@
+extend trait LegalStructure {
+  field rentTerms: Text?
+}
+
+extend entity SalesInvoice {
+  field signature: Signature? inline {views = []}
+  compute rentTerms: Text? {
+    value = legalEntity.as[OurCompany]?.legalStructure?.rentTerms
+    views = []
+  }
+}
+
+extend entity InvoiceRevision {
+  compute signature: Signature? {
+    value = invoice.as[SalesInvoice]?.signature
+    views = []
+    update = {
+      invoice.as[SalesInvoice]!.signature = new
+    }
+    availableFor = All
+    visible = !isNote && invoice.is[SalesInvoice]
+  }
+  compute rentTerms: Text? {
+    visible = invoice.is[SalesInvoice]
+    value = legalEntity.as[OurCompany]?.legalStructure?.rentTerms
+    views = []
+    visible = !isNote && invoice.is[SalesInvoice]
+  }
+  extend view form = group {
+    rentTerms >> field(margin = Around)
+    signature
+  }
+}

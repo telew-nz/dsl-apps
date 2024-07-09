@@ -1,0 +1,27 @@
+interface DepreciationMethod {
+  background = "#649023"
+}
+
+trait IFixedAsset extends Entity {
+  background = "#649023"
+  singular = "Fixed Asset"
+  plural = "Fixed Assets"
+  object field gen: Int?
+  const field n: Int? = increment(FixedAsset.gen)
+  ref compute number: String {
+    value = manualNumber.alt(numberPrefix + n)
+    update = { manualNumber = new}
+  }
+  func depreciation: DepreciationMethod?
+  func numberPrefix: String
+  field manualNumber: String?
+  field legalEntity: OurLegalEntity {
+    default =? onlyOne
+  }
+  field disposal: AssetDisposal? read by asset
+  field registration: AssetRegistration inline by asset
+   
+  func products: [IProduct : Qty]
+  func registrationItems: [IRegistrationItem]?
+}
+  

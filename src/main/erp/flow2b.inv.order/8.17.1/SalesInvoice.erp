@@ -1,0 +1,89 @@
+entity SalesInvoice extends Invoice with ISalesInvoice {
+  background = "#d68400"
+  field primary: Bool
+  const ref field n: Int? = if (primary) order.n else increment(Order.gen)
+  field orders: [SalesOrder] by invoices {
+    available(Inline)
+    from = SalesOrder.all.filter(i => i.vendor == vendor && i.customer == customer)
+  }
+  field allItems: [ISalesItem]? inline by invoice {deleteCascade = false}
+  compute items: [ISalesItem]? {
+    value = allItems.filter(active)
+    update = {
+      allItems = new + allItems.filter(!_.active)
+    }
+  } 
+  ref compute number: String {
+    value = manualNumber.alt(if (primary) "SI" + orders.first.nakedN else "SI" + n.format(3, 0))
+    update = {manualNumber = new}
+  } 
+  func isTheir = customer?.isTheir
+  
+  func entityNumbers = [number]
+  field sPayer: Customer?
+  func orderCounterparty: LegalEntity? = customer?.legalEntity
+  func debtCounterparty: LegalEntity? = payer?.legalEntity
+  func customer = orders.first.customer
+  
+  ref compute payer: Customer? {
+    value = sPayer.or(orders.first.customer)
+    update = {
+      sPayer = if (orders.first.customer != new) new
+    }
+  }
+  view dash = y {
+    x{title total date }
+    statusesView
+    refItems
+  }
+  view ref = y {
+    x{title total date }
+    statusesView
+  }
+  ref compute legalEntity = order.legalEntity
+  func title = "$number $(try? debtCounterparty?.title)"
+  
+  event onSave = {
+    if (primary) n = order.n 
+    else if (!n) n = increment(Order.gen)
+    orders*.forceTouch
+  }
+   
+  view invoiceHeader = grid(width = 1.2){
+    issuesView
+    statusesView
+    row {total  date payer}
+    row {gstAmount dueDate paymentTerms}
+    row {totalWithoutGst space space}
+    
+    paymentsView
+    manLinks
+    revisionsView
+    
+    items >> list(mode = Select, editMode = AlwaysRead){form}
+  }
+  view form = nav{grid(width = 1.2, labels = Top) {
+      orders
+      row {number space vendor}    
+      invoiceHeader
+    } 
+    invoiceButtons
+  } 
+  view posView = grid (labels = Top, width = 1.2) {
+    unpaidAmount >> field(fontStyle = H2, label = "Amount to Pay")  
+    paymentsView
+    
+    revisionsView
+  } 
+  
+  front func addPayment(account: FinAccount?) = {
+    orders*.touch
+    super.addPayment(account)
+  }
+  
+  object view list = SalesInvoice.all >> nav{list(canAdd = false){grid(labels = None) {
+    row{number, date.as[Date[day]]!, payer, total}
+    statusesView
+    refItems
+  }}}
+}

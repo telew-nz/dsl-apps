@@ -1,0 +1,23 @@
+extend role Bookkeeper {
+  entity Setoff = readWrite
+  entity IncomingPayment = readWrite
+  entity OutgoingPayment = readWrite
+  entity PaymentExpense = readWrite
+  entity CashTransfer = readWrite
+  entity Loan = readWrite
+  
+  menu Finance {
+    trait CashMovement = "Cash Movements" 
+    entity Loan
+    trait FinanceAccount = "Accounts"
+  }
+  
+  extend view dashboard = 
+    CashMovement.all
+      .filter(reconcilationState.isIssue && isForCurrent(Bookkeeper) ).sortBy(journalDate) 
+    >> nav(limit = 5, label = "Unreconciled Payments", 
+           more = CashMovement.Report(bookkeeper = Person.current, state = ReconcilationState.all.filter(isIssue).toSet).list.open
+       ) { 
+         list{}
+    	}
+}

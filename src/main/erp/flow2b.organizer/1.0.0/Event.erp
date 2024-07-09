@@ -1,0 +1,17 @@
+trait Event {
+  func owner: Person
+  func participants: [Addressee]
+  func people = participants*.addresseePeople
+  func start: Date
+  func end: Date
+  func contains(person: Person?): Bool = {
+    person && people.contains(person!)
+  }
+  
+  compute clashes: [Event]? = {
+    Event.all.filter( 
+      _.start < this.end && _.end > this.start && _ != this &&
+      _.people.intersect(this.people)
+    )
+  }
+}

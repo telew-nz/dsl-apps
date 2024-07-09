@@ -1,0 +1,59 @@
+register GeneralLedger {
+  plural = "General Ledger"
+    
+  key field legalEntity: LegalEntity
+  key field account: LedgerAccount {width = 0.3}
+  key field currency: Currency {width = 0.1}
+  order field date: Date
+  field journal: Journal
+  system field ledger: Ledger by ledger {
+    availableFor = List
+    available(All)
+  }
+  field amount: Money[currency]?
+  field baseAmount: Money[legalEntity.getCurrency]?
+    
+  stored compute balance: Money[currency]? = prev?.balance + amount
+  
+  compute debit: Money[currency]? = (if (amount > 0) amount else 0)
+  compute credit: Money[currency]? = (if (amount < 0) -amount else 0)
+
+  compute debitBalance: Money[currency]? {
+    value = if (balance > 0) balance else 0
+    label = "Debit"
+  }
+  compute creditBalance: Money[currency]? {
+    value = if (balance < 0) -balance else 0
+    label = "Credit"
+  }
+  list compute ledgerBalance {
+    value = ledger.balance
+    label = "Balance"
+  }
+  report Report {
+    field legalEntity: LegalEntity? {
+      default = LegalEntity.ours.onlyOne
+      from = LegalEntity.ours
+    }
+    field account: LedgerAccount? {search = true}
+    field from: Date?
+    field to: Date?  
+    field currency: Currency?
+    field journal: Journal?
+
+    view list = GeneralLedger.all.filter(
+          legalEntity ==? this.legalEntity
+       && account ==? this.account
+       && from ?<= date && date <=? to
+       && journal ==? this.journal
+       && currency ==? this.currency
+    ).sortBy(date.desc, account.number) >> nav{table(action = journal.form.open){
+       journal.title >> field(label = "Journal", width = 0.2), date,
+       account ledger.aview >> field(label = "Analytics") 
+       debit credit ledgerBalance
+    }}
+  }
+}
+
+
+

@@ -1,0 +1,13 @@
+trait AssetOperation extends Journal {
+  background = "#649023"
+  plural = "Asset Operations"
+  object field gen: Int?
+  const ref field n: Int? = increment(AssetOperation.gen)
+  
+  func asset: IFixedAsset
+  func legalEntity = asset.legalEntity
+  report Report {
+    field asset: IFixedAsset?
+    view list = AssetOperation.all.filter(asset ==? this.asset)
+  }
+}

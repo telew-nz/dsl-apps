@@ -1,0 +1,4 @@
+extend trait IGood {
+  compute stocks = Stock.byStore(good = this)
+  compute movements = GoodsMovement.movements(good = this)
+}

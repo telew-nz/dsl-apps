@@ -1,0 +1,10 @@
+trait Journal extends Entity {
+  plural = "Journal"
+  func journalDate: Date
+  func legalEntity: LegalEntity
+  func baseCurrency = legalEntity.getCurrency
+  
+  view generalLedgerButton = button("Ledger", visible = id) {
+    GeneralLedger.Report(journal = this).list.open
+  }
+}

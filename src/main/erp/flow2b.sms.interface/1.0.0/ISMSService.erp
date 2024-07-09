@@ -1,0 +1,17 @@
+interface ISMSService {
+  back func validatePhone(phone: Phone, countryCode: String): Future[PhoneValidationResult]
+  back func send(destinationNumber: Phone, message: PlainText, pConfig: PinpointClientConfig): Future[String?]
+  
+  back func tst(id: String): Future[Any]
+}
+
+class PhoneValidationResult {
+  field phone: Phone?
+  field countryCode: String?
+  field carrier: String?
+}
+
+class PinpointClientConfig {
+  field originationNumber: Phone?
+  field appKeyword: String?
+}

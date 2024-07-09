@@ -1,0 +1,14 @@
+inline trait ProductPricing {
+  field vendor: Actor by pricing
+    
+  func baseSuperProductPrice(superProduct: ISuperProduct): Future[Money?]
+  func baseProductPrice(product: IProduct): Future[Money?] = baseSuperProductPrice(product.superProduct)
+  func productSalesAmount(product: IProduct, qty: Qty, customer: LegalEntity): Future[Money?] = {
+    superProductSalesAmount(product.superProduct, qty, customer)
+  }
+  func superProductSalesAmount(superProduct: ISuperProduct, qty: Qty, customer: LegalEntity): Future[Money?] = {
+    let price <- baseSuperProductPrice(superProduct)
+    price*superProduct.toBase(qty)
+  }
+}
+

@@ -1,0 +1,27 @@
+trait ISalesOrder extends IOrder {
+  impl func isPurchase: Bool = false
+
+  func vendor = legalEntity
+  impl func payer: Customer?
+  func customer: Customer?
+  impl func payee = legalEntity
+  override func debtBalance = payer?.debtBalance
+  impl func cpDebtAllowance = payer?.allowance
+  impl func cpDebtTerms = payer?.accountTerms
+
+  impl back func isInstantPaid: Bool = {
+    if (let c = payments.onlyOne?.as[IncomingPayment], let r = invoices.onlyOne.or(allRevisions.onlyOne)) {
+      c.amount == r.invoiceTotal && (c.date - r.date).abs <= 3600_second && (!invoices || allItems.all(!invoiceNotIssued))
+    }
+  }
+  
+  impl func cashFlow = Sales
+  
+  view paymentsView = y(label = "Payments", visible = (ui.edit && (fullReconState.isIssue || payments)) || debtOriginAmounts) {
+    payments >> list(visible = ui.edit, canAdd = false) {
+      posViewDebit
+    }
+    addPaymentView
+    debtOriginsView >> field(visible = !ui.edit) 
+  }
+}

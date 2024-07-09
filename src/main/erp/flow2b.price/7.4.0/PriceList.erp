@@ -1,0 +1,123 @@
+extend trait IStaticPriceModel {
+  extend override object func makeDefault(vendor: IVendor): IStaticPriceModel = {
+    PriceList(vendor = vendor)
+  }
+}
+
+entity PriceList extends IStaticPriceModel with NewEngine {
+  impl func title = "PL $vendor $start"
+  impl ref field start: Date = now
+  impl field end: Date?
+  field pricesIncludingGst: Bool = (try? vendor.pricesIncludingGst).alt(true)
+  
+  field clearanceCategories: [IProductCategory]?
+  field clearanceTags: [IProductTag]?
+  
+  field products: [PriceListProduct]? inline by priceList {
+    touchCascade = false
+  }
+  impl back func price(level: IPriceLevel, type: PriceType, product: IBaseProduct): IPrice? = if (type == Sales) {
+    products.find(p => p.product == product || p.product == product.superProduct)
+  }
+  impl view form = nav{
+    grid(width = 1.2, label = "Prices"){
+      x{state vendor >> field(stretch = 1)}
+      row{start end}
+      row{levels pricesIncludingGst}
+      
+      row{clearanceCategories clearanceTags}
+      products >> table {
+        header {
+          label("Code", width = 0.2)
+          label("Product", width = 0.35)
+          label("Regular", width = 0.2, align = Right)
+          label("Discounted", width = 0.2, align = Right)
+          extension("th")
+        }
+        body {
+          row {
+            rowView
+          }
+          row {
+            row2View
+          }
+        }
+      }
+    }
+  }
+  impl func supports(product: IBaseProduct): Bool = true
+  impl func findPrice(product: IBaseProduct) = products.find(p => p.product == product)
+  impl func forceNewPrice(product: IBaseProduct) = PriceListProduct(product = product, priceList = this)
+} 
+  
+entity PriceListProduct extends IStaticPriceSales {
+  impl func model = priceList
+  field priceList: PriceList by products =? IPriceModel.ours*.as[PriceList].onlyOne
+  impl func autoCategories = if (current != regular) model.clearanceCategories
+  impl func autoTags = if (current != regular) model.clearanceTags
+  field regular: UMoney[currency]? {
+    update = {
+      if (old == current) current = new
+    }
+  }
+  compute gstK = if (vendor.hasGst) (1.0000 + product.gstRate(vendor.legalEntity).alt(0)) else 1.0000
+  
+  field current: UMoney[currency]? {
+    label = "Clearance"
+  }
+  compute cost: Future[UMoney[currency]?] {
+    label = "Approx Cost"
+    value = product.productCost?.cost.to[UMoney[currency]](now)
+  }
+  func margin(price: UMoney[currency]?): Percent[2]? = {
+    if (let r = if (priceList.pricesIncludingGst) price/gstK else price) {
+      let c = cost.get
+      (r - c).as[Percent[2]]/r
+    }
+  }
+  func priceWithMargin(margin: Percent[2]?): UMoney[currency]? = {
+    if (let c = cost.get, let p = (1.0000 - margin).positive) {
+      let r = c/p
+      if (priceList.pricesIncludingGst) r*gstK else r
+    }
+  }
+  
+  compute regularMargin: Percent[2]? {
+    value = margin(regular)
+    update = {regular =? priceWithMargin(new)}
+  }
+  compute currentMargin: Percent[2]? {
+    value = margin(current)
+    update = {current =? priceWithMargin(new)}
+  }
+  view rowView = group{
+    product.fullNum >> field(rowSpan = 2, fontStyle = Label)
+    product >> field(title = title)
+    regular
+    current
+  }
+  
+  view row2View = group{
+    x {label("Cost:") cost label("Margins:", align = Right, stretch = 1) } 
+    regularMargin >> field(fontStyle = if (current == regular) Normal else Strikeout) 
+    currentMargin
+  }
+  
+  
+  impl event onSave = product.touch
+  impl func salesPrice(request: PriceRequest): Future[SalesPrice] = {
+    let rp <- regular.to[UMoney[request.currency]](now)
+    let cp <- {
+      if (regular != current) {
+        current.to[UMoney[currency]](now)
+      } else Future(rp)
+    }
+    SalesPrice(currency = currency, regular = rp, current = cp)
+      .convertGst(gstRate, priceList.pricesIncludingGst, request.inclGst)
+  }
+  impl func updateSalesPrice(salesPrice: SalesPrice): Bool = {
+    regular = salesPrice.regular
+    current = salesPrice.current
+  }
+}
+

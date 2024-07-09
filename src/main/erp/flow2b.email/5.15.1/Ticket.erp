@@ -1,0 +1,13 @@
+extend entity Ticket {
+  extend view form = extend("nav") {
+    button("Convert to Email Subscription", visible = channel == EMail) {
+      let contact <- Query(this).map {i =>
+        i.activities.first!.from!.as[IEmailContact]!
+      }.result
+      let sub = convertTo(EmailSubscription)
+      let domain = (contact.email("@" .. ]).lower.trim
+      sub.title = contact.addresseeName.or(domain).alt("Untitled")
+      sub.domain = domain
+    }
+  }
+}

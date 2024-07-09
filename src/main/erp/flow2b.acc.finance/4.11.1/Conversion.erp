@@ -1,0 +1,16 @@
+back object Conversion extends IConversion {
+  func do(version: [Int?]?) = {
+    if (version < [4,10,1]) {
+      Company.all.foreach{c => if (let a = c.legalInfo.address) if (a.isEmpty) {
+        c.legalInfo.address = null
+        c.forceTouch
+        c.save
+      }}
+      Person.all.foreach{c => if (let a = c.soleTrader?.address) if (a.isEmpty) {
+        c.soleTrader!.address = null
+        c.forceTouch
+        c.save
+      }}
+    }
+  } 
+}  

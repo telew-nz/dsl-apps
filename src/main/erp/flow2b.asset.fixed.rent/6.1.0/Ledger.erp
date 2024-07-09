@@ -1,0 +1,1 @@
+account Rent(template = "Sales", number = 500, type = Revenue)

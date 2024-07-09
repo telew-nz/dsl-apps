@@ -1,0 +1,52 @@
+acctemplate Basic
+acctemplate CurrencyTrading(singleAccount = true) {
+  key field currency: Currency
+}
+acctemplate Currency {
+  key field currency: Currency
+}
+  
+account ExchangeGainOrLoss(template = "Basic", number = 720, type = RevenueOrExpense, label = "Exchange Gain or Loss") 
+
+account CurrencyTrading(template = "CurrencyTrading", number = 700, type = RevenueOrExpense) 
+
+object CurrencyTrading {
+  object func trade(journal: Journal, debit: Money, credit: Money): Future[[Ledger]?] = {
+    if (debit.unit == credit.unit) []
+    else trade(journal, [debit, -credit])
+  }
+  object func trade(journal: Journal, amounts: [Money]?): Future[[Ledger]?] =  tradeAt(journal, journal.journalDate, amounts)
+  object func tradeAt(journal: Journal, date: Date, amounts: [Money]?): Future[[Ledger]?] = {
+    if (amounts.count < 2 || amounts.groupBy(unit).toSeq.count < 2) []
+    else {
+      let currency = journal.legalEntity.getCurrency
+        
+      let baseAmounts <- amounts.groupBy(unit).agg(_.sum).values.map{amount => 
+        let baseAmount <- amount.to[Money[currency]](date)
+        (amount, baseAmount)
+      }.allCompleted
+      let loss: [Ledger]? = if (let l = baseAmounts*.baseAmount.sum) [
+        LBasic(account = ExchangeGainOrLoss, journal = journal, date = date, trAmount = -l)
+      ] else []
+      
+      loss + baseAmounts.filter(amount.unit != currency).map(i =>
+        LCurrencyTrading(journal = journal, date = date, currency = i.amount.unit!, trAmount = -i.amount, baseTrAmount = -i.baseAmount)
+      )
+    }
+  }
+  
+  object func close(journal: Journal, amount: Money): Future[LCurrencyTrading?] = {
+    if (amount?.unit == journal.baseCurrency) null
+    else {
+      let baseAmount <- amount.to[Money[journal.baseCurrency]](journal.journalDate)
+      LCurrencyTrading(journal = journal, currency = amount.unit!, trAmount = -amount, baseTrAmount = -baseAmount)
+    }
+  }
+  object func with(ledgers: [Ledger]?): Future[[Ledger]?] = {
+    if (!ledgers) Future.apply([])
+    else {
+      let trades <- trade(ledgers.first!.journal, ledgers*.trAmount)
+      ledgers + trades
+    }
+  }
+}

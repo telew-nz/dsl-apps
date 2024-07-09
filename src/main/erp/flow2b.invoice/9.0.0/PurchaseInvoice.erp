@@ -1,0 +1,21 @@
+trait IPurchaseInvoice extends IInvoice {
+  func isPurchase: Bool = true
+  func cashFlowCategory: CashFlowCategory = Purchases
+  func startingBalance: Money[currency]? = total
+  func paidAmount = -balanceChange
+  func setoffs: [Setoff]? = debits
+  compute vendor = counterparty
+  compute customer = legalEntity
+
+  func originLedger(setoff: Setoff, amount: Money): Future[Ledger] = {
+    LDebt(account = AccountsPayable, origin = this, journal = setoff.journal, date = setoff.date, 
+          trAmount = amount, counterparty = vendor, currency = currency)
+  }
+  
+  view statusesView = x {
+    issueState
+    paymentState
+    balance + " unpaid" >> field(visible = reconcileState == PartiallyReconciled || reconcileState == OverReconciled)
+  }
+  view ref = x{title statusesView}  
+}

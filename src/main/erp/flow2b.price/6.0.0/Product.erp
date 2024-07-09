@@ -1,0 +1,26 @@
+extend trait IBaseProduct {
+  override list compute salesPrice: Future[SalesPrice] = back {
+    OurLegalEntity.ours.mapOpt{
+      a => a.price(this)?.salesPrice(Currency.our, a.pricesIncludingGst) 
+    }.first.alt(SalesPrice.empty)
+  } 
+  compute prices: Future[[VendorPrice]?] {
+    value = if (id) PriceModel.all
+      .groupBy(vendor).agg(priceModel = sortBy(priority, date.desc).find(contains(this)))
+      .filter(priceModel)
+      .map{i => 
+        VendorPrice(vendor = i.vendor, model = i.priceModel!, price = i.priceModel!.price(this)!)
+      }.result
+    availableFor = All
+  }
+  extend view baseMainView = prices >> list{grid(labels = None){
+    row {vendor model}
+    price.form >> field(frame = false)
+  }}   
+}
+
+class VendorPrice {
+  field vendor: IVendor
+  field model: PriceModel
+  field price: IPrice
+}

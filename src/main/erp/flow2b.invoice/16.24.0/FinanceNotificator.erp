@@ -1,0 +1,155 @@
+extend enum DashboardIssue {
+  case AutoSendFailed(role = Accountant, priority = major) = "Failed to send out to the customer"
+}
+
+object FinanceNotificator extends SystemService {
+  impl func title = "Finance Notificator"
+  field sendInvoiceToCustomers: Bool = false
+  field sendStm: Bool {
+    default = false 
+    label = "Generate and send statement of customer accounts"
+  }
+  field salesReminders: [DueReminder]? {
+    label = "Reminders for customer about unpaid sales invoices"
+    default = [DueReminder(delta = 5_day, repeat = 5_day)]
+  }
+  field purchaseReminders: [DueReminder]? {
+    label = "Reminders for us about unpaid purchase invoices"
+    default = [DueReminder(delta = -2_day, repeat = 5_day)]
+  }
+  func serviceAccess: [Role]? = [Admin]
+  impl view form = nav{grid(labels = Top){
+    issuesView
+    serviceState
+    errorsCount >> field(editMode = AlwaysRead)
+    
+    sendInvoiceToCustomers
+    salesReminders
+    purchaseReminders
+    sendStm
+    contacts
+  }}
+  field contacts: [IContact]? {
+    validate = if ((sendInvoiceToCustomers || sendStm) && !contacts) {
+      "Contacts should be selected in order to send invoices"
+    }
+  }
+  func canSendInvoice = sendInvoiceToCustomers && userEnabled && serviceState != Disabled
+  impl func ourContacts = contacts
+  func nextReminder(isPurchase: Bool, dueDate: Date): Date? = {
+    (if (isPurchase) purchaseReminders else salesReminders).mapOpt(next(dueDate)).min
+  }
+  impl event onSave = {
+    if (updated(salesReminders) || updated(purchaseReminders) || salesReminders.exists(dataUpdated) || purchaseReminders.exists(dataUpdated)) {
+      Invoice.all.filter(debtUnpaidAmount)*.touch
+    }
+  }
+}
+
+class DueReminder {
+  field unit: DateUnit = day
+  field delta: Duration[unit]? {canEditUnit}
+  field repeatUnit: DateUnit = day
+  field repeat: UDuration[repeatUnit]? {canEditUnit}
+  
+  impl view form = x{
+    delta >> field (showEmpty) label("after due date", fontStyle = Label) 
+    label ("repeat every", fontStyle = Label, visible = ui.edit || repeat) repeat
+  }
+  func next(dueDate: Date): Date? = {
+    let dd = dueDate + delta
+    if (dd > now) dd 
+    else if (let repeat) {
+      let n = (dd + repeat*((Date.now - dd).to[Duration[repeatUnit]].as[Duration[repeatUnit, 8]]/repeat).round(ceil, 0))
+      if (n > now) n else n + repeat
+    }
+  }
+}
+
+class NewInvoiceNotif extends SystemJob {
+  impl func service = FinanceNotificator
+  field invoice: Invoice
+  impl func do = {
+    if (!invoice.isPurchase let c = invoice.order.payer?.invoiceContact) {
+      c.join(invoice)
+      invoice.touch
+      Activity.current!.setMainEntity(invoice)
+      Activity.current!.makePublic("New ${invoice.name}")
+    }
+  }
+}
+
+trait AutoSend extends RefEntity with DashboardItem {
+  system field autoSend: Bool
+  system field failedSend: Bool
+  system field ignoreAutoSend: Bool
+  
+  impl func issues = if (!ignoreAutoSend && failedSend) [AutoSendFailed]
+  impl func fixes(issue: DashboardIssue) = if (issue == AutoSendFailed) {
+    [Fix(
+      text = "Correct the customer's email address and send a message", acts = [Act(
+        label = "Send Again", do = sendOut()
+      )]
+    ), Fix (
+      text = "Deliver the invoice by a different channel and ignore the issue", acts = [Act(
+        label = "Ignore", do = {
+          ignoreAutoSend = true
+          UI.save(this)
+        }
+      )]
+    )]
+  }
+  
+  func sendOut(): Void
+  impl event onSave = {
+    if (autoSend && !created && !ignoreAutoSend) {
+      failedSend = !activities*.deliveries.exists(status != Failed)
+    }
+  }
+}
+
+extend trait IOrder extends DeferredJob {
+  impl func service = FinanceNotificator
+  impl func jobDate = {    
+    if (
+      !closed && !canceled
+      let ud = {
+        if (let dd = dueDate where dd > now) if (let ua = due.update where ua > now) dd.min(ua) else dd
+        else due.update
+      }
+      where ud > now
+    ) {
+      ud
+    }
+  }
+  impl func do = {
+    updateDue()
+    save
+  }
+}
+
+extend entity Invoice extends DeferredJob {
+  impl func service = FinanceNotificator
+  impl func jobDate = {
+    if (debtUnpaidAmount && !order.isInstant, let dueDate) FinanceNotificator.nextReminder(isPurchase, dueDate)
+  }
+  impl func do = {
+    guard (!order.isInstant let dd = dueDate, let debtUnpaidAmount) else return {}
+    
+    touch
+    save
+    Activity.current!.setMainEntity(this)
+    let t = if (let dueIn = (dd - Date.now).days.round(floor, 0)) {
+      if (dueIn > 0) "$name $number is due in $dueIn. $debtUnpaidAmount unpaid."
+      else "$name $number is $(-dueIn) overdue. $debtUnpaidAmount unpaid."
+    } else {
+      "$name $number is due today. $debtUnpaidAmount unpaid."
+    }
+    if (isPurchase || !FinanceNotificator.sendInvoiceToCustomers) {
+      Activity.current!.comment(t)
+    } else {
+      //payer?.invoiceContact?.join(this)
+      Activity.current!.makePublic(t)
+    }
+  }
+}

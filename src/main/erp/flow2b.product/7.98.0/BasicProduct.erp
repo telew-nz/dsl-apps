@@ -37,3 +37,4 @@ trait IBasicProduct extends IBasicSubProduct with IProduct {
     extension("nav")
   }
 }
+

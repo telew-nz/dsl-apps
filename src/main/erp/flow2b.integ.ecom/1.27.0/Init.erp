@@ -1,0 +1,34 @@
+interface ECommerceInitialDownload {  
+  func categories: Bool = false
+  func tags: Bool = false
+  func brands: Bool = false
+  func products: Bool = false
+  func shippingClasses: Bool = false
+  
+  back func categoryJobs: [SystemJob]? = []
+  back func tagJobs: [SystemJob]? = []
+  back func brandJobs: [SystemJob]? = []
+  back func productJobs: [SystemJob]? = []
+  back func shippingClassJobs: [SystemJob]? = []
+  
+  back func run: Void = {
+    if (categories) categoryJobs*.enqueue
+    if (tags) tagJobs*.enqueue
+    if (brands) brandJobs*.enqueue
+    if (products) productJobs*.enqueue
+    if (shippingClasses) shippingClassJobs*.enqueue
+  }
+}
+
+class InitialDownloadCompleteJob extends SystemJob {
+  impl field service: ECommerceIntegration
+  impl func do = {
+    if (service.serviceState == Active) {
+      service.initComplete = true
+    } else {
+      Activity.comment("Not initialized")
+      service.serviceState = Disabled
+    }
+    service.save
+  }
+}

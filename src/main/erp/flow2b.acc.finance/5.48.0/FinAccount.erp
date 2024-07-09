@@ -1,0 +1,244 @@
+
+trait FinAccount extends Entity with NewEngine {
+  singular = "Finance Account"
+  plural = "Finance Accounts"
+  background = "#d68400" 
+  func ledgerAccount: LedgerAccount
+  
+  func forCustomerPayments: Bool = false
+  func numbers: [String]? = []
+  func number: String? = numbers.first
+  system stored compute searchNums: String? = numbers.map(clearNum(_))
+  func legalEntity: OurLegalEntity
+  func currency: Currency
+  func cashFlow: CashFlow = Exchange
+     
+  object func clearNum(num: String?) = num.replace("-", "").replace("/", "").replace(" ", "").trim
+  back object func withNumber(num: String?): FinAccount? = {
+    if (let num = clearNum(num)) {
+      FinAccount.all.find(a => a.searchNums.contains(num)).result.get
+    }
+  }
+  back func balance(at: Date): Money[currency]? = {
+    LCash.at(at).find(finAccount == this && balanceType == Factual).result.get?.balance
+  }
+  impl ref system stored compute balance: Money[currency]? = cashLedger?.balance
+  system compute lastTransactionDate = cashLedger?.date
+  system compute cashLedger: LCash? = LCash.current.find(finAccount == this && balanceType == Factual)
+  
+  field initBalance: InitBalance? inline by finAccount {
+    label = "Initial Balance"
+  }
+  impl object view refList = FinAccount.all.sortBy(lastTransactionDate.alt(Date.min).desc) >> list{
+    x{title >> field(stretch = 1) balance}
+  }
+  impl object view list = FinAccount.all.sortBy(title) >> nav{list{
+    x{title >> field(stretch = 1) balance}
+  }}
+  
+  view ledgerBtn = button("Ledger", visible = initBalance?.id) {
+    Ledger.Report(journal = initBalance!).list.open
+  }
+  func hasBankData = false
+  
+  system const field uploadedIncoming: Period? {label = "Incoming payments uploaded for"}
+  system const field uploadedOutgoing: Period? {label = "Outgoing payments uploaded for"}
+  
+  object view widget = FinAccount.all
+    .filter(balance)
+    .map{
+      let baseBalance <- balance.to[Money[legalEntity.getCurrency]](now)
+      (account = _, balance, baseBalance)
+     }
+     .sortBy(account.title)
+     .total(baseBalance.sum) 
+  >> nav(background = "#d68400", more = FinAccount.list.open){
+    total {
+      baseBalance >> field(align = Right)
+      list(action = account.form.open){grid(labels = None){
+         row{account.title >> field(width = 0.7) balance >> field(width = 0.3, align = Right)}
+      }}}}
+}
+
+trait SFinAccount extends FinAccount {
+  impl ref field legalEntity: OurLegalEntity by accounts 
+  impl ref field currency: Currency
+}
+            
+inline entity InitBalance extends PseudoEntity with Journal {
+  ref field finAccount: FinAccount
+  field date: Date = now
+  field balance: Money[finAccount.currency]?
+  
+  impl func legalEntity = finAccount.legalEntity
+  impl func journalDate = date
+  impl func mainEntity = finAccount
+  
+  register cash = LCash(
+    account = finAccount.ledgerAccount, finAccount = finAccount, journal = this, 
+    trAmount = balance, cor = 1
+  )
+  impl view form = x {date balance}
+}
+
+object ITTooLowBalance extends IssueType[HasLowBalance] {
+  impl func title = "Too Low Balance"
+  impl func roles(item: HasLowBalance) = [BusAdmin]
+  impl func hasIssue(item: HasLowBalance) = {
+    if (let lowBalance = item.lowBalance) {
+        lowBalance.balance.as[Money[item.currency]] > item.balance 
+      || 
+        lowBalance.balance == item.balance && lowBalance.less == LessEq
+    }
+  }
+}
+trait HasLowBalance extends Entity {
+  func currency: Currency
+  field lowBalance: LowBalance? {
+    default = defaultLowBalance
+    label = "Low Balance Level"
+  }
+  func defaultLowBalance: LowBalance? = null
+  func balance: Money[currency]?
+ 
+  override func issueTypes = super.issueTypes + ITTooLowBalance
+}
+class LowBalance {
+  field less: LowBalanceOp = Less
+  field balance: Money?
+  impl view form = x {less balance >> field(showEmpty) }
+}
+
+enum LowBalanceOp {
+  case Less = "<"
+  case LessEq = "≤"
+}
+
+extend entity OurLegalEntity {
+  field accounts: [SFinAccount]? {label = "Finance Accounts"}
+}
+extend entity OurCompany {
+  extend view form = accounts
+}
+extend entity OurPerson {
+  extend view form = accounts
+}
+ 
+entity CashAccount extends SFinAccount with HasLowBalance {
+  background = "#d68400"
+  impl func title = "$legalEntity: $name"
+  object func default: CashAccount? = onlyOne
+  object func onlyOne: CashAccount? = OurLegalEntity.ours*.accounts*.as[CashAccount].onlyOne
+  ref field name: String
+
+  impl func ledgerAccount: LedgerAccount = Cash
+  field location: IStore? by cashAccounts
+  impl view form = nav{grid{
+    issuesView
+    legalEntity
+    name
+    currency
+    location
+    lowBalance
+    initBalance
+    balance
+    uploadedIncoming
+    uploadedOutgoing
+  } ledgerBtn }
+}
+
+extend trait IStore {
+  field cashAccounts: [CashAccount]? read by location
+}
+extend entity Store {
+  extend view form = cashAccounts
+}
+  
+entity BankAccount extends SFinAccount with HasLowBalance {
+  background = "#d68400"
+  impl func title = "$legalEntity: $name"
+  object func default: BankAccount? = onlyOne
+  object func onlyOne: BankAccount? = OurLegalEntity.ours*.accounts*.as[BankAccount].onlyOne
+  ref field name: String
+  impl ref field forCustomerPayments: Bool = !OurLegalEntity.ours*.accounts*.as[BankAccount]
+  impl func ledgerAccount: LedgerAccount = Cash
+  impl ref field numbers: [String]?
+  impl func hasBankData = true
+  impl view form = nav{grid{
+    issuesView
+    legalEntity
+    name
+    numbers
+    currency
+    forCustomerPayments
+    lowBalance
+    initBalance
+    balance
+    uploadedIncoming
+    uploadedOutgoing
+  } ledgerBtn }
+}
+
+trait ICardAccount extends SFinAccount {
+  background = "#d68400"
+  object func default: ICardAccount? = onlyOne
+  object func onlyOne: ICardAccount? = OurLegalEntity.ours*.accounts*.as[ICardAccount].onlyOne
+  impl func ledgerAccount: LedgerAccount = Cash
+  impl func hasBankData = true
+}
+
+entity CardAccount extends ICardAccount {
+  singular = "Bank Card Account"
+  plural = "Bank Card Accounts"
+  
+  impl func title = "$legalEntity: $name"  
+  ref field name: String
+  impl field numbers: [String]?
+  impl view form = nav{grid{
+    legalEntity
+    name
+    numbers
+    currency
+    initBalance
+    balance
+    uploadedIncoming
+    uploadedOutgoing
+  } ledgerBtn }
+}
+
+entity CurrentAccount extends SFinAccount {
+  background = "#d68400"
+  object func default: CurrentAccount? = onlyOne
+  object func onlyOne: CurrentAccount? = OurLegalEntity.ours*.accounts*.as[CurrentAccount].onlyOne
+  impl func ledgerAccount: LedgerAccount = CurrentAccounts
+  impl func cashFlow = CurrentAccounts
+  impl func title = "$legalEntity: $(name.alt(counterparty))"
+  ref field counterparty: LegalEntity
+  ref field name: String?
+  impl view form = nav{grid{
+    legalEntity
+    counterparty
+    name
+    currency
+    initBalance
+    balance
+  } ledgerBtn }
+}
+
+ 
+entity LoanAccount extends SFinAccount {
+  background = "#d68400"
+  impl func ledgerAccount: LedgerAccount = Loans
+  impl func cashFlow = Loans
+  impl func title = "$legalEntity: $(name.alt(counterparty))"
+  ref field counterparty: LegalEntity
+  ref field name: String?
+  impl view form = nav{grid{
+    legalEntity
+    counterparty
+    name
+    currency
+    initBalance
+    balance
+  } ledgerBtn }
+}

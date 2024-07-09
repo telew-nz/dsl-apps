@@ -1,0 +1,39 @@
+class RetrieveListingStats extends SystemJob {
+  impl func service: ITrademeIntegration = listing.service
+  field listing: TrademeListing
+  impl func do: Future[Any] = {
+    let result <- service.https("Listings/$(listing.listingId).json").get
+    let d = result.body!.parseJson[ListingDetails]
+    d.saveStats(listing)
+    listing.save
+  }
+}
+
+report TrademeProductsPerformance {
+  field productStatus: [ProductStatus]? = [ProductStatus.ForSale]
+  field trademeStatus: [TrademeProductStatus]? = [TrademeProductStatus.Listed]
+  impl view list = TrademeListing.all
+    .filter(
+          status != Active 
+       && duration 
+       && (!this.productStatus || this.productStatus.contains(product.status))
+       && (!this.trademeStatus || (product.trademeStatus && this.trademeStatus.contains(product.trademeStatus!)))
+    )
+    .groupBy(product, promotion)
+    .agg(duration = duration.sum.weeks, views.sum, watchers.sum, sales = salesItems*.amountWithGst.sum, soldQty = salesItems*.deliveryItem*.qty.sum)
+    .map(product, curPromotion = product.trademePromotion, promotion, duration, views, viewsPerWeek = views.as[Dec[2]]/duration!, watchers, watchersPerWeek = watchers.as[Dec[4]]/duration!, sales, soldQty, salesPerWeek = sales/duration!)
+    .sortBy(viewsPerWeek.desc)
+    .total(viewsPerWeek = views.sum.as[Dec[2]]/duration.sum!, watchersPerWeek = watchersPerWeek.sum.as[Dec[4]]/duration.sum!, sales.sum, salesPerWeek = sales.sum/duration.sum!) 
+  >> nav{total {
+      row {label("Average:" align = Right, span = 2) viewsPerWeek watchersPerWeek salesPerWeek label("Overall:" align = Right) sales }
+      table{
+        x(label = "Product", margin = None, width = 0.5){product curPromotion} promotion duration >> field("Listed for") viewsPerWeek  watchersPerWeek salesPerWeek soldQty sales 
+      }
+    }}
+} 
+
+extend role BusAdmin {
+  extend view menu = extend("Sales") {
+    TrademeProductsPerformance
+  }
+}

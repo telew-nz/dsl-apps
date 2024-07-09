@@ -1,0 +1,159 @@
+trait IBaseOutgoingDelivery extends IDelivery  {
+  func pathSrc = deliverySrc
+  func deliveryDst: IStore? = null
+  func stockTypeDst: StockType? = null
+  
+  func itemOrder = ("Date", dispatchDate)
+  ref stored compute availability: GoodAvailability {
+	visible = availability.isIssue
+  }  
+  event onSave = {
+    if (items.all(_.as[IIOutgoingDeliveryItem]?.outStocks.all(calced))) {
+      availability = {
+        if (deliveryStatus == Canceled) Canceled
+        else if (unavailableItems) Unavailable
+        else if (unavailableProdItems) UnavailableProdItems
+        else if (deliveryStatus != Planned) Dispatched
+        else if (items.all(isAvailableNow)) Available
+        else if (items.exists(awaitingForDate && awaitingForDate! > dispatchDate)) AvailableLater
+        else Waiting
+      }
+    } else if (!try? availability) {
+      availability = if (deliveryStatus != Planned) Dispatched else Available
+    }
+  }
+  ref compute dispatchState: DispatchState {
+    value = {
+      if (deliveryStatus == Canceled) Canceled
+      else if (deliveryStatus != Planned) Dispatched
+      else if (!canDispatch) {if (availability != Available) NotReady else NoDispatch}
+      else if (dispatchDate <= now) ToDispatch
+      else NotReady
+    }
+    visible = dispatchState.display
+  }
+  func canDispatch = deliveryStatus == Planned && availability == Available
+  
+  compute earliestDispatchDate: Date? {
+    value = items*.awaitingForDate.max
+    visible = deliveryStatus == Planned && earliestDispatchDate
+  }
+  compute possibleDispatchPeriods: [Period]? {
+    value = if (unavailableItems) {
+      items.filter(isUnavailable)
+        .fold[[Period]?](
+          [Period(start = Date.min, end = Date.max)], 
+          (item, acc) => item.availablePeriods.flatMap(p1 => acc.mapOpt(p2 => p1.intersect(p2)))
+        )
+    }
+    visible = deliveryStatus == Planned && possibleDispatchPeriods
+  }
+  
+  compute invUnavailableItems = unavailableItems*.as[IIOutgoingDeliveryItem]
+  compute unavailableItems = items.filter(isUnavailable)
+  compute unavailableProdItems = items*.as[IIOutgoingDeliveryItem].filter(isUnavailableProdItems)
+}
+ 
+trait IOutgoingDelivery extends IDeliveryPath with IBaseOutgoingDelivery {
+  background = "#449977"
+  singular = "Outgoing Delivery"
+  plural = "Outgoing Deliveries"
+  report Report {
+    field canDispatchOnly: Bool = true
+    field storeOperative: User? {
+      default = User.current.filter(is(StoreOperative))
+      from = User.all.filter(is(StoreOperative))
+    }
+    view list = IOutgoingDelivery.all
+      .filter(isFor(storeOperative, StoreOperative) && (!canDispatchOnly || canDispatch))
+      .sortBy(dispatchDate)
+      >> nav{list(canAdd = false){}}
+  }
+  func pathCanBeExecuted: Bool = !freightCompany && dispatchState == ToDispatch
+}
+
+interface IIOutgoingDeliveryItem extends IIDeliveryPItem {
+  func outDelivery: IBaseOutgoingDelivery? = itemDelivery?.as[IBaseOutgoingDelivery]
+  func outStocks: [ProdReg]?
+  func outStockItems: [ProdItemReg]?
+  
+  
+  //Compute
+  compute isAvailableNow = !isTangible || outStocks.all(available >= 0)
+  compute isAwaiting = !isAvailableNow && outStocks.all(outlook >= 0)
+  compute awaitingForDate = if (isTangible) outStocks*.awaitingForDate.max 
+  compute isUnavailable = isTangible && outStocks.exists(outlook < 0)
+  compute isUnavailableProdItems: Bool = isTangible && outStockItems.exists(outlook < 0)
+  compute unavailableQty = if (isTangible) (qty - availableStock?.outlook).max(0)
+  compute availableIn = if (let od = outDelivery){
+    if (isUnavailable && od.deliveryStatus == Planned) {
+      let sts <- product.stocks
+      sts.filter(i => !i.isEmpty && ((i.legalEntity.legalEntity != itemDelivery?.deliverySupplier) || (i.store != (try? itemDelivery!.deliverySrc!)) ))
+    } 
+  }
+  compute availableStock: Stock? = {
+    if (isTangible) product.kitStock(outStocks*.prevStockStore)
+  }
+  func makeOutStocks = if (let od = outDelivery){
+    if (od.deliveryStatus != Canceled && active) {
+      product.tangibleProductQtys(baseQty).mapOpt(outStock(_.product, _.qty))
+	}
+  }
+  func makeOutStockItems = if (let d = outDelivery) if(d.deliveryStatus != Canceled && active) {
+    productItems.map (
+      ProdItemReg(
+        item = _, sort = if (d.deliveryStatus == Delivered) 0 else 1, date = d.dispatchDate, 
+        newStockType = stockTypeSrc!,
+        doc = d, docItem = stockItem, qty = -1, priorityDate = d.priorityDate)
+    )
+  }
+  
+  //Views
+  func stockDesc = availableStock.alt(Stock()).availableView(product, qty)
+  view availableView {
+    canInline = false
+    layout = grid(labels = Top, width = 1.2) {
+      outStocks*.awaitingForDocs.distinct >> list(label = "Awaiting for", frame = false, editMode = AlwaysRead) {
+        grid(labels = None, margin = NoneInner) {
+          row{
+            product.fromBase(to = unit, qty.as[Qty[product.unit]]!) >> field(width = 0.1) 
+            item.date >> field(width = 0.3)
+            item.doc >> field(width = 0.6)
+          }
+        }
+      }
+      availableIn >> list(frame = false, mode = Static, label = "Available in") {
+        x{legalEntity >> field(visible = legalEntity != this.itemDelivery?.deliverySupplier), store, stock.title}
+      }
+    }
+  }
+  func outStock(product: IProduct, baseQty: Qty): ProdReg? = {
+    if (let d = outDelivery) {
+      ProdReg(
+        legalEntity = d.deliverySupplier!.our!, store = d.deliverySrc!, stockType = stockTypeSrc!, 
+        product = product, docItem = stockItem, priorityDate = d.priorityDate,
+        sort = if (d.deliveryStatus == Planned) 1 else 0, 
+        date = d.dispatchDate, doc = d,
+        qty = -baseQty
+      )
+    }
+  }
+}
+
+trait IOutgoingDeliveryItem extends IDeliveryPItem with IIOutgoingDeliveryItem {
+  var product: ISubProduct 
+  
+  register outStocks: [ProdReg]? {
+    value = makeOutStocks
+    availableFor = Inline
+    available(Inline).for(Inline)
+    autoRecalc = true
+  }
+  
+  register outStockItems: [ProdItemReg]? {
+    value = makeOutStockItems
+    availableFor = Inline
+    available(Inline).for(Inline)
+    autoRecalc = true
+  }
+}

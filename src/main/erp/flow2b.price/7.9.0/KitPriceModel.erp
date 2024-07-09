@@ -1,0 +1,261 @@
+entity KitPriceModel extends IDynamicPriceModel with NewEngine with IProdFilterOwner with IPriceModOwner {
+  impl func title = "Kit Price Model"
+  impl func priority: Dec[8]? = 0.5
+  impl ref field start: Date = now
+  impl ref field end: Date?
+  
+  field rules: [KitModelRule]? inline by model
+  field rounding: Rounding? = Floor()
+  field discount: Percent[2]? {
+    validate = if (discount > 1.0000) "Discount cannot be more than 100%"
+  }
+  impl func price(level: IPriceLevel, type: PriceType, product: IBaseProduct): IPrice? = {
+    if (let kit = product.as[Kit]){
+      let rule = rules.find(filterProd(kit))
+      if (rule || !rules) {
+        let prices = kit.products.toSeq.map {i =>
+          if (let p = vendor.price(level, type, i.#0)) {
+            KitItemPrice(prod = product, price = p, qty = i.#1)
+          }
+        }
+        if (prices.all(_)) {
+          KitPrice(model = this, rule = rule, level = level, type = type, kit = kit, prices = prices.map(_!))
+        }
+      }
+    }
+  }
+  impl view form = nav {grid{
+    row {start end}
+    levels
+    rounding    
+    rules
+  }}
+}
+
+entity KitModelRule extends InlineEntity with IProdFilterOwner with IPriceModOwner  {
+  field model: KitPriceModel
+  impl view form = grid {
+    filters >> field(showEmpty)
+    mods >> field(showEmpty)
+  }
+}
+ 
+class KitPrice extends IPriceSalesRent with IPriceRentDecorator {
+  impl field model: KitPriceModel
+  field kit: Kit
+  field prices: [KitItemPrice]
+  field type: PriceType
+  field level: IPriceLevel
+  field rule: KitModelRule? inline
+  impl func levels = [level]
+  impl func priceRent = prices*.price*.as[IPriceRent].first!
+  
+  impl func priceType: PriceType = type
+  impl func product = kit
+  impl func salesPrice(request: PriceRequest): Future[SalesPrice] = {
+    amount(request, PriceOrderItem(prod = kit, qty = 1))
+  } 
+  
+  impl func amount(request: PriceRequest, item: PriceOrderItem): Future[SalesPrice] = {
+    let ps <- prices.oneByOne{p => p.price.amount(request, PriceOrderItem(prod = p.prod, qty = p.qty*item.qty, rentPeriod = item.rentPeriod))}
+    let basePrice = SalesPrice.sum(ps)
+    if (let rule) rule.applyMods(model.rounding, request, item, basePrice)
+    else basePrice
+  }
+  
+  impl func rentPrices(request: PriceRequest): Future[[DurPrice]?] = {
+    let pss <- prices.filter(price.is[IPriceRent])!.oneByOne{p => 
+      let rentPrices <- p.price.as[IPriceRent]!.rentPrices(request)
+      (price = p, rentPrices)
+    }
+    let pss1 = pss.first.rentPrices.flatMap {ps =>
+      if (pss.all(_.rentPrices.exists(_.dur == ps.dur))) {
+        let sps: [SalesPrice] = pss.map(_.rentPrices.find(_.dur == ps.dur)!.price * _.price.qty)
+        let p: SalesPrice = SalesPrice.sum(sps)
+        [DurPrice(
+          unit = ps.unit, dur = ps.dur
+          price = p
+        )]
+      }
+    }
+    if (let rule) rule.applyMods(model.rounding, request, kit, pss1)
+    else pss1
+  }
+  override func has(type: PriceType): Bool = type == this.type
+} 
+
+class KitItemPrice {
+  field prod: IBaseProduct
+  field price: IPrice {
+    available(Inline)
+  }
+  field qty: UQty
+}
+
+/*entity KitPriceModel extends IDynamicPriceModel with NewEngine {
+  impl func title = "Kit Price Model"
+  impl func priority: Dec[8]? = 0.5
+  impl ref field start: Date = now
+  impl ref field end: Date?
+  field cachePrices: Bool = true
+  field rounding: Rounding? = Floor()
+  field discount: Percent[2]? {
+    validate = if (discount > 1.0000) "Discount cannot be more than 100%"
+  }
+  impl func price(level: IPriceLevel, type: PriceType, product: IBaseProduct): IPrice? = {
+    if (let kit = product.as[IKit], let prices = calcKitPrices(level, type, kit)){
+      let cache = cache(level, kit)
+      if (!cache.computed && cachePrices) {
+        cache.recalc
+      }
+      KitPrice(model = this, level = level, type = type, cache = cache, prices = prices, discount = discount.noUnit)
+    }
+  }
+  system field caches: [KitPriceCache]? inline by model {
+    availableFor = Overall
+    touchCascade = false
+  }
+  impl view form = nav {
+    grid{
+      row {start end}
+      levels
+      discount
+      rounding
+      cachePrices
+    }
+    pmNavButtons
+  }
+  func cache(level: IPriceLevel, kit: IKit): KitPriceCache = {
+    caches.find(ch => ch.kit == kit && ch.level == level)
+        .alt(KitPriceCache(kit = kit, model = this, level = level).save)
+  }
+  back func calcKitPrices(level: IPriceLevel, type: PriceType, kit: IKit): [KitItemPrice]? = {
+    let prices = kit.products.toSeq.map {i =>
+      if (let p = vendor.price(level, type, i.#0)) {
+        KitItemPrice(prod = i.#0, price = p, qty = i.#1)
+      }
+    }
+    if (prices.all(_)) {
+      prices.map(_!)
+    }
+  }
+  impl event onSave = {
+    if (updated(cachePrices) && !cachePrices) {
+      caches*.delete
+    }
+  }
+}
+
+inline entity KitPriceCache  {
+  field level: IPriceLevel
+  field kit: IKit by kitPrices {
+    touchCascade = false
+  }
+  field model: KitPriceModel by caches {
+    touchCascade = false
+  }
+  
+  field computed: Bool
+  field salesPrice: SalesPrice = SalesPrice()
+  field rentPrices: [DurPrice]?
+  func recalc = {
+    computed = false
+    save
+    if (model.cachePrices) {
+      UpdateKitPriceJob(model = model, level = level, kit = kit).enqueue
+    }
+  }
+  back func request = PriceRequest(currency = model.currency, inclGst = model.vendor.pricesIncludingGst, level = model.mainPriceLevel)
+  back func calcSalesPrice: Future[SalesPrice] = if (let prices = model.calcKitPrices(level, Sales, kit)) {
+    let salesPs: [SalesPrice] <- prices.oneByOne{p => p.price.amount(request, PriceOrderItem(prod = p.prod, qty = p.qty))}
+    SalesPrice.sum(salesPs).mul((1.0000 - model.discount).positive).round(model.rounding)
+  } else {
+    SalesPrice()
+  }
+  
+  back func calcRentPrices: Future[[DurPrice]?] = if (let prices = model.calcKitPrices(level, Rent, kit)) {
+    let pss <- prices.filter(price.is[IPriceRent])!.oneByOne{p => 
+      let rentPrices <- p.price.as[IPriceRent]!.rentPrices(request)
+      (price = p, rentPrices)
+    }
+    pss.first.rentPrices.flatMap {ps =>
+      if (pss.all(_.rentPrices.exists(_.dur == ps.dur))) {
+        let sps: [SalesPrice] = pss.map(_.rentPrices.find(_.dur == ps.dur)!.price * _.price.qty)
+        let p: SalesPrice = SalesPrice.sum(sps) * (1.0000 - model.discount).positive
+        [DurPrice(
+          unit = ps.unit, dur = ps.dur
+          price = p.round(model.rounding)
+        )]
+      }
+    }
+  } 
+}
+
+class UpdateKitPriceJob extends SystemJob {
+  field level: IPriceLevel
+  field model: KitPriceModel
+  field kit: IKit
+  impl func service = PriceService
+  
+  impl func do = {
+    let cache = model.cache(level, kit)
+    
+    let newSalesPrice <- cache.calcSalesPrice
+    cache.salesPrice = newSalesPrice
+    
+    let newRentPrices <- cache.calcRentPrices
+    cache.rentPrices = newRentPrices
+    
+    cache.computed = true
+    cache.save
+  }
+}
+
+extend trait IKit {
+  system field kitPrices: [KitPriceCache]? inline by kit {
+    touchCascade = false
+  }
+  impl event onSave = {
+    if (touched) {
+      kitPrices*.recalc
+    }
+  }
+}
+ 
+class KitPrice extends IPriceSalesRent {
+  impl field model: KitPriceModel
+  field cache: KitPriceCache inline
+  func kit: IKit = cache.kit
+  field prices: [KitItemPrice]
+  field discount: Dec[4]?
+  field type: PriceType
+  field level: IPriceLevel
+  impl func levels = [level]
+  impl func priceRent = prices*.price*.as[IPriceRent].first!
+  
+  impl func priceType: PriceType = type
+  impl func product = kit
+  impl func salesPrice(request: PriceRequest): Future[SalesPrice] = {
+    if (cache.computed) cache.salesPrice
+    else cache.calcSalesPrice
+  } 
+  
+  impl func amount(request: PriceRequest, item: PriceOrderItem): Future[SalesPrice] = {
+    let ps <- prices.oneByOne{p => p.price.amount(request, PriceOrderItem(prod = p.prod, qty = p.qty*item.qty, rentPeriod = item.rentPeriod))}
+    SalesPrice.sum(ps).mul((1.0000 - discount).positive).round(model.rounding)
+  }
+  
+  impl func rentPrices(request: PriceRequest): Future[[DurPrice]?] = {
+    if (cache.computed) cache.rentPrices
+    else cache.calcRentPrices
+  }
+  override func has(type: PriceType): Bool = type == this.type
+} 
+
+class KitItemPrice {
+  field prod: IBaseProduct
+  field price: IPrice {
+    available(Inline)
+  }
+  field qty: UQty
+}*/

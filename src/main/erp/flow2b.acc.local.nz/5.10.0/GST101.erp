@@ -1,0 +1,71 @@
+inline entity GST101Y17 {
+  system field gstReturn: GstTaxReturn by gst101
+  
+  field sales: Sales
+  field purchases: Purchases
+  class Sales {
+    field f5: Money[NZD]? {label = "5: Total sales and income for the period (including GST and any zero-rated supplies)"} 
+    field f6: Money[NZD]? {label = "6: Zero-rated supplies included in Box 5"} 
+    compute f7: Money[NZD]? {
+      label = "7: Gst base"
+      value = f5 - f6
+    }
+    compute f8: Money[NZD]? {
+      label = "8: Gst"
+      value = f7*3/23
+    }
+    field f9: Money[NZD]? {label = "9: Adjustments from your calculation sheet"} 
+    compute f10: Money[NZD]? {
+      label = "10: Total GST collected"
+      value = f8 + f9
+    }
+  }
+  class Purchases {
+    field f11: Money[NZD]? {label = "11: Total purchases and expenses (including GST) excluding any imported goods"} 
+    compute f12: Money[NZD]? {
+      label = "12: Gst"
+      value = f11*3/23
+    }
+    field f13: Money[NZD]? {label = "13: Credit adjustments from your calculation sheet"} 
+    compute f14: Money[NZD]? {
+      label = "10: Total GST credit"
+      value = f12 + f13
+    }
+  }
+  system compute gstToPay: Money[NZD]? = sales.f10 - purchases.f14
+  compute f15: Money[NZD]? {
+    label = "15: Total GST"
+    value = gstToPay.abs
+  } 
+  compute f15PR: RefundPay {
+    label = "15"
+    value = if (gstToPay < 0) Refund else TaxToPay
+  }
+  system field hasErrors: Bool
+
+  back func calc(): Future[Void] = {
+    let le = gstReturn.legalEntity
+    let p = gstReturn.period
+    
+    hasErrors = Ledger.between(p.start, p.end)*.items.exists(_.legalEntity == le && _.subAccount.subType == Error).result.get
+    let rateTaxes <- GstReport(legalEntity = le, start = p.start, end = p.end).rateTaxes
+    
+    rateTaxes.foreach{i => 
+      if (let rate = i.rate) {
+        if (rate && rate != 0.15) {
+          throw "Unknown rate $rate"
+        }
+        if (i.category == SalesNotes || i.category == Sales) {
+          sales.f5 += i.taxedAmount + i.tax
+          if (!rate) sales.f6 += i.taxedAmount + i.tax
+        } else if (i.category == PurchaseNotes || i.category == Purchases) {
+          if (rate) purchases.f11 -= i.taxedAmount + i.tax
+        } else {
+          throw "Unknown category $(i.category)"
+        }
+      }
+    }
+  }
+
+}
+

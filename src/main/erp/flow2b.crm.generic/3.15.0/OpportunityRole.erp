@@ -1,0 +1,25 @@
+enum OpportunityRole {
+ 
+}
+
+inline entity OpportunityPersonRole {
+  field opportunity: IOpportunity
+  field companyPerson: CompanyPerson inline by opportunityRoles {
+    init = {
+      new.company =? try? opportunity.actor!.as[Company]!
+    }
+  }
+  field role: OpportunityRole?
+  field notes: Text? {
+    visible = role.nonEmpty
+  }
+  impl view form = nav(canDelete = false){grid(labels = None) {
+    role
+    companyPerson.form.removeField(company)
+    notes
+  }}
+}
+
+extend entity CompanyPerson {
+  field opportunityRoles: [OpportunityPersonRole]? inline by companyPerson {views = []}
+}

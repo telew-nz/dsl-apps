@@ -1,0 +1,89 @@
+/*class PaymentsReprocessJob extends SystemJob {
+  impl func service = FinanceService
+  field page: Int?
+  impl back func do = {
+    let payments = Payment.all.filter(!debtCounterparty && bankData.uploaded && !reconAmount && !source && !reasons && !manLinks)
+      .sortBy(date, id)
+      .result.get
+      .drop(page*20).first(20)
+    if (payments.count == 20) {
+      PaymentsReprocessJob(page = page + 1).enqueue
+    }
+    payments.foreach(reprocessData)
+  }
+}
+
+class PaymentReprocessJob extends SystemJob {
+  impl func service = FinanceService
+  field payment: Payment
+  impl back func do = {
+    payment.reprocessData
+  }
+}*/
+
+class ActorPaymentReprocessJob extends SystemJob {
+  impl func service = FinanceService
+  field actor: LegalEntity
+  impl back func do = {
+    Payment.all.filter(!debtCounterparty && bankData.uploaded && !reconAmount && !source && !reasons && !manLinks)
+      .foreach {p =>
+         if (p.account.isCounterparty(p, p.bankData, actor)) {
+           p.debtCounterparty = actor
+           p.save
+         }
+      }
+  }
+}
+
+class PaymentMethodReprocessJob extends SystemJob {
+  impl func service = FinanceService
+  field method: PMBankAccount
+  impl back func do = {
+    Payment.all.filter(!debtCounterparty && bankData.uploaded && !reconAmount && !source && !reasons && !manLinks)
+      .foreach {p =>
+         if (let a = p.bankData.thierAccount.trim where a.length > 3 && method.number =%= a) {
+           p.debtCounterparty = method.legalEntity
+           p.paymentMethod = method
+           p.save
+         }
+      }
+  }
+}
+
+extend trait Payment extends BankStatementItem {
+  //back func reprocessData: Bool
+}
+
+extend entity IncomingPayment {
+  /*impl back func reprocessData: Bool = {
+    if (!this.payer) {
+      let paymentMethod = account.paymentMethod(this, bankData)
+      if (let cp = paymentMethod?.legalEntity.or(account.counterparty(this, bankData, false))) {
+        this.payer = cp
+        this.paymentMethod = paymentMethod
+        save 
+        true
+      }
+    }
+  }*/
+  impl func stmAmount = amount.noUnit
+  impl func stmCurrency: Currency? = currency
+  impl func data(account: FinAccount): BankData = bankData
+}
+
+extend entity OutgoingPayment {
+  /*impl back func reprocessData: Bool = {
+    if (!this.payee) {
+      let paymentMethod = account.paymentMethod(this, bankData)
+      if (let cp = paymentMethod?.legalEntity.or(account.counterparty(this, bankData, false))) {
+        this.payee = cp
+        this.paymentMethod = paymentMethod
+        save 
+        true
+      }
+    }
+  }*/
+  impl func stmAmount = -amount.noUnit
+  impl func stmCurrency: Currency? = currency
+  impl func data(account: FinAccount): BankData = bankData
+}

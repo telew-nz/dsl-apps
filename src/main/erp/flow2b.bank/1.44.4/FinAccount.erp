@@ -1,0 +1,8 @@
+extend trait FinAccount {
+  func isPrecise: Bool = false
+}
+
+extend trait ICardAccount {
+  impl func isPrecise: Bool = true
+
+}

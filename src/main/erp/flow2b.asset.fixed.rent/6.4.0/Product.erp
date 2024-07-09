@@ -1,0 +1,35 @@
+extend trait IBaseProduct {
+  var rentStatus: ProdRentStatus
+  extend view statusView = rentStatus
+}
+extend trait ISuperProduct {
+  field rentStatus: ProdRentStatus {
+    views = []
+    default = NotForRent
+  }
+}
+extend trait IIntermediateProduct {
+  field subRentStatus: ProdRentStatus?
+  compute rentStatus: ProdRentStatus {
+    views = []
+    value = subRentStatus.alt(getParent.rentStatus)
+    update = {
+      subRentStatus = if (new != getParent.rentStatus) new
+    }
+  }
+}
+extend trait IComplexSubProduct {
+  field subRentStatus: ProdRentStatus?
+  compute rentStatus: ProdRentStatus {
+    views = []
+    value = subRentStatus.alt(getParent.rentStatus)
+    update = {
+      subRentStatus = if (new != getParent.rentStatus) new
+    }
+  }
+}
+
+enum ProdRentStatus(forRent: Bool) {
+  case ForRent(forRent = true) {background = "#efd"}
+  case NotForRent(forRent = false) {background = "#ecd"}
+}

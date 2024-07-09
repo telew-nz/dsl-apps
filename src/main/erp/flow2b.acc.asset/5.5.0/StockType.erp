@@ -1,0 +1,5 @@
+extend enum StockType {
+  case Asset(obj = LFixedAssets, acc = LedgerAccount.FixedAssets) {
+    background = "#c4daa3"
+  }
+}

@@ -1,0 +1,26 @@
+extend role Salesperson {
+  entity OpportunitySource = readOnly
+  menu Sales {
+    trait IOpportunity
+  }
+  extend view dashboard = IOpportunity.all.filter(active && isForCurrent(Salesperson)).sortBy(stage.desc, touchedOn) >> 
+    nav(limit = 5, label = "Opportunities", more = IOpportunity.Report(salesperson = Person.current, status = [OpportunityStatus.Open]).list.open) {
+      list{}
+    }
+}
+
+extend role SalesManager {
+  entity OpportunitySource = readOnly
+  menu Sales {
+    trait IOpportunity
+  }
+}
+
+role Marketer {
+  entity OpportunitySource = readWrite
+  menu Marketing {
+    entity OpportunitySource
+    report SourceEfficiency
+  }
+  view dashboard = row{}
+}

@@ -1,0 +1,40 @@
+trait Event extends HasTasks {
+  func owner: Person
+  func allParticipants: [Participant]?
+  func requiredParticipants: [Participant]?
+  func start: Date[minute]
+  func end: Date[minute]
+  func contains(participant: Participant?): Bool = {
+    !participant || allParticipants.contains(participant!)
+  }
+  
+  compute clashes: [Event]? = {
+    Event.all.filter( 
+      _.start < this.end && _.end > this.start && _ != this &&
+      _.requiredParticipants.intersect(this.requiredParticipants)
+    )
+  }
+  compute periodText: String = {
+    //if (start.start(of = day) == end.start(of = day)) "$start – $(end.as[Date[minute, hour]])" else "$start\n$end"
+    "$start – $end"  
+  }
+}
+
+trait Participant extends ScheduleAssignee {
+  func autoAccept: Bool
+}
+extend entity Person extends Participant {
+  func autoAccept: Bool = !login
+  extend view form = schedule
+}
+
+entity EventLocation extends Participant {
+  field title: String
+  field address: Address?
+  func autoAccept: Bool = true
+  view form = nav{grid{
+    title
+    address
+    schedule
+  }}
+}

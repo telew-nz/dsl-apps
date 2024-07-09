@@ -1,0 +1,13 @@
+extend trait CashMovement {
+  const field uploads: [BankStatementUpload]? by payments {label = "Bank Upload"}  
+}
+
+extend entity IncomingPayment {
+  extend view form = uploads
+}
+extend entity OutgoingPayment {
+  extend view form = uploads
+}
+extend entity CashTransfer {
+  extend view form = uploads
+}

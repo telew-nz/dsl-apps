@@ -1,0 +1,44 @@
+trait IIntermediateProduct extends IBaseProduct {
+  plural = "Products"
+  singular = "Product"
+  width = 0.45
+  
+  field subRentStatus: ProdRentStatus?
+  impl compute rentStatus: ProdRentStatus {
+    views = []
+    value = subRentStatus.alt(getParent.rentStatus)
+    update = {
+      subRentStatus = if (new != getParent.rentStatus) new
+    }
+  }
+  impl func parent: IBaseProduct? = getParent
+  func getParent: IBaseProduct
+  impl func superProduct: ISuperProduct = getParent.superProduct
+  impl func subProducts: [ISubProduct]? = child*.subProducts
+  impl func trackItems = superProduct.trackItems
+  impl func isValid: Bool = superProduct.isValid
+  impl func isTangible: Bool = superProduct.isTangible  
+  func weightInGrams: Number? = superProduct.weightInGrams
+  impl func description: Text? = superProduct.description
+  impl ref compute sku: String = getParent.sku + "." + skuN
+  const field skuN: Int? = increment(getParent.skuGen)
+  func obsolete: Bool = superProduct.obsolete
+  impl func unit: ProductUnit = superProduct.unit
+  impl func units = superProduct.units
+  impl func alwaysAvailable: Bool = superProduct.alwaysAvailable 
+  impl func weightSize = getParent.weightSize
+  impl func productItems: [ProductItem]? = subProducts*.productItems
+  impl func kits: [IKit]? = subProducts*.kits
+  impl func expenseType = superProduct.expenseType
+  impl func revenueType = superProduct.revenueType
+  
+  impl func collectPhotos: [Image]? = {
+    if (let p = collectPhotosDown) p
+    else collectPhotosUp
+  }
+  impl func collectPhotosUp: [Image]? = if (let p = photos) p else getParent.collectPhotosUp
+  impl func collectPhotosDown: [Image]? = if (let p = photos) p else child*.collectPhotosDown
+  impl func variationPhotos = if (let p = collectPhotosDown) p else getParent.variationPhotos
+  
+  impl event onSave = {}
+}

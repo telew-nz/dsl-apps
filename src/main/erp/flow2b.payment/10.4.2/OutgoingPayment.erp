@@ -1,0 +1,99 @@
+entity OutgoingPayment extends Payment {
+  background = "#d68400"
+  func legalEntity = payer
+  func srcAccount: FinanceAccount? = account
+  func dstAccount: FinanceAccount? = null
+ 
+  compute srcAmount: Number? {
+    value = -accountAmountEditor
+    update = {accountAmountEditor = -new!}
+  }
+  compute dstAmount: Number? {
+    value = 0
+    update = {}
+  }
+  compute dstBankData: BankData? {
+    value = null
+    update = {}
+  }
+  compute srcBankData: BankData?{
+    value = bankData
+    update = {bankData =? new}
+  }
+  func startingBalance: Money[currency]? = expenses*.amount.sum - amount
+  compute unreconciledAmount: Money[currency]? = -balance
+    
+  func title = "$number $(date.date) $payee"
+  func number: String = "OP" + n 
+  func entityNumbers = [number]
+  
+  compute debtCounterparty: LegalEntity? {
+    value = payee
+    update = {
+      if (let n = new) this.payee = n
+    }
+  }
+  ref field payer: LegalEntity {
+    available(Ref).with(accounts)
+    default =? (try? origin!.legalEntity).or(LegalEntity.ours.onlyOne)
+    from = LegalEntity.ours
+    update = {
+      this.account =? new.accounts.onlyOne
+    }
+  }
+  list field expenses: [PaymentExpense]? inline by payment
+  ref field payee: LegalEntity? = try? origin!.debtCounterparty!
+  func isTheir = payee?.isTheir
+  func isIncoming: Bool = false
+  event onSave = {
+    credits*.credit*.touch
+  }  
+  list compute recRefs: [Entity]? = expenses*.expense + credits*.credit + debits*.debit
+  func origins: [Setoff]? = credits
+  func returns: [Setoff]? = debits
+  object view list = OutgoingPayment.all >> nav{list{grid(labels = None, width = 1.2){
+    row{number, date.as[Date[day]]!, payee, account, space, recRefs >> list(frame = false){_ >> field(title = title)} }
+    row{stateView >> field(width = 0.6), -amount >> field(width = 0.2), space(width = 0.4)}
+  }}}
+  func mainLedgers: Future[[Ledger]?] = {
+    if (let exs = expenses) {
+	  let es <- (exs*.claimableExpense + exs*.nonClaimableExpense).allCompleted
+      cashLedgers(if (let e = exs*.amount.sum) [CashFlowAmount(category = GeneralExpenses, amount = e)]) + es.mapOpt(_) + exs*.gstLedger
+    } else cashLedgers([])
+  }
+  func isPurchase = true
+
+  view form = nav{grid{
+      number
+      date
+      stateView >> field(label = "State")
+      unreconciledAmount
+      payer
+      payee
+      account
+      
+      amount >> field(canEditUnit = true)
+      accountAmount
+      expenses >> list {grid {
+        row{expense amount }
+        row{claimable gstEditor}
+        currentAccount >> field(label = "Current Account for Non-Claimable Percentage", placeholder = "Current Account")
+      }}
+      credits >> field(label = "Origins" singular = "Origin")
+      debits >> field(label = "Returns" singular = "Return")
+      bankData
+       
+    }
+    button("Convert to Transfer", visible = !origin) {
+      let from = account
+      let outcome = amount
+      let d = bankData
+      let r = convertTo(CashTransfer)
+      r.srcBankData = d
+      r.from = from
+      r.outcome = outcome
+    }   
+    generalLedgerButton
+  }
+  view stateView = x{reconcileState}
+}

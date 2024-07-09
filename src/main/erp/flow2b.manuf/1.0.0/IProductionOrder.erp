@@ -1,0 +1,79 @@
+trait IProductionOrder extends Entity with Journal with IBaseOutgoingDelivery {
+  plural = "Production Orders"
+  object field gen: Int?
+  const ref field n: Int? = increment(IProductionOrder.gen)
+  func number: String
+  ref field dispatchDate: Date {
+    label = "Production Start"
+    default = now
+    update = {
+      if (new > deliveryDate) deliveryDate = new
+    }
+  } 
+  ref field deliveryDate: Date {
+    label = "Production End"
+    default = now
+    validate = if (deliveryDate < dispatchDate) "Delivery Date should be more or equal Dispatch Date"
+    update = {
+      if (new < dispatchDate) dispatchDate = new
+    }
+  }
+  field legalEntity: OurLegalEntity =? onlyOne
+  field status: ProductionOrderStatus {
+    default = Planned
+    update = {
+      if (new == InProgress) dispatchDate = now
+      else if (new == Produced) {        
+        deliveryDate = now
+        if (old != InProgress) dispatchDate = deliveryDate
+      }
+    }
+  }
+  field factory: Factory =? onlyOne
+  
+  func journalDate = dispatchDate
+  
+  func method: IMethod
+  func qty: Qty[method.unit]
+  func qtyK: Dec[8] = qty.as[Dec[8]]!/method.qty
+  compute mainProduct { 
+    label = "Product"
+    value = method.mainProduct
+  }
+  func materialStore: IStore = factory
+  func outputStore: IStore = factory
+  
+  func deliverySupplier = legalEntity.legalEntity
+  func deliveryReceiver = legalEntity.legalEntity
+  func deliverySrc = materialStore
+  func deliveryDst = outputStore
+  func deliveryStatus = status.deliveryStatus
+  
+  register lWorkStart: LWorkInProgress? = if (status != Planned && status != Canceled) {
+    LWorkInProgress(journal = this, date = dispatchDate)
+  }
+  register lMaterials: [LInventory]? = if (status != Planned && status != Canceled) {
+    method.materials.map{item =>
+      LInventory(
+        journal = this, date = dispatchDate, product = item.material.product, 
+        isDebit = false, qty = item.baseQty*qtyK, output = lWorkStart)
+    }
+  }
+  register lWorkEnd: LWorkInProgress? = if (status == Produced) {
+    LWorkInProgress(journal = this, date = deliveryDate, complete = true)
+  }
+  
+  
+  report Report {
+    view list = IProductionOrder.all >> nav{table{
+      status number factory mainProduct qty dispatchDate deliveryDate
+    }}
+  }
+}
+
+enum ProductionOrderStatus(deliveryStatus: DeliveryStatus) {
+  case Planned(deliveryStatus = DeliveryStatus.Planned) {background = "#ed9"}
+  case InProgress(deliveryStatus = InTransit) {background = "#dea"}
+  case Produced(deliveryStatus = DeliveryStatus.Delivered) {color = "white", background = "#090"}
+  case Canceled(deliveryStatus = DeliveryStatus.Canceled) {background = "#ddd"}
+}

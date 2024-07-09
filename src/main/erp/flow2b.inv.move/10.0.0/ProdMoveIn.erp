@@ -1,0 +1,70 @@
+trait IProdMoveIn extends IProdMove {
+  plural = "Incoming Deliveries"
+  func moveInDate: Date
+  func moveInState: ProdMoveState
+  func moveInLE: OurLegalEntity
+  func moveInStore: IStore
+  func moveInItems: [IProdMoveItemIn]?
+  
+  impl func isProdMoveIn: Bool = true
+  impl func moveItems: [IProdMoveItem]? = moveInItems
+  
+  
+  func moveInBeforeInit = {
+    let d1 = moveInStore.initialDate(moveInLE)
+    (d1 && d1! > moveInDate) 
+  }
+  
+  report Report {
+    field activeOnly = true
+    field storeOperative: User? {
+      default = User.current.filter(is(StoreOperative))
+      from = User.all.filter(is(StoreOperative))
+    }
+    impl view list = IProdMoveIn.all.filter(isFor(storeOperative, StoreOperative) && (!activeOnly || moveInState.active)) >> nav{list(canAdd = false){}}
+  }
+}
+
+interface IProdMoveItemIn extends IProdMoveItem {
+  func prodMoveIn: IProdMoveIn
+  func moveInStockType: StockType
+  impl func prodMove: IProdMove = prodMoveIn
+  
+  impl func needProductItems: Bool = prodMoveIn.moveInState == Complete
+  
+  register inStocks: [ProdReg]? {
+    value = if (prodMoveIn.moveInState != Canceled && moveItemActive) {
+      product.tangibleProductQtys(baseQty).mapOpt(inStock(_.product, _.qty))
+    }
+  }
+  
+  register inStockItems: [ProdItemReg]? {
+    value = if(prodMoveIn.moveInState != Canceled && moveItemActive) {
+      productItems.map (
+        ProdItemReg(
+          item = _
+          sort = prodMoveIn.moveInState.sort
+          date = prodMoveIn.moveInDate
+          priorityDate = prodMoveIn.moveInDate
+          newStockType = moveInStockType
+          doc = prodMoveIn, docItem = moveDocItem
+          qty = -1 
+        )
+      )
+    }
+  }
+  
+  func inStock(product: IProduct, baseQty: UQty): ProdReg? = {
+    ProdReg(
+      legalEntity = prodMoveIn.moveInLE
+      store = prodMoveIn.moveInStore
+      stockType = moveInStockType 
+      product = product
+      doc = prodMoveIn, docItem = moveDocItem
+      date = prodMoveIn.moveInDate
+      priorityDate = prodMoveIn.moveInDate
+      sort = prodMoveIn.moveInState.sort
+      qty = -baseQty
+    )
+  }
+}

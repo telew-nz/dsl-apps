@@ -1,0 +1,34 @@
+report ProdMovement {
+  plural = "Product Movements"
+  field superProduct: ISuperProduct? {from = ISuperProduct.all.filter(isTangible)}
+  field product: IProduct? {from = IProduct.all.filter(isTangible)}
+  field legalEntity: OurLegalEntity?
+  field store: IStore?
+  field from: Date?
+  field to: Date?
+  field stockType: StockType?
+  
+  view list = ProdReg.all.filter(
+       product.superProduct ==? this.superProduct
+    && product ==? this.product 
+    && legalEntity ==? this.legalEntity 
+    && store ==? this.store 
+    && stockType ==? this.stockType 
+    && this.from ?<= date && date <=? this.to
+  ).sortBy(sort.desc, date.desc) >> nav(background = "#2e8e67"){table(mode = Static, action = doc.form.open, mode = Action){
+    doc.title >> field (label = "Document", width = 0.3) , date, product, 
+    y(label = "Store", margin = None, width = 0.3) {legalEntity store},
+    stockType,
+    group(label = "Change") {
+      factualChange, reservedQty, expectedQty, quotedQty
+    }
+    group(label = "Stock") {
+      fact
+      reserve 
+      available
+      expectation
+      outlook
+      quotes
+    }
+  }}
+}

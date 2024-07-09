@@ -1,0 +1,4 @@
+enum FreightCompany(trackingUrl: (number: String) => Url?) {
+  case Other(trackingUrl = "")
+}
+

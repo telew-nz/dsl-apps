@@ -1,0 +1,173 @@
+entity PurchaseOrder extends Order with IPurchaseOrder {
+  icon = "shopping-cart"
+  background = "#a73e6c"
+  impl func orderCustomer = customer
+  impl func orderVendor = vendor
+  func counterparty = vendor?.legalEntity
+  impl func deliveryCounterparty = vendor?.legalEntity
+  impl func activeRoles = {
+    if (active) [BusAdmin]
+  }
+  impl field deliveries: [IPurchaseDelivery] inline by purchaseOrders {
+    default = [PurchaseDelivery(primary = true, purchaseOrders = [this])]
+    visible = preEntered
+    from = IPurchaseDelivery.all.filter(i => i.legalEntity == legalEntity) 
+  }
+  compute pickUp: ILocation? = deliveries*.dlvPrePath*.pathSrc.onlyOne
+  compute pickUpText {
+    availableFor = List
+    value = pickUp?.locationAddress?.title
+  }
+  impl ref field vendor: Vendor? by purchaseOrders {
+    available(Ref).with(debtBalance, allowance, accountTerms)
+    update = {
+      this.currency =? try? vendor?.legalEntity?.currency.alt(customer.getCurrency)
+      deliveries.foreach(_.supplier = new?.defaultSupplier)
+      payee = new?.defaultPayee
+      items*.orderDlvItem*.updateGst()
+    }
+    validate = if (back) if (!vendor && !calcInstant) "Vendor cannot be empty for incomplete orders"
+  }
+  override ref field customer: OurLegalEntity {
+    default =? onlyOne
+    update = {
+      items*.orderDlvItem*.updateGst()
+    }
+  }
+  field sPayee: Vendor? 
+  impl ref compute payee: Vendor? {
+    available(Ref).with(debtBalance, allowance, accountTerms).field(legalEntity, with(legalInfo))
+    value = sPayee.or(vendor)
+    update = {
+      sPayee = if (vendor != new) new
+    }
+  }
+  impl func debtCounterparty: LegalEntity? = payee?.legalEntity
+  
+  impl field allItems: [IPurchaseItem]? inline by order 
+  impl compute items: [IPurchaseItem]? {
+    value = allItems.filter(active || wasCanceled)
+    update = {
+      allItems = new + allItems.filter(!_.active && !_.wasCanceled)
+    }
+    init = {
+      new.order = _
+    }
+    visible = preEntered
+  }
+  impl compute preEntered = try? customer
+  impl ref compute number: String = "PO" + n.format(3, 0)
+  impl func entityNumbers: [String]? = [number] + referenceNumber.toSeq
+  impl func title = if (let r = referenceNumber) "$number ($r) $vendor" else "$number $vendor"
+  impl func legalEntity: OurLegalEntity = customer
+  func hasGoods: Bool = items*.as[IPurchaseItem with OrderProductItem].exists(product.isTangible)
+  impl func addItem(prod: ISubProduct, qty: UQty, productItems: [ProductItem]?) = {
+    let pi = PurchaseItem(order = this)
+    let di = pi.deliveryItem
+    di.silentUpdate(product, prod)
+    di.silentUpdate(unit, qty.unit?.as[ProductUnit]!)
+    di.qty = qty
+    di.productItems = productItems
+    pi
+  }
+ 
+  
+  //Views
+  impl view form = nav(onBarcode = if (ui.edit) this.procBarcode(barcode)){tabs {
+      posView
+      grid(labels = Top, width = 1.2, label = "Deliveries"){
+        deliveries >> list{nav{
+          inline{deliveryHeader}
+          generalLedgerButton
+        }}
+        extension("deliveries")
+      }
+      grid(labels = Top, width = 1.2, label = "More"){ 
+	    extension
+      }
+      extension("tabs")
+    }
+    invoiceButtons
+    //button("Update Prices") {updatePrices()}
+  }
+  
+  view stateView = x {
+    state >> field(editMode = AlwaysEdit)
+    paymentState 
+    overdueState
+    deliveryState
+    deliveryOverdueState
+    dropShipState
+  }
+  
+  compute pd {
+    value = deliveries.onlyOne?.as[PurchaseDelivery]
+    update = {}
+  }
+  
+  view posView = grid (labels = Top, label = "Main", width = 1.2) {
+    issuesView
+    row {number >> field(noTab) referenceNumber >> field(noTab) date >> field(noTab, label = "Order Date")}
+    x{stateView >> field(stretch = 0) acceptView }
+    
+    total >> field(canEditUnit = true)  
+    row {vendor  customer pd!.store >> field(visible = pd, label = "Store")} 
+    row(labels = false) {
+      pd!.shipping >> field(visible = pd && vendor, frame = false)
+    }
+    row {
+      payee >> field(visible = ui.edit || sPayee) 
+      terms 
+      pd!.deliveryDate >> field(noTab, visible = pd) 
+    } 
+    row {
+      pd!.retStore >> field(visible = pd && pd!.hasProgress) 
+      space
+      pd!.retDispatchDate >> field(noTab, visible = pd && pd!.hasProgress) 
+    } 
+    row(labels = false) {
+      pd!.retShipping >> field(visible = pd && vendor && pd!.hasProgress, frame = false)
+    }
+    extension("delivery")
+    
+    extension
+    items >> list(mode = EditSelect) {
+      form 
+    }
+    unpaidAmount >> field(fontStyle = H2, label = "Amount to Pay")  
+    paymentsView
+    
+    invoicesView
+  } 
+  
+  report Report {
+    field superProduct: ISuperProduct?
+    field product: IProduct?
+    field vendor: LegalEntity? {auto = true}
+    field inventoryOnly: Bool
+    
+    impl view list = PurchaseOrder.all.filter(
+      (!inventoryOnly || hasGoods)
+      && ((!this.product && !this.superProduct) || items*.as[IPurchaseItem with OrderProductItem].exists(product ==? this.product && product.superProduct ==? this.superProduct))
+    ) >> nav{list{grid(labels = None){row{
+      itemImage >> field(miniature = List, width = 0.15)
+      dash >> field(width = 0.85)
+    }}}}
+  }
+  
+  impl view ref = y {
+    x{title total date}
+    stateView 
+  }
+  impl view dash = grid(labels = None) {
+    row {
+      y {
+        date
+        x{title total}
+        stateView
+      }
+      pickUpText
+    }
+    refItems
+  }
+}

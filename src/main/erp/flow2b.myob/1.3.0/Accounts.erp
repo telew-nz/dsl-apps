@@ -1,0 +1,56 @@
+object AccountsImport extends Entity with SheetImportSchema {
+  impl func title = "MYOB: Accounts Import"
+  
+  impl back func process(file: File, data: [String?]?) = {
+    data.drop(9)
+      .takeWhile(_)
+      .map(split(rules = CSV))
+      .foreach{d =>
+        let accNum = d("A").toUNum!
+        MyobAccount(number = accNum, title = d("B")!).saveBy(number)
+      }
+  } 
+  
+  impl func header = 'Account Number,Account Name,Header,Balance,Account Type,Last Cheque Number,GST Code,Inactive Account,AccountantLink Code,B/Account Number,B/Account Name,Description,Classification for Statement of Cash Flow,Subtotal Header Accounts'
+  impl func headerRow = 2
+}
+
+entity AccountsListImport extends Entity with SheetImportSchema {
+  impl func title = "MYOB: Accounts List Import: $legalEntity"
+  ref field legalEntity: OurLegalEntity =? onlyOne
+  
+  impl back func process(file: File, data: [String?]?) = {
+    data.drop(9)
+      .takeWhile(_)
+      .map(split(rules = CSV))
+      .foreach{d =>
+        let accNum = d("A").replace("-", "").toUNum!
+        if (d("C") == "Bank") {
+          BankAccount(
+            legalEntity = legalEntity
+            currency = legalEntity.getCurrency
+            name = d("B")!
+            myobNumber = accNum
+            initBalance = InitBalance(balance = num(d("G")))
+          ).saveBy(myobNumber)
+        }
+        MyobAccount(number = accNum, title = d("B")!, balance = num(d("G"))).saveBy(number)
+      }
+  } 
+  
+  func num(s: String?): Money? = {
+    s.dropSuffix(" ₽").replace(",", ".").replace(" ", "").toNum
+  }
+  impl func header = 'Account No.,Account Name,Type,Dr/Cr,Header/Detail,Level,Balance,GST Code'
+  impl func headerRow = 7
+}
+
+entity MyobAccount {
+  field number: UInt
+  impl field title: String
+  field balance: Money?
+}
+
+extend trait FinAccount {
+  field myobNumber: UInt?
+}

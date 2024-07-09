@@ -1,0 +1,14 @@
+extend entity ProductItem {
+  extend view form = extend("nav") {
+    button("Movements") { 
+      ProdItemMovement(productItem = this).list.open
+	}
+  }
+  
+  compute current: ProdItemReg? {
+    views = []
+    value = ProdItemReg.current.find(item == this)
+    availableFor = All
+  }
+  extend view form = current!.stateView
+}

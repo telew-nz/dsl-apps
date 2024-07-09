@@ -1,0 +1,117 @@
+class DownloadListingsJob extends SystemJob {
+  impl field service: ITrademeIntegration
+  impl func dependsOnRegisters = false
+  impl func do = {
+    let _ <- nextPageSellingItems(number = 1, filter = "All")
+    service.initComplete = true
+    service.save
+  }
+  
+  back func nextPageSellingItems(number: UInt, filter: String): Future[Any] = {
+    let result <- service.https("MyTradeMe/SellingItems/$filter.json").param("page", number).get
+    let page = result.body!.parseJson[SellingPage]
+    let stocktake = if (let store = service.initialDownload?.stocktakeStore) {
+      Stocktake(store = store, stockType = Inventory, legalEntity = service.legalEntity).save
+    }
+    page.list.foreach{i =>
+      DownloadListingJob(service = service, stocktake = stocktake, listingId = i.listingId).enqueueFirst()
+    }
+      
+    
+    if (page.hasNext) {
+      nextPageSellingItems(number + 1, filter)
+    } else {
+      Future(1)
+    }
+  }
+}
+
+class DownloadListingJob extends SystemJob {
+  impl field service: ITrademeIntegration
+  field stocktake: Stocktake?
+  field listingId: Int
+  impl func dependsOnRegisters = false
+  
+  impl func do = {
+    if (!TrademeListing.all.find(l => l.listingId == this.listingId).result.get) {
+      let r <- service.https("Listings/${listingId}.json").get
+      let ld = r.body!.parseJson[ListingDetails]
+      let product = (if (let stocktake) {
+        ld.make(service, stocktake).product
+      } else {
+        ld.make(service)
+      }).as[ISubProduct]!
+
+      product.trademeCategories = [TrademeCategory.all.find(cat => cat.number == ld.category).result.get!]
+      product.save
+      if (!product.trademeListings) {
+        let l = TrademeListing(status = Active, product = product, listingId = listingId,
+                       template = service.initialDownload!.template, qtySold = ld.quantitySold
+                       ).save
+        ld.saveStats(l)
+        l
+      }
+    }
+  }
+}
+
+back class SellingPage extends IPage[SellingItem]  {
+  extFieldNaming = UpperCamelCase
+  impl field list: [SellingItem]?
+}
+
+back class SellingItem {
+  extFieldNaming = UpperCamelCase
+  field listingId: Int
+}
+
+back class ListingDetails extends ESuperProduct[Int] {
+  extFieldNaming = UpperCamelCase
+  field listingId: Int
+  impl field title: String
+  field startPrice: UMoney?
+  field buyNowPrice: UMoney?
+  field startDate: Date {extMap = TrademeDate}
+  field endDate: Date {extMap = TrademeDate}
+  field category: String
+  field quantity: UQty?
+  impl field photos: [TrademePhoto]?
+  field quantitySold: Int?
+  field body: PlainText
+  
+  field bidderAndWatchers: Int?
+  field bidCount: Int?
+  field viewCount: Int?
+  
+  impl func isTangible = true
+  impl func extId = listingId
+  impl func description = body
+  impl func salesPrice = {
+    let p = buyNowPrice.or(startPrice)
+    SalesPrice(regular = p, current = p)
+  }
+  impl func stock = quantity.alt(1)
+  
+  func saveStats(listing: TrademeListing): Void = {
+    listing.views = viewCount.positive
+    listing.watchers = bidderAndWatchers.positive
+    listing.bids = bidCount.positive
+    listing.startDate = startDate
+    listing.endDate = endDate
+    listing.qtySold = quantitySold.positive
+  }
+}
+
+back class TrademePhoto extends EFile[Int] {
+  extFieldNaming = UpperCamelCase
+  field key: Int
+  field value: TrademePhotoSizes
+  
+  impl func extId = key
+  impl func extUrl = value.fullSize
+}
+
+back class TrademePhotoSizes {
+  extFieldNaming = UpperCamelCase
+  field fullSize: Url
+}

@@ -1,0 +1,9 @@
+back object Conversion extends IConversion {
+  func do(version: [Int?]?) = {
+    if (version < [2,14,0]) {
+      Task.all*.updateDashboard
+      Discussion.all.update(status = Closed)
+      Discussion.all*.updateDashboard
+    }
+  }
+}  

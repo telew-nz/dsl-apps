@@ -1,0 +1,33 @@
+back object Conversion extends IConversion {
+  func convert(version: [Int?]): Future[Any] = {
+    let _ <- if (version < [1,16,0]) {
+      Payment.all.foreach{p =>
+         if (let s = field[BankUploadState?](p.bankData, "flow2b.bank.uploadState")) {
+           p.bankData.uploadState = s
+           p.touch
+           p.save
+         }
+      }
+      CashTransfer.all.map{p =>
+        if (let s = field[BankUploadState?](p.outgoingBankData, "flow2b.bank.uploadState")) {
+          p.outgoingBankData.uploadState = s
+          p.touch
+          p.save
+        }
+        if (let s = field[BankUploadState?](p.incomingBankData, "flow2b.bank.uploadState")) {
+          p.incomingBankData.uploadState = s
+          p.touch
+          p.save
+        }
+      }
+      let _ <- recomputeAll(CashMovement, uploadState)
+      CashMovement.all*.updateDashboard
+    }
+    if (version < [1,25,0]) {
+      CashMovement.all.filter(!uploads.isUnique(_)).update(uploads = uploads.distinct)
+    }
+    if (version < [1,44,1]) {
+      IReconRule.all.update(priority = pr)
+    }
+  } 
+}     

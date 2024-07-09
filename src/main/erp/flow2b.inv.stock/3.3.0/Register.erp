@@ -1,0 +1,59 @@
+register StockRegister {
+  key field legalEntity: LegalEntity
+  key field store: Store  
+  key field good: IGood 
+  order field sort: Dec[2]?
+  order field date: Date
+  field document: Entity
+  field isStocktake: Bool
+  field factualQty: Qty[good.unit]? {label = "Fact"}
+  field reservedQty: Qty[good.unit]? {label = "Reserve"}
+  field expectedQty: Qty[good.unit]?  {label = "Expectation"}
+  compute factualChange: Qty[good.unit]? = (if (isStocktake) stocktakeDifference else factualQty) {label = "Fact"}
+  
+  stored compute fact: Qty[good.unit]? = if (isStocktake) factualQty else prev?.fact + factualQty
+  stored compute reserve: Qty[good.unit]? = prev?.reserve + reservedQty
+  compute available: Qty[good.unit]? = ((fact - reserve).max(0)) 
+  stored compute expectation: Qty[good.unit]? = prev?.expectation + expectedQty
+  compute outlook: Qty[good.unit]? = fact - reserve + expectation 
+  stored compute stocktakeDifference: Qty[good.unit]? = if (isStocktake) factualQty - prev?.fact else 0
+  field differencePrice: Money[legalEntity.getCurrency]?
+  stored compute lastStocktake: Journal? = if (isStocktake) document.as[Journal]! else prev?.lastStocktake
+  
+  stored compute awaitingForDocs: [(qty: Qty, item: StockRegister)]?
+  compute awaitingForDate: Date? = awaitingForDocs*.item*.date.max
+  stored compute reserveQueue: QtyQueue[Qty, StockRegister]?
+  func onSave: Void = {
+    if (let e = expectedQty) {
+      reserveQueue = prev?.reserveQueue.enqueue(e, this)
+      awaitingForDocs = null
+    } else if (let r = reservedQty) {
+      if (reserve > fact) {
+        let e = prev?.reserveQueue.dequeue((reserve - fact).min(r))
+        awaitingForDocs = e.items
+        reserveQueue = e.queue
+      } else {
+        awaitingForDocs = null
+        reserveQueue = prev?.reserveQueue
+      }
+    } else {
+      awaitingForDocs = null
+      reserveQueue = null
+    }
+    if (updated) {
+      document.forceTouch
+      if (!next) good.onStockUpdated(this)
+    }
+  }
+    
+  func prevStock: Stock = Stock(
+    unit = good.unit, fact = fact - factualQty, reserve = reserve - reservedQty, expectation = expectation - expectedQty)
+  func stock: Stock = Stock(unit = good.unit, fact = fact, reserve = reserve, expectation = expectation)
+  
+  register inventoryLedger: LInventory? = {
+    if (isStocktake && stocktakeDifference) {
+      LInventory(journal = document.as[Journal]!, product = good, qty = stocktakeDifference.abs, isDebit = stocktakeDifference > 0,
+                 contraAccount = InventoryAdjustments, trAmount = if (stocktakeDifference > 0) differencePrice*stocktakeDifference else 0)
+    } else null
+  }
+}

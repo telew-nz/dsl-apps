@@ -1,0 +1,11 @@
+report RecentItem {
+  field user: Person =? Person.current
+  view list = Person.load(user.id)*.subjects*.subject.sortBy(touchedOn.desc) 
+    >> nav(background = "#498898"){list(canAdd = false){traitItem}}
+  
+  object view widget = Person.load(Person.current!.id)*.subjects*.subject.sortBy(touchedOn.desc) 
+    >> nav(label = "Recent Items", background = "#498898", limit = 5, more = RecentItem().list.open){
+      list(canAdd = false){ref}
+      add("Discussion") {Discussion().form.open}
+    }
+}

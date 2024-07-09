@@ -1,0 +1,97 @@
+trait IOrderItem extends InlineEntity {
+  func order: IOrder 
+  func currency: Currency
+  func gstAmount: Money[currency]?
+  func invoiceQty: Qty? = 0
+  func invoiceAmount(noGst: Bool): Money[currency]? = if (noGst) invoiceAmountNoGst else invoiceAmountWithGst
+  func invoiceAmountNoGst: Money[currency]?
+  func invoiceAmountWithGst: Money[currency]?
+  func ledgerAccount: LedgerAccount
+  func gstRate: UPercent[2]?? 
+  func itemDlv: IOrderDlv?
+  func canceled: Bool
+  func rowView: Layout[IOrderItem]
+  func labelView: Layout[IOrderItem] {
+    default value = throw "Label view is not supported"
+  }
+  func labelNoteView: Layout[IOrderItem] {
+    default value = throw "Label view is not supported"
+  }
+  func cashFlow: CashFlow 
+  func hasProgress = false
+  func invoicePosition: InvoiceItemPosition = Lines
+
+  func canBeDeleted = true
+  system field rollbacked: Bool
+  func rollbackItem(): Void = {
+    prev!.active = true
+    prev!.save
+    rollbacked = true
+    delete
+  }
+  
+  impl event onSave = {
+    if (active && canceled) {
+      setActive(false)
+      wasCanceled = true
+    } else if (wasCanceled && !active && !canceled) {
+      setActive(true)
+      wasCanceled = false
+    }
+  }
+  impl event onDelete = {
+    if (deleted && !rollbacked && origin(invoices).filter(!deleted)) {
+      rollback
+      setActive(false)
+    }
+  }
+  
+  func consider = active || wasCanceled 
+  func invoiceNotIssued = !invoices || (!active && invoices.last == order.invoices.last)
+  func rowView(revision: Invoice): Layout[IOrderItem] = {
+    if (!revision.prev) rowView
+    else if (!active && !invoices.contains(revision)) rowView.deletedLayout
+    else if (invoices.first == revision) {
+      if (let p = this.prev) rowView.modifiedLayout(p)
+      else rowView.createdLayout
+    } else rowView
+  }
+  func labelView(revision: Invoice): Layout[IOrderItem] = {
+    if (!revision.prev) labelView
+    else if (!active && !invoices.contains(revision)) labelNoteView.deletedLayout
+    else if (invoices.first == revision) {
+      if (let p = this.prev) labelNoteView.modifiedLayout(p)
+      else labelNoteView.createdLayout
+    } else labelNoteView
+  }
+  func setActive(v: Bool): Void = {
+    active = v
+  }
+
+  system field prev: IOrderItem? by next {deleteCascade = false}
+  system field next: IOrderItem? by prev {deleteCascade = false}
+  system field invoices: [Invoice]? by items
+  field active: Bool {
+    default = true
+    validate = if (!consider && !invoices) "Non active item without invoices should be deleted"
+  }
+  field wasCanceled: Bool = false
+  func prev(revision: Invoice): this? = if (revision == invoices.first) prev else null
+  
+  func needsRevision: Bool
+  func sameAsPrev: Bool
+  compute itemRevisions: [this]? = (prev?.itemRevisions + prev)*.as[this]
+}
+
+trait IOrderProdItem extends IOrderItem {
+  func product: ISubProduct
+  impl func invoicePosition = product.superProduct.invoicePosition
+  impl view labelView = grid(width = 0.55, labels = None){row {
+    product >> field(fontStyle = Label, title = title)
+    invoiceAmountNoGst >> field(width = 0.19)
+  }}
+  impl view labelNoteView = y(spacing = false) {
+    product >> field(fontStyle = Label, title = title)
+    x(align = Right){invoiceAmountNoGst >> field(align = Right)}
+  }
+}

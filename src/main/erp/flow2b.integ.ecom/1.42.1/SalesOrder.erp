@@ -1,12 +1,12 @@
 extend trait ECommerceIntegration {
-  const system field ordersDownloadDate: Date?
+  const system field ordersDownloadDate: Date? = now
   
   back func downloadNewOrders(): Void = {
     downloadOrdersJobs(ordersDownloadDate)*.enqueue
   }
   
   back func ordersDownloaded(date: Date): Void = {
-    ordersDownloadDate = date - 1_day
+    ordersDownloadDate = date
     save
   }
   

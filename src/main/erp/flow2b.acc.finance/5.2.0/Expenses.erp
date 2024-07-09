@@ -1,0 +1,56 @@
+analytic ExpenseType(dataType = "IExpenseType")
+
+acctemplate Expenses(type = singleAccount) {
+  key field expenseType: IExpenseType
+  
+  field claimable: UPercent?
+}
+
+account Expenses(template = "Expenses", debit = acc(Expense, 0))
+account DiscountsReceived(template = "Counterparty", credit = acc(Expense, 70), contra = true) 
+
+trait IExpenseType extends Entity {
+  background = "#d68400"
+  ref field gstRate: GstRate? = null
+  ref field specialGstRate: UPercent[2]? {
+    visible = gstRate == Special
+  }
+  compute getGstRate: UPercent[2]?? {
+    value = {
+      if (gstRate == Special) specialGstRate
+	  else if (gstRate) gstRate!.rate 
+    }
+    views = []
+  }
+  ref field nonClaimable: UPercent? {
+    validate = if (0 > claimable || claimable > 1.00_PercentUnit) "Claimable percentage should be between 0% and 100%"
+  }
+  compute claimable: UPercent? {
+    label = "Claimable Percentage"
+    value = (1.00_PercentUnit - nonClaimable).as[UPercent]
+    update = {
+      nonClaimable = (1.00_PercentUnit - new).as[UPercent]
+    }
+  }
+  func gstRate(vendor: IVendor): UPercent[2]?? = if (vendor.hasGst) {
+    getGstRate.or(vendor.defaultGstRate.rate)
+  } 
+  func hasGst(vendor: IVendor): Bool = gstRate(vendor)
+}
+ 
+entity ExpenseType extends IExpenseType {
+  field title: String
+  
+  field description: Text?
+  view form = nav{
+    grid{
+      title
+      claimable >> field(showEmpty)
+      gstRate
+      specialGstRate
+      description
+    }
+    extension("nav")
+  }
+}
+

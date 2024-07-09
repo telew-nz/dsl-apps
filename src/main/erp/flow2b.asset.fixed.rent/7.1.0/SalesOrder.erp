@@ -1,0 +1,20 @@
+extend entity SalesOrder {
+  func updateBond(): Future[Void] = {
+    let bb <- items*.orderDlvItem*.as[RentDeliveryItem]
+      .map{i => 
+        let pp <- i.productPrice
+        if (let pp) pp.bond*i.qty
+      }
+      .allCompleted
+   
+    if (let b = bb.sum) {
+      if (let bondItem = items*.as[SalesBondItem].first) {
+        bondItem.amountEditor = b
+      } else {
+        SalesBondItem(order = this, amountEditor = b)
+      }
+    } else {
+      items*.as[SalesBondItem]*.delete
+    }
+  }
+}

@@ -1,0 +1,40 @@
+trait Invoice extends IInvoice {
+  background = "#d68400"
+  field date: Date = now
+  ref field currency: Currency = (try? orders.first.currency).alt(Currency.our)
+  field manualNumber: String?
+    
+  func overpaid = paidAmount > total
+  func order: Order = orders.first
+  func orders: [Order]
+  func items: [OrderItem]?
+  func cancel(): Void
+  func deliveryDate: Date? = if (items.all(delivered)) items*.delivery*.deliveryDate.max
+
+  compute gstAmount: Money[currency]? {
+    value <- items*.gstAmount.sum.to[Money[currency]](date)
+  }
+  compute totalWithoutGst: Money[currency]? {
+    value <- items*.invoiceTotal.sum.to[Money[currency]](date)
+    visible = gstAmount
+  }
+  ref compute total: Money[currency]? = totalWithoutGst + gstAmount
+  
+  func journalDate: Date = date
+  compute paidAmounts: [OrderItem: Money[currency]?]? = {
+    var a = paidAmount - items.filter(amount < 0)*.amount.sum
+    items.filter(amount > 0).map{i => 
+      let v = a.min(i.amount)
+      a = (a - v)
+      (i, v)
+    }.toMap
+  }
+  func paidAmountForItem(item: OrderItem): Money[currency]? = paidAmounts.apply(item)
+  
+  register gstLedgers: [LTax]? = {
+    items.filter(gstRate).groupBy(gstRate!.value).agg(gstAmount.sum, amount.sum).toSeq.map {
+      LTax(account = TaxesPayable, tax = Gst, journal = this, rate = #0, trAmount = if (isPurchase) gstAmount else -gstAmount, taxedAmount = amount)
+    }
+  }
+  func isPurchase: Bool
+}

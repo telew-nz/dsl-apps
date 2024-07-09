@@ -1,0 +1,80 @@
+trait Payment extends CashMovement with IPayment with Debt {
+  background = "#d68400"
+  func number: String
+  func payer: LegalEntity
+  func payee: LegalEntity
+  func cashFlows(amount: Money): [CashFlowAmount] = [CashFlowAmount(category = Errors, amount = amount)]
+  
+  func journalDate = date
+  func repaymentDate: Date = date
+  
+  func journalPriority: Int? = 100
+  func definesDate: Bool = true
+  func amount: Money[currency]
+  object field gen: Int?
+  const ref field n: Int? = increment(Payment.gen)
+  
+  ref field date: Date = now
+  field account: FinanceAccount {
+    default =? FinanceAccount.ours.onlyOne
+    from = legalEntity.accounts
+    update = {
+      if (!try? this.currency) this.currency = new.currency
+    }
+  }
+  ref field currency: Currency {
+    default =? try? (origin?.currency).alt(account.currency)
+    update = {
+      if (currency != account.currency && !accountAmount) {
+        if (let a = try? paidAmount) {
+          accountAmount = a.as[Money[account.currency]]
+        }
+      }
+    }
+  }
+  field accountAmount: Money[account.currency]? {
+    visible = currency != account.currency
+    isValid = currency == account.currency || accountAmount
+  }    
+  func isIncoming: Bool
+   
+  func makeLedgers: Future[[Ledger]?] = {
+    let ms <- mainLedgers
+    let ls <- (
+      credits.filter(this.isJournal(credit)).map(credit.originLedgers(this, this.date, amount))
+      + debits.filter(this.isJournal(debit)).map(debit.originLedgers(this, this.date, -amount))
+    ).allCompleted
+    CurrencyTrading.with(ms + ls.flatMap(_))
+  }
+  func cashLedgers(additionalFlows: [CashFlowAmount]?): [Ledger]? = {
+    let pb = startingBalance
+      + credits.filter(this.isJournal(credit)).map(try? amount).sum 
+      - debits.filter(this.isJournal(debit)).map(try? amount).sum 
+    let unrec = if (let b = pb) {
+      let acc: LedgerAccount = if (b > 0) UnreconciledCredits else UnreconciledDebits
+      LCurrency(account = acc, contraAccount = account.ledgerAccount, currency = currency, journal = this, trAmount = -b)
+    } else null
+    let ams =
+      credits.flatMap(i => i.credit.cashFlows(i.amount)) 
+      + debits.flatMap(i => i.debit.cashFlows(i.amount))
+      + (if (let b = pb) CashFlowAmount(category = Errors, amount = b.abs))
+      + additionalFlows
+    let am: Money? = if (currency == account.currency) amount else accountAmount!
+    let cashes = ams
+      .groupBy(category).agg(amount.sum).toSeq
+      .distribute(am, by = amount)
+      .map{i =>
+         LCash(journal = this, account = account.ledgerAccount, cashFlowCategory = i.category, 
+               financeAccount = account, trAmount = if (isIncoming) i.value else -i.value)
+      }
+    cashes + unrec
+  }
+  func mainLedgers: Future[[Ledger]?]
+  func originLedgers(journal: Journal, date: Date, amount: Money): Future[[Ledger]?] = {
+    let acc: LedgerAccount = if (isIncoming) UnreconciledCredits else UnreconciledDebits
+    [LCurrency(account = acc, contraAccount = account.ledgerAccount, currency = currency, journal = journal, date = date, 
+               trAmount = amount)]
+  }
+}
+
+

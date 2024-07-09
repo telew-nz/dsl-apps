@@ -1,0 +1,13 @@
+extend class BankData {
+  field particulars: String? 
+  field reference: String?
+  field code: String?
+  
+  extend override func fullMemo = "$memo $particulars $code $reference"
+}  
+  
+extend enum BankDataField {
+  case Particulars(str = _.particulars)
+  case Reference(str = _.reference)
+  case Code(str = _.code)
+}

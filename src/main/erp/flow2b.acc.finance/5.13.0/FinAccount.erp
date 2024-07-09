@@ -1,0 +1,209 @@
+extend enum DashboardIssue {
+  case TooLowBalance(role = BusAdmin, priority = default)
+}
+
+trait FinAccount extends Entity {
+  singular = "Finance Account"
+  plural = "Finance Accounts"
+  background = "#d68400" 
+  func ledgerAccount: LedgerAccount
+  
+  func number: String? = ""
+  func legalEntity: OurLegalEntity
+  func currency: Currency
+  func cashFlow: CashFlow = Exchange
+  func feeExpense: ExpenseType? = null
+     
+  back func balance(at: Date): Money[currency]? = {
+    LCash.at(at).find(finAccount == this).result.get?.balance
+  }
+  ref system stored compute balance: Money[currency]? = cashLedger?.balance
+  system compute lastTransactionDate = cashLedger?.date
+  system compute cashLedger: LCash? = LCash.current.find(finAccount == this)
+  
+  field initBalance: InitBalance? inline by finAccount {
+    label = "Initial Balance"
+  }
+  object view refList = FinAccount.all.sortBy(lastTransactionDate.alt(Date.min).desc) >> list{grid(labels = None, width = 0.4){
+    row{title >> field(width = 0.25) balance >> field(width = 0.15, align = Right)}
+  }}
+  object view list = FinAccount.all.sortBy(title) >> nav{list{grid(labels = None){
+    row{title >> field(width = 0.7) balance >> field(width = 0.3, align = Right)}
+  }}}
+  
+  view ledgerBtn = button("Ledger", visible = initBalance?.id) {
+    Ledger.Report(journal = initBalance!).list.open
+  }
+  func hasBankData = false
+  
+  object view widget = FinAccount.all
+    .filter(balance)
+    .map{
+      let baseBalance <- balance.to[Money[legalEntity.getCurrency]](now)
+      (account = _, balance, baseBalance)
+     }
+     .sortBy(account.title)
+     .total(baseBalance.sum) 
+  >> nav(background = "#d68400", more = FinAccount.list.open){
+    total {
+      baseBalance >> field(align = Right)
+      list(action = account.form.open){grid(labels = None){
+         row{account.title >> field(width = 0.7) balance >> field(width = 0.3, align = Right)}
+      }}}}
+}
+
+trait SFinAccount extends FinAccount {
+  ref field legalEntity: OurLegalEntity by accounts 
+  ref field currency: Currency
+}
+            
+inline entity InitBalance extends PseudoEntity with Journal {
+  ref field finAccount: FinAccount
+  field date: Date = now
+  field balance: Money[finAccount.currency]?
+  
+  func legalEntity = finAccount.legalEntity
+  func journalDate = date
+  func mainEntity = finAccount
+  
+  register cash = if (let balance) LCash(
+    account = finAccount.ledgerAccount, finAccount = finAccount, journal = this, 
+    trAmount = balance
+  )
+  register equity = if (let balance) LIncomeSummary(
+    journal = this, trAmount = -balance
+  )
+  view form = x {date balance}
+}
+
+trait HasLowBalance extends DashboardItem {
+  func currency: Currency
+  field lowBalance: LowBalance? {
+    default = defaultLowBalance
+    label = "Low Balance Level"
+  }
+  func defaultLowBalance: LowBalance? = null
+  func balance: Money[currency]?
+ 
+  func issues: [DashboardIssue]? = if (let lowBalance){
+    if (lowBalance.balance.as[Money[currency]] > balance) [TooLowBalance]
+    else if (lowBalance.balance == balance && lowBalance.less == LessEq) [TooLowBalance]
+  }
+}
+class LowBalance {
+  field less: LowBalanceOp = Less
+  field balance: Money?
+  view form = x {less balance >> field(showEmpty) }
+}
+
+enum LowBalanceOp {
+  case Less = "<"
+  case LessEq = "≤"
+}
+
+extend entity OurLegalEntity {
+  field accounts: [SFinAccount]? {label = "Finance Accounts"}
+}
+extend entity OurCompany {
+  extend view form = accounts
+}
+extend entity OurPerson {
+  extend view form = accounts
+}
+ 
+entity CashAccount extends SFinAccount with HasLowBalance {
+  background = "#d68400"
+  func title = "$legalEntity: $name"
+  object func default: CashAccount? = onlyOne
+  object func onlyOne: CashAccount? = OurLegalEntity.ours*.accounts*.as[CashAccount].onlyOne
+  ref field name: String
+
+  func ledgerAccount: LedgerAccount = Cash
+  field location: IStore? by cashAccounts
+  view form = nav{grid{
+    issuesView
+    legalEntity
+    name
+    currency
+    location
+    lowBalance
+    initBalance
+    balance
+  } ledgerBtn }
+}
+
+extend trait IStore {
+  field cashAccounts: [CashAccount]? read by location
+}
+extend entity Store {
+  extend view form = cashAccounts
+}
+  
+entity BankAccount extends SFinAccount with HasLowBalance {
+  background = "#d68400"
+  func title = "$legalEntity: $name"
+  object func default: BankAccount? = onlyOne
+  object func onlyOne: BankAccount? = OurLegalEntity.ours*.accounts*.as[BankAccount].onlyOne
+  ref field name: String
+  ref field forCustomerPayments: Bool = !OurLegalEntity.ours*.accounts.as[BankAccount]
+  field feeExpense: ExpenseType?
+  func ledgerAccount: LedgerAccount = Cash
+  ref field number: String?
+  func hasBankData = true
+  view form = nav{grid{
+    issuesView
+    legalEntity
+    name
+    number
+    currency
+    forCustomerPayments
+    feeExpense
+    lowBalance
+    initBalance
+    balance
+  } ledgerBtn }
+}
+
+entity CardAccount extends SFinAccount {
+  singular = "Bank Card Account"
+  plural = "Bank Card Accounts"
+  background = "#d68400"
+  func title = "$legalEntity: $name"
+  object func default: CardAccount? = onlyOne
+  object func onlyOne: CardAccount? = OurLegalEntity.ours*.accounts*.as[CardAccount].onlyOne
+  ref field name: String
+  func ledgerAccount: LedgerAccount = Cash
+  field number: String?
+  field feeExpense: ExpenseType?
+  func hasBankData = true
+  view form = nav{grid{
+    legalEntity
+    name
+    number
+    currency
+    feeExpense
+    initBalance
+    balance
+  } ledgerBtn }
+}
+
+entity CurrentAccount extends SFinAccount {
+  background = "#d68400"
+  object func default: CurrentAccount? = onlyOne
+  object func onlyOne: CurrentAccount? = OurLegalEntity.ours*.accounts*.as[CurrentAccount].onlyOne
+  func ledgerAccount: LedgerAccount = CurrentAccounts
+  func cashFlow = CurrentAccounts
+  func title = "$legalEntity: $(name.alt(counterparty))"
+  ref field counterparty: LegalEntity
+  ref field name: String?
+  view form = nav{grid{
+    legalEntity
+    counterparty
+    name
+    currency
+    initBalance
+    balance
+  } ledgerBtn }
+}
+
+ 

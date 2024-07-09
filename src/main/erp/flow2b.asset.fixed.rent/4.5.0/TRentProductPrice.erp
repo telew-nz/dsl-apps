@@ -1,0 +1,48 @@
+trait TRentPriceModel extends PriceModel {
+  func currency: Currency
+  func products: [TRentProductPrice]?
+  func createProduct(product: AssetRentService, prices: [DurationPrice], bond: Money?): TRentProductPrice
+}
+
+inline trait TRentProductPrice {
+  func model: PriceModel
+  final func currency = model.currency
+  field product: AssetRentService
+  field prices: [DurationPrice] = RentDurationUnit.all!.map(u => DurationPrice(unit = u, currency = model.currency))
+  
+  field bond: Money[currency]? 
+  compute gstRate: Percent[2]? = product.forceGstRate(model.vendor).alt(0)
+  func superProduct = product
+    
+  event onSave = product.touch
+  
+  view form = grid(labels = None, spacing = false) {
+    prices >> list(frame = false, margin = None){grid(labels = None, margin = None){row{
+      unit.name.fromCamelCase >> field(fontStyle = H3) 
+      price >> field(align = Right) 
+    }}}
+    row{h3("Bond", visible = bond) bond >> field(align = Right) }
+  }
+  view formEx = grid(labels = None){
+    grid(labels = None, visible = !ui.isSelected) {
+      row {
+        product >> field(editMode = AlwaysRead) 
+        prices.first >> x{
+          unit.name.fromCamelCase >> field(fontStyle = H3, stretch = 1) 
+          price >> field(align = Right) 
+        }
+      }
+    }
+    read {
+      product >> field(visible = ui.isSelected)
+      form >> field(visible = ui.isSelected)
+    }
+    edit {
+      product >> field(visible = ui.isSelected)
+      prices >> list(frame = false, visible = ui.isSelected){grid(labels = None){row{
+        unit >> field(margin = TopBottom, compact) price
+      }}}
+      row{h3("Bond", visible = ui.isSelected) bond >> field(visible = ui.isSelected)}
+    }
+  }
+}

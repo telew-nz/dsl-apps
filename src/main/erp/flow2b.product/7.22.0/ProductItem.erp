@@ -1,0 +1,55 @@
+entity ProductItem extends HasNumber {
+  object func map[R](product: IBaseProduct, qty: Qty, items: [ProductItem]?, f: (item: ProductItem?, trQty: Qty) => R): [R] = {
+    if (product.trackItems == Always) {
+      if (items.count != qty.withoutUnit) throw "There should be $qty items but there $items"
+   	  items!.map(f(_, 1.as[Qty[ProductUnit.Item]]!))
+    } else {
+      [f(null, qty)]
+    }
+  }
+  
+  object func flatMap[R](product: IBaseProduct, qty: Qty, items: [ProductItem]?, f: (item: ProductItem?, trQty: Qty) => [R]?): [R]? = {
+    if (product.trackItems == Always) {
+      if (items.count != qty.withoutUnit) throw "There should be $qty items but there $items"
+   	  items!.flatMap(f(_, 1.as[Qty[ProductUnit.Item]]!))
+    } else {
+      f(null, qty)
+    }
+  }
+  
+  object func distribute[R](product: IBaseProduct, qty: Qty, amount: Money?, items: [ProductItem]?, f: (item: ProductItem?, trQty: Qty, trAmount: Money?) => R): [R] = {
+    if (product.trackItems == Always) {
+      if (items.count != qty.withoutUnit) throw "There should be $qty items but there $items"
+      items!.distribute(amount, 1).map(f(item, 1.as[Qty[ProductUnit.Item]]!, value))
+    } else {
+      [f(null, qty, amount)]
+    }
+  }
+  
+  ref field product: IProduct by productItems
+  object field gen: Int?
+  const field n: Int? = increment(ProductItem.gen)
+  func title = "$product $number"
+  field manNum: String? {views = []}
+  
+  ref compute number {
+    value = manNum.alt("SN$n")
+    update = {
+      manNum = new
+    }
+  }
+  
+  view form = nav {
+    grid(labels = Top) {
+      product
+      number
+      extension
+    }
+    extension("nav")
+  } 
+  
+  view itemView = grid{
+     read{_ >> field(label = "", title = number)}
+     edit{number >> field(label = "")}
+  }
+}

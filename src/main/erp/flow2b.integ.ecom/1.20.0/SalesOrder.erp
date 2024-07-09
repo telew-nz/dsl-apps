@@ -1,0 +1,28 @@
+extend trait ECommerceIntegration {
+  const system field ordersDownloadDate: Date?// = now
+  
+  back func downloadNewOrders(): Void = {
+    downloadOrdersJobs(ordersDownloadDate)*.run
+  }
+  
+  back func ordersDownloaded(date: Date): Void = {
+    ordersDownloadDate = date
+    save
+  }
+  
+  back func uploadOrderState(order: SalesOrder): Void = {
+    uploadOrderStateJobs([order])*.run
+  }
+}
+
+extend entity SalesOrder {
+  event onSave = {
+    if (!created && (updated(_state) || updated(paymentState) || updated(deliveryState)) && !IUser.current.is[ECommerceIntegration]) {
+      ECommerceIntegration.all.map {service =>
+        if (service.userEnabled && service.extId(this)) {
+          service.uploadOrderState(this)
+        }
+      }.result
+    }
+  }
+}

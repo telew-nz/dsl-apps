@@ -1,0 +1,3 @@
+account UnreconciledCredits(template = "Currency", number = 900, type = Error) 
+account UnreconciledDebits(template = "Currency", number = 910, type = Error) 
+  

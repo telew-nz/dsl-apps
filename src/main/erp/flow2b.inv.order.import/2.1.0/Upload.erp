@@ -1,0 +1,116 @@
+entity PurchaseOrderImport extends ImportTask with DashboardItem {
+//  background = "#d68400"
+  override compute number = "POI$n"
+  impl func service = OrderImportService
+  
+  field invoiceType: InvoiceType?
+  //field text: PlainText?
+  impl func itemRoles = [BusAdmin]
+  
+  
+  const field invoiceDate: Date?
+  const field invoiceNumber: String?
+  const field vendorNumber: String?
+  field vendor: Vendor? {
+    init = {
+      new?.legalEntity?.legalInfo?.gstNumber = vendorNumber
+    }
+  }
+  const field dueDate: Date?
+  const field purchaseOrder: PurchaseOrder?
+  
+  const field rowsWithGst: Bool { label = "Rows include GST"}
+  field currency: Currency = our
+  const field totalNoGst: UMoney[currency]?
+  const field gst: UMoney[currency]?
+  compute totalWithGst: UMoney[currency]? = totalNoGst + gst
+  
+  field legalEntity: OurLegalEntity? = onlyOne
+  field store: IStore? = onlyOne
+  
+  field items: [PurchaseOrderImportItem]? inline by poi
+  field file: File
+  override func title = "$number $date"
+  impl view form = nav{grid{
+    issuesView
+    row {number date space}
+    file 
+    stateView
+    
+    purchaseOrder
+    invoiceType >> field(label = "")
+    row {
+      invoiceNumber invoiceDate dueDate
+    }
+    row {
+      y (label = "Vendor") {
+        vendorNumber >> field(fontStyle = Label)
+        vendor
+      } rowsWithGst space
+    }
+    row {legalEntity store space}
+    row {
+      totalNoGst gst totalWithGst 
+    }
+    /*[(items*.amount.sum, items)].toSeq >> total {
+      row {
+        space space space amount
+      }*/
+    items >> table {
+        y (label = "Description", width = 0.6, margin = None) {
+          code >> field(fontStyle = Label, editMode = AlwaysRead) 
+          desc >> field(editMode = AlwaysRead)
+          product
+        }
+        qty >> field(width = 0.1, editMode = AlwaysRead) 
+        gstRate!.as[UPercent[2]] >> field(width = 0.1, label = "GST", editMode = AlwaysRead) 
+        amount >> field(width = 0.2, editMode = AlwaysRead) 
+      }
+    //}
+    
+  }}
+  impl func createJob = PurchaseOrderImportJob(task = this)
+
+  report Report {
+    field state: [ImportTaskState]? {auto}
+    impl view list = PurchaseOrderImport.all >> nav{table {
+      date number state 
+    }}
+  }
+  
+  back func reprocess(): Void = {
+    state = Entered
+    error = ""
+    enterDate = now
+    save
+    createJob.enqueue()
+  }
+}
+ 
+enum InvoiceType {
+  case TaxInvoice
+  case DebitNote
+  case CreditNote
+}
+
+inline entity PurchaseOrderImportItem {
+  field poi: PurchaseOrderImport by items
+  
+  field code: String?
+  field desc: String? {
+    label = "Description"
+  }
+  field qty: UQty?
+  field amount: UMoney[poi.currency]?
+  field gstRate: UPercent[2]??
+  //const field withGst: Bool 
+  
+  field product: ISubProduct? {
+    init = {
+      new.addRefNum(code)
+      if (let desc) {
+        try? new.silentUpdate(title, desc)
+      }
+    } 
+  }
+}

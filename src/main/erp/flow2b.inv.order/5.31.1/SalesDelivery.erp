@@ -1,0 +1,105 @@
+trait ISalesDelivery extends Delivery {
+  background = "#2e8e67"
+  func supplier: LegalEntity
+  ref field receiver: LegalEntity {
+    default =? try? salesOrders.first.customer
+    update = updateReceiver()
+  }
+  func customer: LegalEntity
+  func isTheir = customer.isTheir
+  field salesOrders: [SalesOrder] by deliveries {
+    available(All)
+    default =? defaultSalesOrders
+  }
+  func deliveryHeader: Layout
+    
+  func defaultSalesOrders: [SalesOrder]? = []
+  func updateReceiver(): Void = {}
+  func availability: GoodAvailability = Available
+}
+
+entity SalesDelivery extends ISalesDelivery with IOutgoingDelivery with RoutePath {
+  background = "#2e8e67"
+  field primary: Bool
+  const ref field n: Int? = if (primary) order.n else increment(Order.gen)
+  func deliverySource: Store? = source
+  func deliveryStore: Store? = source
+  ref field source: Store? {
+    default =? Store.our
+    from = Store.ours
+    isValid = source || items.all(!storeRequired)
+  }
+  field shipTo: Location? {
+    from = Location.all.filter(l => l.actor == receiver || l.actor == receiver.top || l.mutual)
+    init = {new.actor = receiver}
+  }
+  func pathSrc = source
+  func pathDst = shipTo
+  field policy: IDeliveryPolicy?
+  func debtDueDate = dueDate
+  stored compute dueDate: Date? = dueDate(salesOrders, policy)
+  
+  func hasInTransit: Bool = shipTo
+  stored compute canDispatch: Bool = {
+    if (deliveryStatus == Planned && availability == Available) {
+      let canDispatch = (items*.sales*.invoice*.canDispatch)
+      (!canDispatch.contains(false) && policy?.canDispatch(this).alt(true))
+    } else false
+  }
+    
+  ref compute number: String {
+    value = manualNumber.alt(if (primary) "SD" + orders.first.nakedN else "SD" + n)
+    update = {manualNumber = new}
+  }
+  func orders: [Order] = salesOrders
+  list compute supplier: LegalEntity = order.vendor
+  compute customer: LegalEntity = order.customer
+    
+  func deliverySupplier: LegalEntity = order.vendor
+  func deliveryReceiver: LegalEntity = receiver
+  func legalEntity = supplier
+  func title = "$number $(try? receiver?.title)"
+  
+  view deliveryHeader = grid(width = 1.2){
+    statusesView
+    row {receiver, source, dispatchDate}
+    row {shipTo, policy,  deliveryDate}
+    row {space, space, dueDate}
+    possibleDispatchPeriods >> list(frame = false){ 
+      x {
+        start
+        label("—")
+        if (end == Date.max) "∞" else end
+        button("Set") {
+          this.dispatchDate = start
+          this.save()
+        }
+      }
+    }
+    supplyOptionsView >> field(label = "Supply Options", visible = supplyOptions)
+  }
+  view form = nav{grid(width = 1.2, labels = Top) {
+      number
+      deliveryHeader
+      salesOrders
+      items >> list(editMode = AlwaysRead){form.unnav}
+    }
+    generalLedgerButton
+  } 
+  
+  view ref = x{title status}
+  event onSave = {
+    if (primary) n = order.n 
+    else if (!n) n = increment(Order.gen)
+    salesOrders*.touch
+    if (salesOrders.all(canceled)) status = Canceled
+  }
+  
+  view statusesView = x{status availability >> field(visible = availability.isIssue) dispatchState overdueState}
+  
+  object view list = SalesDelivery.all >> nav{list(canAdd = false){grid(labels = Top){
+    row{number >> field(width = 0.3) dispatchDate >> field(visible = true, width = 0.3) source >> field(width = 0.4) }
+    statusesView
+    row{receiver >> field(width = 0.3) shipTo >> field(width = 0.7)}
+  }}}
+}

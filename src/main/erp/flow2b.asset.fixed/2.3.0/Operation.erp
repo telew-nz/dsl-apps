@@ -1,0 +1,16 @@
+trait BaseAssetOperation {
+  background = "#56940b"
+  plural = "Asset Operations"
+  func asset: IFixedAsset
+  func legalEntity = asset.legalEntity
+  report Report {
+    field asset: IFixedAsset?
+    view list = BaseAssetOperation.all.filter(asset ==? this.asset)
+  }
+}
+  
+trait AssetOperation extends BaseAssetOperation  {
+  object field gen: Int?
+  const ref field n: Int? = increment(AssetOperation.gen)
+  ref field asset: IFixedAsset by operations
+}

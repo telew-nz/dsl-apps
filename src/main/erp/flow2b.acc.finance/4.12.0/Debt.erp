@@ -1,0 +1,140 @@
+analytic Counterparty(dataType = "LegalEntity")
+
+acctemplate Debt {
+  key field currency: Currency
+  key field counterparty: LegalEntity
+  field origin: Journal?
+  field isSetoff: Bool
+}
+
+acctemplate Counterparty {
+  key field counterparty: LegalEntity?
+}
+
+class OriginAmount {
+  field origin: Journal?
+  field dueDate: Date?
+  field amount: Money
+  compute overdueState: OverdueState = if (debtOverdue > 0) Overdue else NoOverdue
+  compute debtOverdue: Duration[day]? {
+    value = if (let d = dueDate) (Date.now - d).days.floor(0)
+  }
+}
+
+enum OverdueState {
+  case NoOverdue {background = "#dea"}
+  case Overdue {background = "#e99"}
+}
+
+trait DebtOrigin extends Journal {
+  func debtDueDate: Date?
+  func isPurchase: Bool = false
+  back func debtLedgers: [LDebt]? = []
+  const system field debtLinks: [LDebt]? by links {deleteCascade = false}
+  back func debtLinksAmount = debtLinks*.linkAmount(this).sum - debtLedgers*.linkAmounts.sum
+  compute debtLinksAmounts {
+    availableFor = Inline
+    value = back {
+      debtLinks.map{d => 
+         (d.origin, amount = d.linkAmount(this).abs.as[Money[d.currency]].as[Money])
+      } + debtLedgers.flatMap{l =>
+         l.links.zip(l.linkAmounts, map = (origin = left.as[Journal], amount = right.abs.as[Money[l.currency]].as[Money]))
+      }
+    }
+  }
+  view debtLinksView = debtLinksAmounts >> list {
+  	grid (labels = None) {
+      row {origin amount}
+    }
+  }
+}
+
+
+extend register LDebt {
+  stored compute autoOrigins: [OriginAmount]? 
+  stored compute manOrigins: [OriginAmount]? 
+  const system field links: [DebtOrigin]? by debtLinks
+  stored compute linkAmounts: [Money]?
+  func origins = manOrigins + autoOrigins
+  field manLink: Bool
+  event onSave = {
+    links = []
+    linkAmounts = []
+   
+    var rest: Money? = amount
+    if (rest) {
+      let origins = (if (manLink) prev?.manOrigins else prev?.autoOrigins).mapOpt{o => 
+        if (o.origin == this.origin) {
+          let r = rest + o.amount
+          if (r && (r > 0) == (o.amount > 0)) {
+            rest = 0
+            OriginAmount(origin = origin, amount = r!)
+          } else {
+            rest = r
+            null[OriginAmount]
+          }
+        } else o
+      }
+      journal.touch
+      if (manLink) {
+        manOrigins = origins
+        if (let rest) {
+          manOrigins = manOrigins + [OriginAmount(origin = origin, amount = rest)]
+        }
+        autoOrigins = prev?.autoOrigins
+      } else {
+        autoOrigins = origins
+      	addAutoOrigin(amount = rest)
+        manOrigins = prev?.manOrigins
+      }
+    } else {
+      autoOrigins = prev?.autoOrigins
+      manOrigins = prev?.manOrigins
+    }
+  }
+  func linkAmount(origin: DebtOrigin): Money? = {
+    let i = links.indexOf(origin)
+    if (i > 0) linkAmounts.drop(i!).first else if (i == 0) linkAmounts.first
+  }
+  back func addAutoOrigin(amount: Money?): Void = {
+    if (let a = amount) {
+      if (let f = autoOrigins.first) {
+        if ((f.amount > 0) == (a > 0)) {
+          autoOrigins = autoOrigins + OriginAmount(origin = origin, amount = a)
+        } else {
+          let isFinal = f.amount.abs > a.abs
+          if (account.money) {
+            if (let o = f.origin?.as[DebtOrigin]) {
+              links = links + o
+              linkAmounts = linkAmounts + (if (isFinal) a else -f.amount)
+            }
+          }
+          if (isFinal) { 
+            autoOrigins = OriginAmount(origin = f.origin, amount = (f.amount + a)!) + autoOrigins.drop(1)
+          } else {
+            autoOrigins = autoOrigins.drop(1)
+            addAutoOrigin(f.amount + a)
+          }
+        }
+      } else {
+        autoOrigins = autoOrigins + [OriginAmount(origin = origin, amount = a)]
+      }
+    } 
+  }
+}
+
+
+account AccountsReceivable(template = "Debt", number = 110, type = Asset, money = true)
+account PrepaidExpenses(template = "Debt", number = 130, type = Asset)
+account AllowanceForDoubtfulDebts(template = "Debt", number = 190, type = Asset, money = true, label = "Allowance for Doubtful Debts")
+  
+account AccountsPayable(template = "Debt", number = 210, type = Liability, money = true) 
+account UnearnedRevenues(template = "Debt", number = 230, type = Liability)
+  
+account IntercompanyDebts(template = "Debt", number = 300, type = AssetOrLiability, money = true) 
+account Loans(template = "Debt", number = 310, type = AssetOrLiability, money = true) 
+account CurrentAccounts(template = "Cash", number = 320, type = Equity) 
+account BadDebts(template = "Counterparty", number = 670, type = Expense)
+
+
+

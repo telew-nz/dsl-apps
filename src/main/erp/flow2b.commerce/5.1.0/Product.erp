@@ -1,0 +1,4 @@
+extend trait ISuperProduct {
+  ref field accessories: [Accessory]? inline by product
+  field principals: [Accessory]? inline by accessory
+}

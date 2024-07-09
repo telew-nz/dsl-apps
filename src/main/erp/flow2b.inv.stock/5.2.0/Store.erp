@@ -1,0 +1,17 @@
+trait Store extends Location {  
+  object func our: Store? = ours.onlyOne
+  object func ours: [Store]? = Actor.ours*.stores
+}
+
+entity Warehouse extends Store {
+  field title: String
+  field address: Address?
+  ref field mutual: Bool
+  view form = nav{grid{
+    title
+    actor
+    mutual
+    address
+    schedule
+  }}
+}

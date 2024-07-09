@@ -1,0 +1,48 @@
+register FAReg {
+  key field asset: IFixedAsset
+  
+  order field date: Date
+  field document: Entity
+  field toAvailable: Int? 
+  field toInUse: Int? 
+  field toLegalEntity: LegalEntity?
+  field toStore: Store?
+  field isFuture: Bool = false
+  field autoProd: Bool = true
+  stored compute legalEntity: LegalEntity = toLegalEntity.alt(prev!.legalEntity)
+  stored compute store: Store = toStore.alt(prev!.store)
+    
+  stored compute available: Bool = {
+    if (toAvailable == 1) true 
+    else if(toAvailable == -1) false
+    else prev!.available
+  }
+  stored compute inUse: Bool = {
+    if (toInUse == 1) true 
+    else if(toInUse == -1) false
+    else prev!.inUse
+  }
+  
+  register prodRegs: [FAProdReg]? = if (autoProd) {
+    if (let p = prev) {
+      let minus = if (p.legalEntity != legalEntity || p.store != store || (p.available && !available)) {
+        FAProdReg(
+          product = asset.product, legalEntity = p.legalEntity, store = p.store, 
+          date = date, document = document, isFuture = isFuture, qty = -1
+        )
+      } 
+      if ((minus && available) || (!p.available && available)) {
+        let plus = FAProdReg(
+          product = asset.product, legalEntity = legalEntity, store = store, 
+          date = date, document = document, isFuture = isFuture, qty = 1
+        )
+        [plus] + minus
+      } else minus.toSeq
+    } else {
+      [FAProdReg(
+        product = asset.product, legalEntity = legalEntity, store = store, 
+        date = date, document = document, isFuture = isFuture, qty = 1
+      )]
+    }
+  }
+}

@@ -1,0 +1,70 @@
+extend enum DashboardIssue {
+  case BankStatementUploadError(role = Accountant, priority = major)
+}
+
+entity BankStatementUpload extends ImportTask with DashboardItem {
+  background = "#d68400"
+  const ref field n: Int? = increment(gen)
+  compute number = "BSU$n"
+  ref field date: Date = now
+  func service = BankService
+  
+  func itemRoles = [Accountant]
+  func issues = {
+    if (state == Error) {
+      [BankStatementUploadError]
+    }
+  }
+  func fixes(issue: DashboardIssue) = {
+    if (issue == BankStatementUploadError) {
+      [
+        Fix(text = "Make sure that the file was downloaded from the bank and uploaded without modification"),
+        Fix(text = "If the file seems to be correct, please contact support"),
+        Fix(text = "If it was uploaded by mistake, delete the upload")
+      ]
+    } 
+  }
+  
+  field type: BankStatementType?
+  field account: BankAccount? {
+    visible = !type?.knowOurAccount
+  }
+  field files: [File]
+  const field payments: [CashMovement]? by uploads
+  list compute paymentsCount { 
+    value = payments.count
+    label = "Payments Uploaded"
+  }
+  func title = "$number $date"
+  view form = nav{grid{
+    issuesView
+    number
+    date
+    account
+    files
+    stateView
+    payments
+  }}
+  func createJob = StatementProcessJob(task = this)
+
+  report Report {
+    field state: [ImportTaskState]? {auto}
+    view list = BankStatementUpload.all >> nav{table {
+      date state account type paymentsCount
+    }}
+  }
+}
+
+object BankService extends SystemService {
+  func title: String = "BankService"
+  func roles: [Role]? = [Admin]
+  view form = nav{grid(labels = Top){
+    issuesView
+    serviceState
+    errorsCount >> field(editMode = AlwaysRead)
+  }}
+}
+
+
+
+

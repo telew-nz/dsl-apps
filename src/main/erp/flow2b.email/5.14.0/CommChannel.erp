@@ -1,0 +1,13 @@
+extend enum CommChannel {
+  case EMail(
+    findContacts = {
+      let l = address.trim.lower
+      EmailContact.all.filter(email.lower == l).result.get
+    }
+    makeContact = {
+      IEmailContact.all.find(c => c.email.lower == address).result.get
+        .alt(RawEmailContact(addresseeName = name, email = address).save)
+    }
+    defaultRecipients = IUser.current.as[MailService]!.defaultRecipients
+  ) {background = "#fff" icon = "envelope" }
+}

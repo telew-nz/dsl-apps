@@ -1,0 +1,19 @@
+trait ProductAttr {
+  object func attrName: String = "ProductAttr.name"
+}
+
+trait ICustomerBaseProduct extends IBaseProduct 
+trait ICustomerSuperProduct extends ICustomerBaseProduct {
+  object func attrs: [ProductAttr.object]? = []
+  func customerProducts: [ICustomerProduct]?
+  back func attrOptions: [ProductAttrOptions[ProductAttr]]? = {
+    customerProducts*.attrValues.groupBy(_.object).toSeq
+      .map(ProductAttrOptions[ProductAttr](attr = _.#0, options = _.#1))
+  }
+}
+trait ICustomerProduct extends ICustomerBaseProduct {
+  func customerSuperProduct: ICustomerSuperProduct
+  func attrValues: [ProductAttr]?
+}
+trait ICustomerComplexProduct extends ICustomerProduct
+class ProductAttrOptions[T extends ProductAttr](system field attr: T.object, options: [T]?)

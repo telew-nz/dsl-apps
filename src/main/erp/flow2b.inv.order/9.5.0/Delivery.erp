@@ -1,0 +1,100 @@
+trait Delivery extends IOrderDelivery {
+  background = "#2e8e67"
+  field manualNumber: String?
+  func number: String
+  func defaultDate: Date = if (order.created) order.date else Date.now
+  func order: Order = orders.first
+  func orders: [Order]
+  func priorityDate = order.date
+  func vendor: IVendor?
+  func customer: ICustomer?
+  func debtCurrency: Currency = order.currency
+  field allItems: [IOrderDeliveryItem]? inline by delivery {deleteCascade = false}
+  compute items: [IOrderDeliveryItem]? {
+    value = allItems.filter(active)
+    update = { 
+      allItems = new + allItems.filter(!_.active)
+    }
+  } 
+  func canCancel = false
+  func journalDate = deliveryDate
+  func store: Store? = null
+    
+  register ledgers: [Ledger]? <- back {
+    if (status == Delivered && !isInstant) {
+      let ls <- ledgers(this, deliveryDate)
+      CurrencyTrading.with(ls)
+    }
+  }
+  back func isInstant = orders.onlyOne?.isInstant
+  back func ledgers(journal: Journal, date: Date): Future[[Ledger]?]
+  
+  back func salesLedgers(journal: Journal, date: Date): Future[[Ledger]?] = {
+    let baseCurrency = legalEntity.getCurrency
+      
+    let lss <- items*.sales.map{p =>
+      let baseAmount <- p.invoiceAmount(noGst = legalEntity.hasGst).to[Money[baseCurrency]](date)
+      let baseDiscount <- p.orderDiscount.to[Money[baseCurrency]](date)
+      (p, baseAmount, baseDiscount)
+    }.allCompleted
+    lss.groupBy(p.currency, p.order.payer, p.order.customer).toSeq.flatMap{c =>
+      let items = c.#3
+      let amount = items*.p*.invoiceAmount(noGst = legalEntity.hasGst).sum
+      let baseDiscount = items*.baseDiscount.sum
+      
+      let debt = if(!isInstant) if (let p = c.payer) {
+        LDeliveryDebt(account = UnearnedRevenues, origin = this, journal = journal, date = date, 
+              counterparty = p.legalEntity, trAmount = amount, currency = c.currency)
+      }
+      let disc = if (let dis = baseDiscount) {
+        LSales(account = Sales, journal = journal, date = date, 
+               counterparty = c.customer?.legalEntity, trAmount = dis)
+      } 
+      let ls = items.flatMap(p.revenueLedgers(journal, date, _.baseAmount))
+      debt.toSeq + disc + ls
+    }
+  }
+  
+  back func purchaseLedgers(journal: Journal, date: Date): Future[[Ledger]?] = {
+    let baseCurrency = legalEntity.getCurrency
+      
+    let lss <- items*.purchase.map{p =>
+      let baseAmount <- p.invoiceAmount(noGst = legalEntity.hasGst).to[Money[baseCurrency]](date)
+      let baseDiscount <- p.orderDiscount.to[Money[baseCurrency]](date)
+      (p, isTangible = p.as[PurchaseItem]?.product?.isTangible, baseAmount, baseDiscount)
+    }.allCompleted
+    var tangibleItems = lss.filter(isTangible)
+    let intagibleItems = lss.filter(!isTangible)
+    let tan = tangibleItems && intagibleItems
+    if (tan) {
+      if (let intagibleAmount = intagibleItems.map(baseAmount - baseDiscount).sum) {
+        tangibleItems = tangibleItems.distribute(intagibleAmount, by = baseAmount).map{
+          (p, isTangible, baseAmount = baseAmount + value, baseDiscount)
+        }
+      }
+    }
+    (tangibleItems + intagibleItems).groupBy(p.currency, p.order.payee, p.order.vendor).toSeq.flatMap{c =>
+      let items = c.#3
+      let amount = items*.p*.invoiceAmount(noGst = legalEntity.hasGst).sum
+      let baseDiscount = if (!tan) items*.baseDiscount.sum
+      
+      let debt = if(!isInstant) if (let p = c.payee) {
+        LDeliveryDebt(account = PrepaidExpenses, origin = this, journal = journal, date = date, 
+              counterparty = p.legalEntity, trAmount = -amount, currency = c.currency)
+      }
+      let disc = if (let dis = baseDiscount) {
+        LSales(account = Sales, journal = journal, date = date, unit = Item, 
+               counterparty = c.vendor?.legalEntity, trAmount = -dis)
+      } 
+      let ls = items.filter(!tan || isTangible).flatMap(p.expenseLedgers(journal, date, baseAmount))
+      debt.toSeq + disc + ls
+    }
+  }
+  
+  compute refItems {
+    availableFor = List
+    value = RefProductItems.create(items*.as[IDeliveryProductItem].sortBy(sales?.amount.or(purchase?.amount).desc).map(RefProductQty(product = product, qty = qty)))
+  }
+  compute itemImage = refItems.photo
+}
+

@@ -1,0 +1,83 @@
+inline entity SalesRentItem extends ISalesItemWithDelivery with IRentItem {
+  icon = "retweet"
+  singular = "Book/Rent"
+  
+  impl field deliveryItem: RentDeliveryItem inline by sales
+  
+  impl view form = grid(margin = None, width = 1.2, labels = Top) {
+    row {
+      deliveryItem.product >> field(width = 0.4, label = "") 
+      deliveryItem.qty >> field(width = 0.2, align = Right) 
+      deliveryItem.dur >> field(width = 0.2, align = Right) 
+      priceEditor >> field(width = 0.2, align = Right)
+      amountEditor >> field(width = 0.2, align = Right)
+    }
+    row {
+      y (noLabel, width = 0.8, visible = deliveryItem.delivery.dlvState.active) {
+        label("Unavailable", color = "#f21", visible = deliveryItem.isUnav) 
+        label("Available", color = "#2a1", visible = ui.isSelected && deliveryItem.isAv) 
+      }
+      gstEditor  >> field(visible = ui.isSelected && order.legalEntity.hasGst, width = 0.2) 
+      discountEditor >> field(visible = ui.isSelected || discount, width = 0.2, align = Right)
+    }
+    row {
+      itemDesc >> field(width = 1.0, visible = ui.isSelected || desc)
+      total >> field(visible = ui.isSelected && discount, width = 0.2, align = Right)
+    }
+    periods >> list(visible = ui.isSelected && ui.edit, frame = false, label = "Available At") {
+      button(label = _.toString) {
+        delivery.silentUpdate(start, period.start)
+        delivery.dlvEnd = period.end
+        if (let items) {
+          deliveryItem.productItems = items
+        }
+      }
+    }
+    deliveryItem.delivery >> field(visible = ui.isSelected && this.order.deliveries.count > 1)
+    //deliveryItem.availableView >> field(visible = ui.isSelected && active, label = "")
+    accessories >> list {
+      x {_ add("Add") {
+        let item = SalesItem(
+          order = order, 
+          deliveryItem = DeliveryItem(product = _, delivery = deliveryItem.delivery, qty = deliveryItem.qty.as[UQty[_.unit]], unit = _.unit) 
+        )
+        item.deliveryItem.updateAmount()
+      }}
+    }
+    deliveryItem.snView >> field(editMode = Original, visible = ui.isSelected && product.trackItems, label = try? product.productItemsLabel)
+    x(visible = ui.isSelected && ui.edit) {
+      button("Dekit", visible = product.is[IKit]) {
+        dekit()
+      }
+    }
+  }
+   
+  impl func revenueLedgers(journal: Journal, date: Date, baseAmount: UMoney?) = {
+    let rt = product.revenueType
+    [LSales(account = Rent, journal = journal, date = date, product = deliveryItem.product, revenueType = rt, 
+            location = deliveryItem.delivery.store,
+            qty = (deliveryItem.period.duration(hour)*deliveryItem.qty).as[UQty[ProductUnit.Hour]], unit = Hour,
+            counterparty = order.customer?.legalEntity, trAmount = -baseAmount)]
+  }
+  
+  func toCalcItem = RentAvCalcItem(
+    priorityDate = order.date
+    le = order.legalEntity
+    store = delivery.store!
+    retStore = delivery.retStore!
+    product = product
+    dur = deliveryItem.dur
+    qty = qty
+    exclRegs = (try? deliveryItem.inStocks!)*.id + (try? deliveryItem.outStocks!)*.id
+  )
+    
+  compute periods: Future[[RentAvPeriodItem]?] = if (!delivery.state.started && delivery.state.active let v = order.orderVendor) {
+    let stDate = delivery.dlvInTransitDate.start(of = day).max(now)
+    let calcItem = toCalcItem
+    back {
+      if (let pm = v.price(priceLevel, Rent, product)?.as[IPriceRent] where pm.model.hasSlots) {
+        pm.rentAvPeriods(stDate, calcItem).first(10)
+      }
+    }
+  }
+}

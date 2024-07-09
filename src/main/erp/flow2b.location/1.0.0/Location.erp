@@ -1,0 +1,26 @@
+entity Location extends ILocation {
+  background = "#2e8e67"
+  singular = "Location"
+  ref field name: String? 
+  ref field mutual: Bool
+  ref field address: Address?  {
+    validate = if (!name && !address) "Either Address or Name should be entered"
+  }
+  func title = {
+    if (let n = name) n
+    else if (let a = address) a 
+    else "Untitled"
+  }
+  view form = nav{
+    grid(labels = Top){
+      actor
+      read {
+        row{ name >> field(width = 0.85) mutual >> field (width = 0.15, visible = mutual)}
+      }
+      edit {
+        row{ name >> field(width = 0.85) mutual >> field (width = 0.15)}
+      }
+      address
+      schedule
+    }}
+}

@@ -1,0 +1,22 @@
+role Accountant {
+  entity LegalEntity = readWrite
+  entity Company = readWrite
+  entity Person = readWrite
+  entity CompanyGroup = readWrite
+  view dashboard = row{}
+}
+role Bookkeeper {
+  entity LegalEntity = readWrite
+  entity Company = readWrite
+  entity Person = readWrite
+  entity CompanyGroup = readWrite
+  
+  view dashboard = row{}
+}
+role Director {
+  entity LegalEntity = readWrite
+  entity Company = readWrite
+  entity Person = readWrite
+  entity CompanyGroup = readWrite
+  view dashboard = row{}
+}

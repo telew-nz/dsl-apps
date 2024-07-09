@@ -1,0 +1,25 @@
+extend trait ICustomer {
+  field _billingContact: Contact?
+  compute billingContact {
+    value = _billingContact.or((legalEntity.contacts + legalEntity.people*.contacts).find(canSend))
+    from = (legalEntity.contacts + legalEntity.people*.contacts).filter(canSend)
+  }
+} 
+extend entity Customer {
+  extend view form = extend("top") {
+    billingContact
+  }
+  extend view form = extend("debt") {
+    add("Debt Write Down") {
+      DebtWriteDown.incomplete(debtor = legalEntity).form.open
+    }
+  }
+}
+
+extend entity OurCompany {
+  extend view form = billingContact
+}
+
+extend entity OurPerson {
+  extend view form = billingContact
+}

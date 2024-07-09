@@ -1,0 +1,14 @@
+trait HasTracking extends Entity {
+  field freightCompany: FreightCompany?
+  field trackingNumber: String? {visible = freightCompany}
+  compute trackingUrl: Url? {
+    value = if (let n = trackingNumber, let c = freightCompany) c.trackingUrl(n)
+    label = ""
+  }
+  field freightLocation: String?
+  view freightView = grid (width = 1.2) {row {
+    freightCompany >> field(compact)   
+    trackingNumber >> field(action = UI.openUrl(trackingUrl!), canAction = trackingUrl)
+    freightLocation
+  }}
+}

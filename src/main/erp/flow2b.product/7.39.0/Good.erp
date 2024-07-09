@@ -1,0 +1,33 @@
+entity Good extends IAltUnits with IBasicProduct {
+  singular = "Product"
+  plural = "Products"
+  ref field trackItems: TrackItems? {label = "Track Serial Numbers"}
+  
+  object func attrs: [ProductAttr]? = [ColorItem.as[ProductAttr]!, Size, ProdCondition]
+  
+  func isTangible = true
+  field title: String
+  field description: Text?
+  field status: ProductStatus = default
+  func skuPrefix: String = "GD"
+  
+  field color: ColorItem?
+  field size: Size?
+  field condition: ProdCondition?
+  func prodCondition: ProdCondition? = condition
+  
+  view mainView = grid (labels = Top, label = "Main") {
+    photos >> field(height = 10, label = "")
+    statusView
+    title >> field(label = "", fontStyle = H1)
+    row {sku refNum trackItems}
+    row {color size condition}
+    
+    unitsView
+    barcodes
+    productCost >> field(frame = false)
+    baseMainView
+    extension
+    description
+  }
+}

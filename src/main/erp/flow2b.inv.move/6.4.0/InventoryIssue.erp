@@ -1,0 +1,21 @@
+report InventoryIssue {
+  field legalEntity: LegalEntity? {
+    from = LegalEntity.ours
+  }
+  field supplier: LegalEntity?
+  field receiver: LegalEntity?
+  field inventoryManager: Person? {
+    default = Person.current.filter(is(InventoryManager))
+    from = Person.all.filter(is(InventoryManager))
+  }
+  view list = IDelivery.all.filter(
+      hasInvIssues 
+   && isFor(inventoryManager, InventoryManager) 
+   && legalEntity ==? this.legalEntity 
+   && deliverySupplier ==? this.supplier  
+   && deliveryReceiver ==? this.receiver  
+  ).sortBy(dispatchDate) 
+    >> nav(background = "#2e8e67"){
+    list(canAdd = false){}}
+}
+

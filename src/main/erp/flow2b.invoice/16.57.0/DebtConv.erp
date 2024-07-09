@@ -1,0 +1,22 @@
+/*entity DebtConv extends HasN with Journal with DebtOrigin with NewEngine {
+  field date: Date = now
+  ref field debtor: LegalEntity
+  field amount: UMoney[currency] {canEditUnit}
+  field currency: Currency = our
+  impl func title = "$fullNum $debtor"
+  impl field legalEntity: OurLegalEntity =? onlyOne
+  field dueDate: Date?
+  impl view form = nav{
+    grid {
+      row { date number refNums }
+      legalEntity
+      debtor
+      amount
+      dueDate
+      debtOriginsView >> field(label = "Origins")
+    }
+    generalLedgerButton
+  }
+}
+
+inline entity DebtConv*/

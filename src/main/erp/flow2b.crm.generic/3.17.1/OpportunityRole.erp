@@ -1,0 +1,23 @@
+enum OpportunityRole {
+  case DecisionMaker {
+    icon = "chair"
+    background = "#ed9"
+  }
+  case Champion {
+    icon = "trophy"
+    background = "#dea"
+  }
+  case Opponent {
+    icon = "bolt"
+    background = "#f99"
+  }
+  case Influencer{
+    icon = "balance-scale"
+    background = "#8bf"
+  }
+}
+
+extend entity CompanyPerson {
+  ref field role: OpportunityRole? {views = []}
+  extend view stateView = role
+}

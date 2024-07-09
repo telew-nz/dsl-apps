@@ -1,0 +1,98 @@
+
+enum ChargeType {
+  case Cash {background = "#b6e2c6"}
+  case Account {background = "#dec4ee"}
+}
+
+entity CptAcc { 
+  singular = "Customer Account"
+  impl func title = "CAC${cpt.n} $cpt $currency"
+  ref field legalEntity: OurLegalEntity =? onlyOne
+  ref field cpt: LegalEntity by cptAccs {label = "Counterparty"}
+  ref field currency: Currency = (try? cpt.getCurrency).alt(our)
+  field terms: CptAccTerms by cptAccs
+  ref field debitAllowance: Money[currency]? {
+    canEditUnit
+    label = "Customer Debit Allowance"
+    //visible = counterparty.customer
+  }
+  ref field creditAllowance: Money[currency]? {
+    canEditUnit
+    label = "Vendor Credit Allowance"
+    //visible = counterparty.vendor
+  }
+  
+  impl event onSave = {
+    if (created || updated(debitAllowance) || updated(creditAllowance) || updated(terms)) {
+      DebtOrigin.all.filter(_.debtCounterparty == this.cpt).update(debtAllowance = 0)
+      LMoneyDebt.current.filter(_.counterparty == this.cpt)*.touch
+    }
+  }
+}
+
+entity CptInitBalance extends DebtOrigin {
+  singular = "Customer Initial Balance"
+  singular = "Customer Initial Balances"
+  field date: Date = now
+  impl ref field legalEntity: OurLegalEntity =? onlyOne
+  ref field cpt: LegalEntity {label = "Counterparty"}
+  ref field currency: Currency = (try? cpt.getCurrency).alt(our)
+  ref field balance: Money[currency] {canEditUnit}
+  
+  impl func title = "IB $cpt $balance"
+  impl func journalDate = date
+  impl func debtCurrency = currency
+  impl func debtAmount = balance
+  impl func debtCounterparty = cpt
+  impl func isPurchase = false
+  impl func debtCashFlows = [CashFlowAmount(cashFlow = Debts, amount = balance)]
+  impl view form = nav{grid{
+    date
+    legalEntity
+    cpt
+    balance
+  }}
+  register reg = LMoneyDebt(
+    legalEntity = legalEntity, trAmount = balance, journal = this, cor = 1, currency = currency, counterparty = cpt
+  )
+}
+
+
+entity CptAccTerms {
+  singular = "Customer Account Terms"
+  
+  impl field title: String
+  field start: Date {
+    default = Date.now.start(of = month) - 1_minute 
+    label = "First statement date"
+  }
+  field stmUnit: DateUnit = month
+  field stmEvery: Duration[stmUnit, 0] {
+    canEditUnit
+    default = 1_month
+    label = "Statement every"
+  }
+  field dueUnit: DateUnit = day
+  
+  func period(date: Date): Period = {
+    date.period(start, stmEvery)
+  }
+  
+  func prevPeriod(date: Date): Period = {
+    (date - stmEvery).period(start, stmEvery)
+  }
+  
+  field cptAccs: [CptAcc]? read by terms {
+    label = "Accounts"
+  }
+  
+  impl view form = nav{grid {
+    title
+    start
+    stmEvery
+    extension
+    
+    cptAccs
+  }}
+//  object func default: Future[CptAccTerms?] = CptAccTerms.all.first.result
+}

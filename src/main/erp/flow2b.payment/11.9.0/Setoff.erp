@@ -1,0 +1,77 @@
+inline entity Setoff {
+  field debit: Debt by credits {
+    init = {
+      new.debtCounterparty = credit.debtCounterparty
+    }
+    update = {
+      this.amount =? this.defAmount
+      if (!credit.debtCounterparty) credit.debtCounterparty = new.debtCounterparty 
+    }
+    from = Debt.all.filter(debtCounterparty ==? credit.debtCounterparty).sortBy(reconRank(credit))
+  }
+  field credit: Debt by debits {
+    init = {
+      new.debtCounterparty = debit.debtCounterparty
+    }
+    update = {
+      this.amount =? this.defAmount
+      if (!debit.debtCounterparty) debit.debtCounterparty = new.debtCounterparty
+    }
+    from = Debt.all.filter(debtCounterparty ==? debit.debtCounterparty).sortBy(reconRank(debit))
+  }
+  func journal: Journal = if (debit.isJournal(credit)) debit else credit
+  func currency = debit.currency
+  //field storedDate: Date?
+  /*compute date: Date {
+    value = {
+      if (storedDate && !debit.definesDate && !credit.definesDate) storedDate!
+      else if (debit.journalPriority > credit.journalPriority) debit.journalDate 
+      else credit.journalDate 
+    } 
+    update = {
+    	storedDate = new
+	}
+  }*/
+  compute date: Date = journal.journalDate
+  
+  field amount: Money[currency] {
+    default =? defAmount
+  }
+  compute negativeAmount: Money[currency] {
+    label = "Amount"
+    value = -amount
+    update = {amount = -new}
+  }
+  
+  func defAmount: Money[currency]? =  {
+    let db = try? debit.balance!
+    let cb = try? credit.balance!
+    (-db).min(cb)
+  }
+  
+  view form = group {
+    edit {
+      grid (labels = None) {
+        row {debit credit amount}
+      }
+    }
+    read {
+      x {
+        debit credit amount 
+      }
+    }
+  }
+  view negativeForm = group {
+    edit {
+      grid (labels = None) {
+        row {debit credit negativeAmount}
+      }
+    }
+    read {
+      x {
+        debit credit negativeAmount 
+      }
+    }
+  }
+}
+

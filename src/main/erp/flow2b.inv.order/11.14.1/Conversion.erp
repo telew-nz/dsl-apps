@@ -1,0 +1,39 @@
+back object Conversion extends IConversion {
+  func convert(version: [Int?]): Future[Any] = {
+    if (version < [11,0,0]) {   
+      renameField(SalesDelivery, start, "dispatchDate")
+      renameField(SalesDelivery, end, "retDeliveryDate")
+      renameField(SDShipping, loc, "dst")
+      renameField(SDShipping, end, "deliveryDate")
+      SDShipping.all.update(start = dlv.start)
+      renameField(SDRetShipping, loc, "src")
+      renameField(SDRetShipping, start, "dispatchDate")
+      SDRetShipping.all.update(end = dlv.dlvEnd)
+      
+      renameField(DropShipDelivery, start, "dispatchDate")
+      renameField(DropShipDelivery, end, "retDeliveryDate")
+      renameField(DDShipping, end, "deliveryDate")
+      DDShipping.all.update(start = dlv.start)
+      renameField(DDRetShipping, start, "dispatchDate")
+      DDRetShipping.all.update(end = dlv.dlvEnd)
+      
+      renameField(PurchaseDelivery, start, "deliveryDate")
+      renameField(PurchaseDelivery, end, "retDispatchDate")
+      renameField(PDShipping, loc, "dst")
+      renameField(PDShipping, start, "dispatchDate")
+      PDShipping.all.update(end = dlv.start)
+      PurchaseDelivery.all.filter(shipping).update(start = shipping!.start)
+      renameField(PDRetShipping, loc, "src")
+      renameField(PDRetShipping, end, "deliveryDate")
+      PDRetShipping.all.update(start = dlv.dlvEnd)
+      PurchaseDelivery.all.filter(retShipping).update(dlvEnd = retShipping!.end)
+    }
+    if (version < [11,11,0]) {
+      ISalesDelivery.all.update(_receiver = field[ICustomer?](_, "_receiver")?.legalEntity)
+      IPurchaseDelivery.all.update(_supplier = field[IVendor?](_, "_supplier")?.legalEntity)
+    }
+    if (version < [11,14,1]) {
+      IOrderItem.all.filter(!invoices && next)*.delete
+    }
+  } 
+}    

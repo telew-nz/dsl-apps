@@ -1,0 +1,13 @@
+object ProdGenUtils {
+  func attrTerms(decls: [Declaration]?, addition: Dsl?): Dsl = {
+    let v: Dsl = decls*.as[Field]
+      .filter(name != "title")
+      .map{v => if (v.tp.isOpt) "$(v.name).toSeq" else "[$(v.name)]"}
+      .join(" + ").as[Dsl].alt("[]")
+    if (let addition) {
+      "func attrTerms = $addition + $v"
+    } else {
+      "func attrTerms = $v"
+    }
+  }
+}

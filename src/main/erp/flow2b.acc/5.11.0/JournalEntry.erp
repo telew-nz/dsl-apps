@@ -1,0 +1,32 @@
+entity JournalEntry extends MJournal {
+  impl func debitEntry: MLedger? = null
+  impl func creditEntry: MLedger? = null
+  
+  impl compute number: String = "JE" + n
+  impl func title = "$number $legalEntity ${date.as[Date[day]]}"
+  override func journalDate: Date = date 
+    
+  register trading: [Ledger]? <- CurrencyTrading.trade(journal = this, amounts = entries*.amount)
+  compute currencyTradingLedgerEntries = trading + trading*.as[LCurrencyTrading]*.ledgers
+  impl func defaultEntries = [MEmptyLedger(journal = this)]
+    
+  impl view form = nav{grid(width = 1.0, labels = Top) {
+    number
+    date
+    legalEntity
+    entries >> table {
+      accountEditor >> field(label = "Account", width = 0.3)
+      aview >> field(label = "Analitics", width = 0.3, margin = None)
+      debitEditor >> field(label = "Debit", width = 0.2)
+      creditEditor >> field(label = "Credit", width = 0.2)
+    }
+    edit {
+      add("Item") {
+        entries = entries + MEmptyLedger(journal = this)
+      }
+    }
+    currencyTradingLedgerEntries >> table(mode = Static) {
+      account >> field(width = 0.6) debit >> field(width = 0.2) credit >> field(width = 0.2)
+    }
+  }}
+}

@@ -1,0 +1,30 @@
+report IncomeStatement {
+  field legalEntity: LegalEntity? = (LegalEntity.ours.onlyOne) {from = LegalEntity.ours}
+  field from: Date = Date.now[Date[millisecond]].start(year)
+  field to: Date = Date.now[Date[millisecond]].end(year)
+    
+  view list = GeneralLedger.between(from, to)*.items
+    .filter(
+          legalEntity ==? this.legalEntity
+      && (account.type.isIncome))
+    .groupBy(account)
+    .agg(amount = -baseAmount.sum)
+    .sortBy(account.number) 
+    .union{
+      let baseCurrency = LegalEntity.ours.first!.getCurrency
+      let start: Money[baseCurrency]? <- LCurrencyTrading.at(this.from)
+        .map(balance.to[Money[baseCurrency]](this.from))
+        .agg{sum.as[Money[baseCurrency]]
+        }.result
+      let end : Money[baseCurrency]? <- (LCurrencyTrading.at(this.to)
+        .map(balance.to[Money[LegalEntity.ours.first!.getCurrency]](this.to))
+        .agg{sum.as[Money[baseCurrency]]
+        }.result)
+      [(account = LedgerAccount.CurrencyTrading, amount = start - end)]
+    }
+  >> nav{table(action = try? Reflection.object[AnalitIncomeStatement]("IS$(account)")
+          .new(legalEntity = legalEntity, from = this.from, to = this.to)
+          .list.open) {
+    account >> field(width = 0.3), amount
+  }}
+}

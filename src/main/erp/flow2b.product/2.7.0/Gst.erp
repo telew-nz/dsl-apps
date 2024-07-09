@@ -1,0 +1,17 @@
+enum GstRate(rate: GstRateValue?) {
+  case Exempt(rate = null) {background = "#999"}
+  case Zero(rate = GstRateValue(value = 0)) {label = "Zero - 0%"}
+  case Special(rate = null)
+}
+
+class GstRateValue {
+  field value: Percent[2]?
+  view form = value
+  func toString: String? = value.toString
+}
+
+extend trait Actor {
+  func hasGst: Bool = false
+  func pricesIncludingGst: Bool = true
+  func defaultGstRate(product: ISuperProduct): GstRate = Exempt
+}

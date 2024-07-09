@@ -1,0 +1,107 @@
+interface IMargin {
+  field regularMargin: UPercent[2]?{
+    default = 0.5
+    update = {
+      if (old == currentMargin) currentMargin = new
+    }
+  }
+  field currentMargin: UPercent[2]? {
+    default = 0.5
+  }
+  
+}
+
+entity MarginPriceModel extends IDynamicPriceModel with IMargin {
+  impl func priority: Dec[8]? = 1.0
+  impl back func containsSales(product: IBaseProduct): Bool = costSource.contains(product)
+  impl back func priceSales(product: IBaseProduct): IPriceSales? = {
+    if (costSource.contains(product)) {
+      let sp = product.superProduct
+      let m = productMargins.find(m => m.product == product || m.product == sp)?.as[IMargin]
+        .or(categoryMargins.find(m => sp.categories.contains(m.category)))
+        .alt(this)
+      MarginPrice(model = this, product = product, rounding = rounding, 
+                  regularMargin = m.regularMargin, currentMargin = m.currentMargin)
+    }
+  }
+  
+  field costSource: ProductCostSource = Cost
+  field rounding: Rounding = Round()
+  field categoryMargins: [CategoryMargin]? inline by model
+  field productMargins: [ProductMargin]? inline by model
+  impl view form = nav{grid{
+    vendor
+    costSource
+    row{regularMargin currentMargin}
+    rounding
+    categoryMargins >> table {
+      category regularMargin currentMargin
+    }
+    productMargins >> table {
+      product regularMargin currentMargin
+    }
+  }}
+  
+  impl func title = "Margin Price Model" 
+}
+            
+class MarginPrice extends IPriceSales with IMargin {
+  impl field product: IBaseProduct
+  impl field model: MarginPriceModel
+  field rounding: Rounding
+
+  impl back func salesPrice(currency: Currency, inclGst: Bool): Future[SalesPrice] = {
+    let cost <- model.costSource.cost(product)
+    let regular = if (let c = cost, let p = 1.0000 - regularMargin) c/p 
+    let current = if (let c = cost, let p = 1.0000 - currentMargin) c/p 
+    let rp <- regular.to[UMoney[currency]](now)
+    let cp <- {
+      if (current != regular) {
+        current.to[UMoney[currency]](now)
+      } else Future(rp)
+    }
+    SalesPrice(currency = currency, regular = rp, current = cp)
+      .convertGst(gstRate, !vendor.hasGst, inclGst)
+      .round(rounding)
+  }
+  
+  impl view form = grid {row{
+    salesPrice >> field(frame = false)
+    x (label = "Margin", width = 0.25, flow = false, visible = vendor.legalEntity.our) {
+      regularMargin >> field(fontStyle = if (currentMargin == regularMargin) Normal else Strikeout, visible = currentMargin != regularMargin || ui.edit) 
+      currentMargin
+    }
+  }}
+}
+
+extend trait IBaseProduct {
+  back func purchasePrices2: [IPriceSales]? = {
+    staticPrices.filter(!vendor.is[OurLegalEntity])*.as[IStaticPrice with IPriceSales] 
+    + 
+    IDynamicPriceModel.all
+        .filter(!vendor.is[OurLegalEntity])
+        .groupBy(vendor).agg(price = sortBy(b => b.priority).mapOpt(b => b.priceSales(this)).first)
+        .flatMap(price.toSeq)
+        .result.get
+  }
+
+  back func purchaseCosts: Future[[UMoney?]?] = {
+    let ps <- purchasePrices2*.salesPrice(Currency.our, inclGst = false).allCompleted
+    ps*.current
+  }
+}
+
+enum ProductCostSource(back cost: IBaseProduct => Future[UMoney?], back contains: IBaseProduct => Bool) { 
+  case Cost(cost = pr => pr.productCost?.cost, contains = pr => pr.productCost) 
+  case MinPrice(cost = pr => pr.purchaseCosts.map(_.min), contains = pr => pr.purchasePrices2) = "Minimum Vendor Price"
+  case MaxPrice(cost = pr => pr.purchaseCosts.map(_.max), contains = pr => pr.purchasePrices2) = "Maximum Vendor Price"
+}
+
+inline entity CategoryMargin extends IMargin {
+  field model: MarginPriceModel by categoryMargins
+  field category: ProductCategory
+}
+inline entity ProductMargin extends IMargin {
+  field model: MarginPriceModel by productMargins
+  field product: IBaseProduct
+}

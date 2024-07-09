@@ -1,0 +1,38 @@
+acctemplate WorkInProgress(singleAccount = true) 
+account WorkInProgress(template = "WorkInProgress", number = 125, type = Asset) 
+
+extend register LWorkInProgress {
+  key field order: IProductionOrder? = journal.as[IProductionOrder]
+  field complete: Bool
+  register outputs: [LInventory]?
+  register intraLedgers: [Ledger]?
+  event onSave = {
+    if (!complete) {
+      amount = -order?.lMaterials*.amount.sum
+      baseAmount = -order?.lMaterials*.baseAmount.sum
+    } else {
+      amount = -prev?.amount
+      baseAmount = -prev?.baseAmount
+    }
+    let le = if (complete) order?.receiver.alt(legalEntity) else order?.supplier.alt(legalEntity)
+    let contraLe = if (le != legalEntity) legalEntity
+    outputs = if (complete) {
+      let r = order?.receiver
+      order?.method?.outputs.distribute(prev?.amount, by = costWeight).map{
+        LInventory(
+          journal = journal, date = this.date, product = item.outputProduct.product, gstRate = item.gstRate, 
+          legalEntity = le, 
+          isDebit = true, trAmount = value, qty = item.baseQty*order!.qtyK)
+      }
+    }
+    
+    intraLedgers = if (let contraLe) {
+      let oos = if (complete) outputs else order?.lMaterials
+      oos.groupBy(gstRate).agg(amount.sum).toSeq.filter(amount).flatMap{
+        LInventory.transferOwnership(journal, this.date, le, contraLe, currency, amount!, gstRate, amount*gstRate.alt(0)) 
+      }
+    }
+    
+    calcLedger
+  }
+}

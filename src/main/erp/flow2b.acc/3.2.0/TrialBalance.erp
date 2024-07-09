@@ -1,0 +1,42 @@
+report TrialBalance {
+  plural = "Trial Balance"
+  field legalEntity: LegalEntity? = (LegalEntity.ours.onlyOne) {from = LegalEntity.ours}
+  field date: Date?
+  field accountTypes: [LedgerAccountType]?
+  field currency: Currency?
+    
+  func baseCurrency = currency.alt(legalEntity?.getCurrency.alt(Currency.our))
+    
+  view list = GeneralLedger.at(date)
+    .filter(
+      legalEntity ==? this.legalEntity &&
+      (!this.accountTypes || this.accountTypes.contains(account.type)) &&
+      currency ==? this.currency && balance
+    )
+    .groupBy(account, currency).agg(balance.sum)
+    .map {
+      let baseBalance <- balance.to[Money[this.baseCurrency]](this.date.alt(Date.now))
+      (account, 
+        baseDebitBalance = if (baseBalance > 0) baseBalance else 0, 
+        baseCreditBalance = if (baseBalance < 0) -baseBalance else 0, 
+        debitBalance = if (balance > 0) balance else 0,
+        creditBalance = if (balance < 0) -balance else 0)
+    }
+    .sortBy(account.number)
+    .groupBy(account.type).subtotal(baseDebitBalance.sum, baseCreditBalance.sum)
+    .total(baseDebitBalance.sum, baseCreditBalance.sum)
+      >> 
+  nav {
+    total {
+      row {space, baseDebitBalance, baseCreditBalance}
+      subtotal {
+        row {type, baseDebitBalance, baseCreditBalance}
+        table(action = Reflection.object[AnalitTrialBalance]("TB$(account.template)")
+              .new(legalEntity = legalEntity, date = this.date, currency = currency, account = account)
+              .list.open) {
+           account.toString >> field(width = 0.4, label = "Account") debitBalance >> field(width = 0.3), creditBalance >> field(width = 0.3)
+        }
+      }
+    }
+  }
+}

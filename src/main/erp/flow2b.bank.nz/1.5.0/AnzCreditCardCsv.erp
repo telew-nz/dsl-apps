@@ -1,0 +1,25 @@
+class AnzCreditCardCsvData extends BankStatementItem {
+  field card: String?
+  field type: String?
+  field trAmount: Dec[2]?
+  func amount: Dec[2]? = if (type == "D") -trAmount else trAmount
+  field details: String?
+  field transactionDate: Date {format = "dd/MM/yyyy"}
+  field processedDate: Date {format = "dd/MM/yyyy"}
+  func date = transactionDate
+  field foreignCurrencyAmount: String?
+  field conversionCharge: String?
+  func data(account: BankAccount): BankData = {
+    BankData(memo = details)
+  }
+}
+
+extend enum BankStatementType {
+  case AnzCreditCardCsv(
+    canProcess = file.is("csv") && data.toString.lines(CSV).first == "Card,Type,Amount,Details,TransactionDate,ProcessedDate,ForeignCurrencyAmount,ConversionCharge", 
+    process = ProcessResult(
+       accountNumber = (file.name[ .. "_Transactions")).replace("x", "*"), 
+       items = data.toString.lines(CSV).drop(1).map(splitTo[AnzCreditCardCsvData](",", CSV))), 
+    knowOurAccount = true
+  )
+}

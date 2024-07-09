@@ -1,0 +1,10 @@
+acctemplate IncomeSummary(type = singleAccount)
+account IncomeSummary(template = "IncomeSummary", credit = acc(Equity, 80)) 
+ 
+extend register LIncomeSummary {
+  impl func createIncomeSummary = false
+  register closingLedgers: [Ledger]? = {
+    if (isClosing) if (let b = prev?.balance) legalEntity.incomeSummaryClosing(journal, -b) 
+  }
+} 
+  

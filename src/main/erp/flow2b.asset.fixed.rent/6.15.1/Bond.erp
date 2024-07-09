@@ -1,0 +1,54 @@
+inline entity SalesBondItem extends ISalesItem {
+  icon = "dumbbell"
+  background = "#d68400"
+  singular = "Bond"
+  impl func name = "Bond"
+  impl func orderDeliveryItem: IOrderDeliveryItem? = null
+  impl func itemDelivery = null
+  impl view form = grid(margin = None, width = 1.2, labels = Top) {
+    row (labels = false) {
+      label("Bond", width = 0.2)
+      desc >> field(width = 0.8, visible = ui.isSelected || desc, placeholder = "Description")
+      amountEditor >> field(width = 0.2, align = Right)
+    }
+  }
+  field itemsReturned: Bool
+  compute itemsReturned1 = (active && order.assetReturned) || (!active && itemsReturned)
+  override func orderAmountWithGst: UMoney[currency]? = 0
+  override func orderAmountNoGst: UMoney[currency]? = 0
+  override compute invoiceAmountWithGst: UMoney[currency]? = if (itemsReturned1) 0 else amountNoGst
+  override compute invoiceAmountNoGst: UMoney[currency]? = if (itemsReturned1) 0 else amountNoGst
+  /*ref compute state: BondState = {
+    if (!(try? amount) || !paid) NotLodged
+    else if (creditUnpaid > 0) Lodged
+    else if (creditUnpaid < 0) OverRefunded
+    else Refunded
+  }*/
+  impl view rowView = group {
+    row{label("Bond", span = 3, align = Right)
+        invoiceAmountNoGst >> field(align = Right)
+    }
+    row(visible = invoiceDesc) {invoiceDesc >> field(span = 4)}
+  }
+  impl func revenueLedgers(journal: Journal, date: Date, baseAmount: UMoney?) = []
+//  func ledgerAccount: LedgerAccount = BondsHolded
+  override func needsRevision: Bool = {
+    if (active) itemsReturned = order.assetReturned
+    updated(sAmount) || updated(itemsReturned)
+  }
+  impl event onSave = {
+    if (active) itemsReturned = order.assetReturned
+  }
+}
+
+//account BondsHolded(template = "MoneyDebt", credit = acc(Liability, 40), money = true) 
+//extend enum CashFlowCategory {
+//  case Bonds(type = CashUsedOrProvided)
+//}
+
+/*enum BondState {
+  case NotLodged {background = "#ed9"}
+  case Lodged {background = "#dea"}
+  case Refunded {color = "white" background = "#090"}
+  case OverRefunded {background = "#f99"}
+}*/

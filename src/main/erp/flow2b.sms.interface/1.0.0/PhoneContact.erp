@@ -1,0 +1,5 @@
+extend trait IPhoneContact {
+  field phoneE164: Phone?
+  field countryCode: String?
+  field carrier: String?  
+}

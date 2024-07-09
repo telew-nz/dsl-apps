@@ -1,0 +1,23 @@
+analytic ExpenseType(dataType = "ExpenseType")
+
+acctemplate Expenses(type = singleAccount) {
+  key field expenseType: ExpenseType?
+  field counterparty: LegalEntity?
+  field product: ISubProduct?
+  field qty: Qty[product?.unit.alt(Item)]? {label = "Quantity"} 
+}
+
+acctemplate BankFees(type = singleAccount) {
+  key field finAccount: FinAccount
+  impl func currency: Currency = finAccount.currency
+}
+
+trait ILExpenses extends Ledger {
+  func expenseType: ExpenseType?
+  func taxable: UPercent? = 1.0
+}
+
+extend register LExpenses extends ILExpenses with ILProduct {
+  impl field taxable: UPercent? = 1.0
+  impl func subProduct = product
+}

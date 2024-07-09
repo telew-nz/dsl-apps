@@ -1,0 +1,54 @@
+extend trait IBaseProduct extends HasExtId 
+extend entity File extends HasExtId
+
+extend trait ICustomerSuperProduct {
+  event onSave = {
+	if (!IUser.current.is[ECommerceIntegration]) {
+      ECommerceIntegration.all.map {service =>
+        if (service.userEnabled) {
+          let po <- service.productUpdate(this, updated(photos))
+          let b = BatchChange.create(service, [po])
+          if (!b.isEmpty) service.updateProductJobs(b)*.run
+        }
+      }.result
+    }
+  }
+}
+  
+class ProductUpdate[P extends IBaseProduct] extends IHasExtIdDecorator {
+  func extIdItem = product
+  field product: P
+  field stock: Qty?
+  field price: SalesPrice
+  field photosUpdated: Bool
+  field deleted: Bool
+}
+
+extend trait ECommerceIntegration {
+  back func updateAllProducts(): Future[Void] = {
+    let prods <- ICustomerSuperProduct.all.map(productUpdate(_, photosUpdated = true)).result
+    let b = BatchChange.create(this, prods)
+    if (!b.isEmpty) updateProductJobs(b)*.run()
+  }
+  
+  back func productUpdate[P extends IBaseProduct](product: P, photosUpdated: Bool): Future[ProductUpdate[P]] = {
+    if (product.deleted 
+     || (this.categories && !this.categories.intersect(product.superProduct.categories)) 
+     || (this.brands && !this.brands.intersect(product.superProduct.brands)) 
+    ) {
+      ProductUpdate[P](product = product, deleted = true)
+    } else if (let pr = legalEntity.price(product)) {
+      let sp <- pr.salesPrice(currency, inclGst = true)
+      let stock = if (!product.alwaysAvailable && !product.obsolete) stockLevel.get(product.calcStock(legalEntity, stores)).max(0)
+      ProductUpdate[P](
+        product = product,
+        price = sp,
+        stock = stock,
+        photosUpdated = photosUpdated,
+        deleted = sp.isEmpty || !stock
+      ) 
+    } else {
+      ProductUpdate[P](product = product, deleted = true)
+    }
+  }
+}

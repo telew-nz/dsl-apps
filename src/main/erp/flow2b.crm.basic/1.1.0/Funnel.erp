@@ -1,0 +1,3 @@
+report Funnel {
+  view list = UFunnel.select(Opportunity, OpportunityStage)
+}

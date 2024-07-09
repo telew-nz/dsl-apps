@@ -1,0 +1,5 @@
+report MyTodo {
+  plural = "Todo"
+  singular = "Todo"
+  view list = Todo.all.filter(owner == Person.current && active)
+}

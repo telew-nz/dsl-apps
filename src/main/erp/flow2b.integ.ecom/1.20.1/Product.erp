@@ -1,0 +1,141 @@
+extend trait IBaseProduct extends HasExtId {
+  func shortDescription: Text?
+}
+extend entity File extends HasExtId
+
+
+extend trait ISuperProduct {
+  field shortDescription: Text?
+  field _seoTitle: String?
+  field slug: String?
+  compute seoTitle: String {
+    value = _seoTitle.alt(title)
+    update = {
+      _seoTitle = if (new != title) new
+    }
+  }
+  field seoDescription: PlainText?
+  event onSave = {
+	if (!IUser.current.is[ECommerceIntegration] && touched) {
+      ECommerceIntegration.all.map {service =>
+        superUpdateECommerce(service)
+      }
+    }
+  } 
+  back func superUpdateECommerce[ID](service: ECommerceIntegration[ID]) = {
+    SuperProductUpdateJob[ID](service = service, product = this, updatedPhotos = updated(photos)).run
+  }
+  extend view superProductTabView = grid(labels = Top, label = "E-Commerce"){
+    seoTitle
+    slug
+    seoDescription
+    shortDescription
+  }
+}
+extend trait ISubProduct {
+  func shortDescription = superProduct.shortDescription
+}
+
+extend trait IIntermediateProduct {
+  func shortDescription = superProduct.shortDescription
+}
+
+class SuperProductUpdateJob[ID] extends SystemJob {
+  field service: ECommerceIntegration[ID]
+  field product: ISuperProduct
+  field updatedPhotos: Bool
+  func do = {
+    let po <- service.superProductUpdate(product, shouldDelete = service.shouldDeleteProducts, updatedPhotos)
+    let b = BatchChange.createAndFilter(service, [po.product], item.enabled || extId)
+    if (!b.isEmpty) service.uploadProductJobs(b)*.run    
+    let vars = BatchChange.createAndFilter(service, po.variations, item.enabled || extId)
+    if (!vars.isEmpty) service.uploadVariationJobs(vars)*.run()
+  }
+}
+
+class ProductUpdate[P extends IBaseProduct] extends IHasExtIdDecorator {
+  func extIdItem = product
+  field product: P
+
+  field alwaysAvailable: Bool
+  field stock: Qty?
+  field price: SalesPrice
+  field photosUpdated: Bool
+  field enabled: Bool
+  field deleted: Bool = product.deleted
+  field availableOptions: [ProductAttrOptions]?
+  func toString = "Update($product $enabled $deleted)"
+}
+class SuperProductUpdate {
+  field product: ProductUpdate[ISuperProduct]
+  field variations: [ProductUpdate[IComplexSubProduct]]?
+}
+extend trait ECommerceIntegration {
+  back func uploadAllProducts(): Future[Void] = {
+    let prods <- ISuperProduct.all.map(superProductUpdate(_, shouldDelete = shouldDeleteProducts, photosUpdated = true)).result
+    let b = BatchChange.createAndFilter(this, prods*.product, item.enabled || extId)
+    if (!b.isEmpty) uploadProductJobs(b)*.run()
+    let vars = BatchChange.createAndFilter(this, prods*.variations, item.enabled || extId)
+    if (!vars.isEmpty) uploadVariationJobs(vars)*.run()
+  }
+  
+  back func uploadAllPrices(): Future[Void] = {
+    let prods <- ISuperProduct.all.map(superProductUpdate(_, shouldDelete = shouldDeleteProducts, photosUpdated = false)).result
+    let b = BatchChange.createAndFilter(this, prods*.product, item.enabled || extId).updatedOnly
+    if (!b.isEmpty) uploadProductPriceJobs(b)*.run()
+    let vars = BatchChange.createAndFilter(this, prods*.variations, item.enabled || extId).updatedOnly
+    if (!vars.isEmpty) uploadVariationPriceJobs(vars)*.run()
+  }
+  
+  back func superProductUpdate(product: ISuperProduct, shouldDelete: Bool, photosUpdated: Bool): Future[SuperProductUpdate] = {
+    if (product.is[ISubProduct]) {
+      let u <- baseProductUpdate(force = 0, product, shouldDelete, photosUpdated)
+      SuperProductUpdate(product = u)
+    } else if (let products = product.subProducts) {
+      let pus <- products.map(p => baseProductUpdate(force = 0, p.as[IComplexSubProduct]!, shouldDeleteVariations, photosUpdated)).allCompleted
+      let u <- baseProductUpdate(force = if (pus.exists(enabled)) (if (pus.exists(alwaysAvailable)) 2 else 1) else 0, product, shouldDelete, photosUpdated)
+      SuperProductUpdate(product = u, variations = pus)
+    } else {
+      SuperProductUpdate(product = ProductUpdate(product = product, enabled = false, deleted = product.deleted || shouldDelete))
+    }
+  }
+  
+  back func productUpdate[P extends IBaseProduct](product: P, shouldDelete: Bool, photosUpdated: Bool): Future[ProductUpdate[P]] = {
+    baseProductUpdate[P](force = 0, product, shouldDelete, photosUpdated)
+  }
+  back func baseProductUpdate[P extends IBaseProduct](force: Int?, product: P, shouldDelete: Bool, photosUpdated: Bool): Future[ProductUpdate[P]] = {
+    if (product.deleted 
+     || !force && (
+       !product.forSale
+       || (this.categories && !this.categories.intersect(product.superProduct.categories)) 
+       || (this.brands && !this.brands.intersect(product.superProduct.brands))
+     ) 
+    ) {
+      ProductUpdate[P](product = product, enabled = false, deleted = product.deleted || shouldDelete)
+    } else if (let pr = legalEntity.price(product)) {
+      let sp <- pr.salesPrice(currency, inclGst = true)
+      let alwaysAvailable = force == 2 || product.alwaysAvailable
+      let stock = if (!alwaysAvailable) stockLevel.get(product.calcStock(null, Inventory, legalEntity, stores)).max(0)
+      let enabled = force || (!sp.isEmpty && (alwaysAvailable || stock))
+      ProductUpdate[P](
+        product = product,
+        price = sp,
+        stock = stock,
+        alwaysAvailable = alwaysAvailable,
+        photosUpdated = photosUpdated,
+        enabled = enabled, 
+        deleted = !enabled && shouldDelete,
+        availableOptions = if (enabled && !product.is[ISubProduct]) {
+          if (let p = product.as[ISuperProduct]) {
+            p.attrOptions(p.subProducts.filter{cp => 
+              let cpStock = product.calcStock(null, Inventory, legalEntity, stores)
+              stockLevel.get(cpStock) > 0
+            })
+          }
+        }
+      ) 
+    } else {
+      ProductUpdate[P](product = product, enabled = force, deleted = !force && shouldDelete)
+    }
+  }
+}

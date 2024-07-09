@@ -1,0 +1,21 @@
+trait IOurStore extends IStore 
+
+extend entity Workspace {
+  compute stores: [IOurStore]? {
+    availableFor = Inline
+    value = IOurStore.all
+  }
+}
+
+entity Store extends IOurStore {
+  order = -1
+  impl field title: String
+  impl func locationAddress: Address? = address
+  field address: Address?
+  impl view form = nav{grid(labels = Top){
+    title >> field(label = "", fontStyle = H1)
+    address
+    schedule
+    contacts
+  }}
+}

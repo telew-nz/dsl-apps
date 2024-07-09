@@ -1,0 +1,37 @@
+enum OrderState(active: Bool, toDispatch: Bool, delivery: DlvState?, canceled: Bool) {
+  case Quote(active = true, toDispatch = false, delivery = null, canceled = false){background = "#ecd"}
+  
+  case Accepted(active = true, toDispatch = true, delivery = null, canceled = false){background = "#ed9"}
+  case Prepaid(active = true, toDispatch = true, delivery = null, canceled = false){background = "#ed9"}
+  case ToDispatch(active = true, toDispatch = true, delivery = null, canceled = false){background = "#ed9"}
+  
+  case Prepared(active = true, toDispatch = false, delivery = Prepared, canceled = false){background = "#c3e8c7"}
+  case InTransit(active = true, toDispatch = false, delivery = InTransit, canceled = false){background = "#cce0ff"}
+  case InProgress(active = true, toDispatch = false, delivery = InProgress, canceled = false){background = "#8bf"}
+  case RetInTransit(active = true, toDispatch = false, delivery = RetInTransit, canceled = false){
+    label = "In Transit Return"
+    background = "#cce0ff"}
+  case PostProcessing(active = true, toDispatch = false, delivery = PostProcessing, canceled = false){background = "#c3e8c7"}
+  case Complete(active = true, toDispatch = false, delivery = Complete, canceled = false){background = "#dea"}
+
+  case Closed(active = false, toDispatch = false, delivery = null, canceled = false){color = "white" background = "#090"}
+  
+  case Unaccepted(active = true, toDispatch = false, delivery = null, canceled = true){background = "#f99"}
+  case Unpaid(active = true, toDispatch = false, delivery = null, canceled = true){background = "#f99"}
+  case Canceled(active = false, toDispatch = false, delivery = null, canceled = true){background = "#ddd"}
+}
+
+enum InvoiceItemPosition {
+  case Lines
+  case Subtotal = "Below Subtotal"
+}
+
+extend trait ISuperProduct {
+  field invoicePosition: InvoiceItemPosition {
+    default = Lines
+    visible = !isTangible
+  }
+  extend view superProductTabView = extend("invoice") {
+    invoicePosition
+  }
+}

@@ -1,0 +1,131 @@
+extend register LInventory extends LInvBase 
+
+trait LInvBase extends Ledger {
+  var product: IProduct
+  var productItem: ProductItem?
+  var qty: Qty[product.unit]?
+  
+  field isQuote: Bool
+  field contraLegalEntity: OurLegalEntity?
+  stored compute costQueue: QtyAmountQueue[Qty[product.unit], Money[currency]]?
+  stored compute qtyBalance: Qty[product.unit]? = prev?.qtyBalance + qty
+  register error: LBasic?
+  field contraAmount: Money[currency]?
+  field gstRate: Percent[2]??
+  field gstAmount: Money[currency]?
+  stored compute productCost: ProductCost? = prev?.productCost
+  
+  field output: Ledger? inline {deleteCascade = false}
+  event onSave = {
+    if (let qty) {
+      if (qty > 0 && trAmount) {
+        productCost = ProductCost(date = date, cost = trAmount/qty)
+      }
+      if (isQuote) {
+        error = null
+        amount = 0
+        baseAmount = 0
+        costQueue = prev?.costQueue
+      } else {
+        if (qty > 0) {
+          let q = qtyBalance.min(qty)
+          if (q != qty) {
+            amount = amount*q/qty
+            baseAmount = amount
+          }
+          if (q > 0) {  
+            costQueue = prev?.costQueue.enqueue(FIFO, q, amount)          
+          } else {
+            costQueue = prev?.costQueue
+          }
+          if (let d = trAmount - amount) {
+            if (contraAccount?.template == Product) error = null
+            else error = LBasic(account = if (d > 0) InventoryErrorsDebit else InventoryErrorsCredit, journal = journal, trAmount = d, date = date, legalEntity = legalEntity)
+          } else {
+            error = null
+          }
+
+        } else {
+          let r = prev?.costQueue.dequeue(-qty)
+          costQueue = r.queue
+          if (amount != -r.value) {
+            amount = -r.value
+            baseAmount = -r.value
+            output?.forceTouch
+          }
+          error = null
+        }
+      }
+    } else if (let q = prev?.costQueue) {
+      costQueue = null
+      error = null
+      costQueue = costQueue.enqueue(FIFO, q.qty, prev?.balance + trAmount)
+    } else {
+      costQueue = null
+      error = null
+      amount = -prev?.balance
+      baseAmount = amount
+    }
+    if (!next) {
+      product.productCost = productCost
+    }
+    balance = prev?.balance + amount
+    if (!isQuote) createContraLedger()
+  }
+  
+  register contraLedger: Ledger?
+  register intraLedgers: [Ledger]?
+  
+  back func createContraLedger(): Void = {
+    contraLedger = if (contraAccount?.template == Product) {
+      LProduct(this, legalEntity = legalEntity, 
+               product = product, account = contraAccount!, contraAccount = Inventory, 
+               trAmount = -amount, qty = qty.abs!)
+    } else if (contraAccount) {
+      if (let st = StockType.all.find(acc == contraAccount)) {
+         st.obj.new(
+           journal = journal, date = date, legalEntity = legalEntity, 
+           product = product, trAmount = -amount, qty = -qty)
+      }
+    }
+    intraLedgers = if (let contraLe = contraLegalEntity) {
+      var gstAmount = if (legalEntity.hasGst) this.gstAmount
+      let gstRate = if (legalEntity.hasGst) this.gstRate
+      if (let a = if (let ca = contraAmount) {
+        ca + if (!legalEntity.hasGst) this.gstAmount
+      } else {
+        gstAmount = amount.abs * gstRate.alt(0)
+        amount
+      }) {
+        LInventory.transferOwnership(journal, date, legalEntity, contraLe, currency, a, gstRate, gstAmount) 
+        +
+        (if (contraAccount?.template == Product) [
+          LInventory(this, legalEntity = contraLe, contraAccount = null, 
+                     contraLegalEntity = null, product = product, trAmount = -a + if (!contraLe.hasGst) gstAmount, qty = -qty),
+          LSales(this, account = Sales, qty = qty.abs, 
+                 counterparty = contraLe?.legalEntity, trAmount = a)
+        ])
+      } 
+    }
+  }
+  
+  back object func transferOwnership(journal: Journal, date: Date, from: OurLegalEntity, to: OurLegalEntity, currency: Currency, amount: Money, gstRate: Percent[2]??, gstAmount: Money?): [Ledger] = {    
+    [
+      LInterDebts(journal = journal, date = date, legalEntity = from, currency = currency, currency = from.getCurrency, 
+            counterparty = to.legalEntity, trAmount = -amount + gstAmount),
+      LInterDebts(journal = journal, date = date, legalEntity = to, currency = currency, currency = from.getCurrency, 
+            counterparty = from.legalEntity, trAmount = amount - gstAmount)
+    ] + (if (from.hasGst && gstAmount) 
+         [
+           LTax(journal = journal, date = date, legalEntity = from, currency = currency, account = TaxesDebt, tax = Gst, 
+                isInstantPayment = true, rate = gstRate, 
+                trAmount = -gstAmount, taxedAmount = amount)
+         ])
+    + (if (from.hasGst && to.hasGst && gstAmount)
+       [
+         LTax(journal = journal, date = date, legalEntity = to, currency = currency, account = TaxesDebt, tax = Gst, 
+              isInstantPayment = true, rate = gstRate, 
+              trAmount = gstAmount, taxedAmount = -amount)
+       ])
+  }
+}

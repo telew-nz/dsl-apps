@@ -1,0 +1,22 @@
+extend trait IProduct {
+  func stocks: [StockRegister]? = []
+}
+
+extend trait IGood {
+  compute stocks: [StockRegister]? = StockRegister.current.filter(good == this)
+  compute movements: [StockRegister]? = StockRegister.all.filter(good == this).sortBy(sort.desc, date.desc)
+  func stock(legalEntity: LegalEntity, store: Store): StockRegister? = {
+    stocks.find(i => i.legalEntity == legalEntity && i.store == store)
+  }
+  list compute stock: Stock = Stock.sum(unit, stocks)
+  
+  view movementsButton = button("Movements") { GoodsMovement(good = this).list.open}
+  view stocksView = stocks >> list (mode = Static) {
+    grid(labels = None, width = 2) {
+      row{store >> field(width = 0.3) legalEntity  >> field(width = 0.3) stock.shortView  >> field(width = 1.4)}
+    }
+  }
+  
+  func onStockUpdated(register: StockRegister): Void = null[Void]
+}
+

@@ -1,0 +1,28 @@
+basicProduct JobType(notInventory = true, skuPrefix = "JOB", noAltUnits = true) {
+  impl func status = NotForSale
+  impl ref field trackItems: TrackItems? {
+    label = "Track Resources"
+    default = Always
+  }
+}
+
+extend entity JobType {
+  field jobTitles: [JobTitle]? by jobTypes
+  
+  impl func productCost: ProductCost? = null
+  override func canRent = true
+  impl func rentStockType = Person
+  
+  compute people: [CompanyPerson]? = jobTitles*.people
+  impl func productItems: [Person]? = people.filter(company.our)*.person
+  
+  impl view customView = grid (labels = Top) {
+    jobTitles
+  } 
+  
+  impl func productItemsLabel: String = "People"
+}
+
+extend entity JobTitle {
+  field jobTypes: [JobType]?
+}

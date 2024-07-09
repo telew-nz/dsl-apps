@@ -1,0 +1,41 @@
+back class UploadAttrsJob extends SystemJob {
+  field service: WooCommerceIntegration
+  field change: BatchChange[ProductAttr] 
+  func do: Future[Any] = {
+    change.regroup(service)
+    if (change.created || change.deleted) {
+      let u = BatchAttrUpdate(
+        create = change.created.map(AttrData.create(service, _)),
+        update = [], //change.updated.map(AttrData.create(service, _)), Due to woo commerce bug
+        delete = change.deleted*.extId(service)
+      )
+      let response <- service.https("/products/attributes/batch").post(u.json)
+      let r = response.body!.parseJson[BatchAttrResponse]
+      change.updateExtIds(service, r.create.map(id))
+      r.check(this, u, change.notUpdated, process = false)
+    }
+  }
+}
+
+back class BatchAttrUpdate {
+  field create: [AttrData]?
+  field update: [AttrData]?
+  field delete: [Int]?
+}
+
+back class BatchAttrResponse extends WooResponse[AttrData] {
+  field create: [AttrData]?
+  field update: [AttrData]?
+  field delete: [AttrData]?
+}
+back class AttrData extends WooData {
+  extFieldNaming = Underscore
+  field id: Int?
+  field name: String
+  field slug: String?
+  field type: String?
+   
+  object func create(service: WooCommerceIntegration, u: ProductAttr): AttrData = {
+    AttrData(id = service.extId(u), name = u.attrName, slug = u.attrSlug, type = if (u.attrName == "Color") "color" else "select")
+  }
+}

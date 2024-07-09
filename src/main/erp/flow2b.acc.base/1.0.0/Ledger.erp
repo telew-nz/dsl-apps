@@ -1,0 +1,21 @@
+inline trait Ledger extends Register {
+  func account: LedgerAccount
+  func currency: Currency 
+  
+  field journal: Journal by ledgerEntries
+  field amount: Money[currency] 
+     
+  key field legalEntity: LegalEntity = journal.legalEntity
+  order field date: Date = journal.journalDate
+  
+  stored compute baseAmount: Money[legalEntity.getCurrency]? = { //TODO: It should not be optional
+    amount//.convert(to = legalEntity.getCurrency, journal.journalDate)
+  }
+  stored compute balance: Money[currency] = prev?.balance + amount
+  //field baseBalance: Money[legalEntity.currency] = prev?.baseBalance + baseAmount
+    
+  register ledger = GeneralLedger(
+    legalEntity = legalEntity,
+    account = account, currency = currency,
+    date = date, amount = amount)
+}

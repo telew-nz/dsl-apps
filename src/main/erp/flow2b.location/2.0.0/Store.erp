@@ -1,0 +1,22 @@
+trait IStore extends ILocation {
+  background = "#2e8e67"
+  object func ours: [IStore]? = Workspace.current.stores
+  object func onlyOne: IStore? = Workspace.current.stores.onlyOne
+}
+
+extend entity Workspace {
+  compute stores: [IStore]? {
+    availableFor = Inline
+    value = IStore.all
+  }
+}
+
+entity Store extends IStore {
+  field title: String
+  
+  view form = nav{grid(labels = Top){
+    title >> field(label = "", fontStyle = H1)
+    schedule
+    contacts
+  }}
+}

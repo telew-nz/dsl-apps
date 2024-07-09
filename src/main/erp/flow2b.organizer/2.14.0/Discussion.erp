@@ -1,0 +1,45 @@
+entity Discussion extends HasTasks with DashboardItem {
+  background = "#498898"
+  object field gen: Int?
+  ref field status: DiscussionStatus = Opened
+  const ref field n: Int? = increment(Discussion.gen)
+  func number = "DS" + n.format(3, 0)
+  func entityNumbers = [number]
+  ref field subject: String?
+  ref field roles: [Role]? =?  if (front) if (let c = Dashboard.current) [c.role]
+  
+  func active = status.active
+  func itemRoles = roles
+  func activeRoles = if (status.active) roles
+  
+  func title: String = "$number $subject"
+  field description: Text?
+  report Report {
+    view list = Discussion.all >> nav{list {
+      x {number subject}
+    }}
+  }
+  view form = nav(fullScreenComments) {
+    grid{
+      row(noLabel){
+        subject >> field(width = 0.85, fontStyle = H2) number >> field(width = 0.15, align = Right, fontStyle = H3)
+      }
+      status >> field(editMode = AlwaysEdit, label = "", compact) 
+      roles
+      description >> field(label = "")
+      tasks >> field(label = "")
+    }
+    extension("nav")
+  }
+  view ref = x{status >> field(editMode = AlwaysEdit, compact) title}
+}
+
+enum DiscussionStatus(active: Bool) {
+  case Opened(active = true) {
+    background = "#ed9"
+  }
+  case Closed(active = false) {
+    color = "white"
+    background = "#090"
+  }
+}

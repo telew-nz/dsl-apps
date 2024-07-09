@@ -1,0 +1,13 @@
+trait Invoice extends IInvoice {
+  background = "#d68400"
+  field date: Date = now
+  ref compute currency: Currency = orders.first.currency
+  field manualNumber: String?
+  
+  func order: Order = orders.first
+  func orders: [Order]
+  func items: [OrderItem]?
+
+  func journalDate: Date = date
+  func references = orders*.referenceNumber
+}

@@ -1,0 +1,142 @@
+enum InvoiceIssueState {
+  case InvoiceNotIssued {background = "#ed9"}
+  case InvoiceIssued {color = "white" background = "#090"}
+  case InvoiceModified {background = "#f99"}
+}
+
+trait IOrderRevision extends DebtOrigin {
+  func paymentState: PaymentState
+  func currency: Currency
+  func date: Date
+  func items: [IOrderItem]?
+  func items0 = if (!canceled) items
+  func paid: Bool = recon
+  
+  impl func debtAmount = if (order.isPurchase) prev?.totalDue - totalDue else totalDue - prev?.totalDue
+  ref compute diffTotalDue: Money[currency]? {
+    value = totalDue - prev?.totalDue
+  }
+  func canceled: Bool
+  impl func preComputeItems = prev.toSeq
+  impl func debtCurrency = currency
+  impl func debtLedgers = moneyLedger.toSeq
+  func dueDate: Date?
+  func debtTable: [OrderDebtRow]?
+  //override func debtBalance: DebtBalance? = order.debtBalance
+  func dueRate: Percent[2]? 
+   
+  ref system stored compute overdueState: PaymentOverdueState {
+    visible = overdueState == PaymentOverdue
+  }
+  
+  compute gstAmount: UMoney[currency]? {
+    value = items*.gstAmount.sum.positive
+  }
+  compute invoiceSubtotalNoGst: UMoney[currency]? {
+    value = items.filter(invoicePosition == Lines)*.invoiceAmountNoGst.sum.positive
+  }
+  compute invoiceTotalNoGst: UMoney[currency]? {
+    value = items*.invoiceAmountNoGst.sum.positive
+  }
+  ref compute invoiceTotal: UMoney[currency]? {
+    value = items*.invoiceAmountWithGst.sum.positive
+  }
+  compute invoicePaidAmount: Money? = -debtTable.filter(amount < 0)*.amount.sum
+  compute invoiceToPay: UMoney? = (totalDue - invoicePaidAmount).positive
+  
+  func totalDue: Money[currency]?
+  
+  func order: IOrder
+  func number: String
+  func prev: Invoice?
+  func isNote = false
+  func moneyCalced: Bool = {
+    (if (totalDue != prev?.totalDue) moneyLedger?.calced else true) && (if (let prev) prev.moneyCalced else true)
+  }
+  impl event onSave = {
+    if (moneyCalced) {
+      overdueState = {
+        if (reconState == Recon) Paid
+        else if (let dd = dueDate) {
+          if (dd < now) PaymentOverdue else NoPaymentOverdue
+        }
+        else NoPaymentOverdue
+      }
+    } else if (!try? overdueState) {
+      overdueState = if (isInstant) Paid else NoPaymentOverdue
+    }
+  }
+  
+  register gstLedgers: [LTax]?
+  register moneyLedger: LMoneyDebt?
+  register deliveryLedgers: [LDeliveryDebt]? 
+  back func updateLedgers(): Void = {
+    let cr = !isInstant && (prev || !this.is[IOrder] || totalDue)
+    moneyLedger = if (cr) {
+      let t = (if (!canceled) invoiceTotal) - prev?.invoiceTotal
+      let tDue = (if (!canceled) totalDue) - prev?.totalDue
+      if (t || tDue) LMoneyDebt(
+        journal = this, dueDate = dueDate, 
+        amountDue = if (order.isPurchase) -tDue else tDue,
+        trAmount = if (order.isPurchase) -t else t, 
+        counterparty = order.debtCounterparty!, 
+        currency = currency)
+    }
+    if (!moneyLedger) {
+      debtAllowance = 0
+    }
+    gstLedgers = if (cr) {
+      gstLedgers(this, journalDate)
+    }
+    deliveryLedgers = if (cr) {
+      if (let cp = order.deliveryCounterparty) {
+        deliveryMap.fullJoin(prev?.deliveryMap, left.alt(0) - right.alt(0)).toSeq
+          .mapOpt{
+            LDeliveryDebt(account = ledgerAccount, origin = _.itemDlv?.as[IOrderDlv with Journal].alt(order), journal = this, 
+                  trAmount = if (order.isPurchase) #2 else -(#2), 
+                  counterparty = cp, currency = currency)
+          }
+      }
+    }
+  }
+  
+  back func gstMap = if (order.legalEntity.hasGst) {
+    items0
+      .groupBy(rate = gstRate)
+      .agg(gstAmount = gstAmount.sum, invoiceAmount = invoiceAmountNoGst.sum)
+  }
+  back func gstLedgers(journal: Journal, date: Date): [LTax]? = {
+    gstMap.fullJoin(prev?.gstMap, (
+      gstAmount = left?.gstAmount - right?.gstAmount, 
+      invoiceAmount = left?.invoiceAmount - right?.invoiceAmount
+    )).toSeq.filter(gstAmount || invoiceAmount).map {
+      LTax(tax = Gst, currency = this.currency, journal = journal, date = date, 
+           rate = #0,
+           isAdjustment = isNote,
+           trAmount = if (order.isPurchase) gstAmount else -gstAmount, 
+           taxedAmount = if (order.isPurchase) invoiceAmount else -invoiceAmount,
+           isInstantPayment = isInstant
+          )
+    }
+  }
+  back func deliveryMap = {
+    items0
+    	.groupBy(itemDlv, ledgerAccount)
+        .agg{
+           _*.invoiceAmount(noGst = this.order.legalEntity.hasGst).sum 
+        }
+  }
+  
+  impl back func debtCashFlows: [CashFlowAmount]? = if (let debtAmount) {
+    if (let ams = items0.groupBy(cashFlow).agg(invoiceAmountWithGst.sum).toSeq) {
+      ams.distribute[Money](debtAmount, by = invoiceAmountWithGst)
+        .filter(value)
+        .map(i => CashFlowAmount(cashFlow = i.cashFlow, amount = i.value!))
+    } else {
+      [CashFlowAmount(cashFlow = order.cashFlow, amount = debtAmount)]
+    }
+  }
+  
+  func allRevisions: [IOrderRevision] = order.invoices.takeWhile(_ != this) + this
+  compute dueInvoices = allRevisions*.as[Invoice].filter(debtAmount)
+}

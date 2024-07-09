@@ -1,0 +1,43 @@
+variableProduct VariableKit(skuPrefix = "VKIT", kit = true) {
+  variation KitVariation {}
+}
+
+extend entity VariableKit {
+  back func addMissingVariations() = {
+    if (let template = variations.first, let sampleProd = template.items*.product*.as[ISubVariation].find(attrTerms == template.attrTerms)) {
+      sampleProd.superProduct.variations.foreach {sampleVar =>
+        if (!this.variations.exists(_.attrTerms == sampleVar.attrTerms)) {
+          let newItems = template.items.map {i =>
+            if (let pv = i.product.as[ISubVariation]) {
+              if (pv.attrTerms == template.attrTerms) {
+                if (let product = pv.superProduct.variations.find(_.attrTerms == sampleVar.attrTerms)) {
+                  (product, i.unit, i.qty)
+                }
+              } else {
+                (i.product, i.unit, i.qty)
+              }
+            } else {
+              (i.product, i.unit, i.qty)
+            }
+          }
+          if (newItems.all(_)) {
+            sampleVar.copy(KitVariation,
+              superProduct = this
+              items = newItems.map {i =>
+                KitItem(product = i!.product, unit = i!.unit, qty = i!.qty)
+              }
+            ).save
+          }
+        }
+      }
+    }
+  }
+  override view superProductNavView = x{
+    button("Add Missing Variations") {
+      back {
+        addMissingVariations()
+      }
+    }
+  }
+}
+

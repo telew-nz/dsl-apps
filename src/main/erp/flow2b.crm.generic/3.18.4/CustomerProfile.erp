@@ -1,0 +1,73 @@
+entity CustomerProfile {
+  background = "#a73e6c"
+  impl field title: String
+  
+  field sGender: Gender?
+  compute gender: Gender? {
+    value = sGender.or(superProfiles*.gender.first)
+    update = {
+      sGender = new
+    }
+  }
+  field sAge: ProfileAge?
+  compute age: ProfileAge? {
+    value = sAge.or(superProfiles*.age.first)
+    update = {
+      sAge = new
+    }
+  }
+  
+  field sIncome: ProfileIncome?
+  compute income: ProfileIncome? {
+    value = sIncome.or(superProfiles*.income.first)
+    update = {
+      sIncome = new
+    }
+  }
+  
+  field sLocation: Address?
+  compute location: Address? {
+    value = sLocation.or(superProfiles*.location.first)
+    update = {
+      sLocation = new
+    }
+  }
+  
+  
+  field description: Text?
+  
+  field superProfiles: [CustomerProfile]? by subProrifiles {
+    available(Inline).for(Inline)
+    singular = "Super Profile"
+  }
+  field subProrifiles: [CustomerProfile]? read by superProfiles {
+    singular = "Sub Profile"
+  }
+  
+  impl view form = nav{grid{
+    title
+    superProfiles
+    subProrifiles
+    gender
+    age
+    income
+    location
+    description
+  }}
+}
+enum Gender {
+  case Male {background = "#b5c8ff"}
+  case Female {background = "#ffb5d1"}
+}
+class ProfileAge {
+  field min: Int?
+  field max: Int?
+  impl view form = x{min label("—") max}
+}
+
+class ProfileIncome {
+  field currency: Currency = default
+  field min: Money[currency]? {canEditUnit = true}
+  field max: Money[currency]? {canEditUnit = true}
+  impl view form = x{min label("—") max}
+}

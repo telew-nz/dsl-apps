@@ -1,0 +1,144 @@
+entity SMSService extends SystemService with AWSService {
+  impl func title = "SMS Service"
+   
+  override func active = userEnabled
+  
+  back func pinpointHttps(path: Url?): HttpRequest = {
+    super.https("v1/apps/$awsPinpointAppId/$path")
+  }
+ 
+  
+  // !!!: keys are here only for development and alpha testing
+  // TODO: store keys somewhere else
+  impl func awsAccessKeyID = "AKIAIXBFRLTB7FGCUWRA"
+  impl func awsSecretAccessKey = "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"
+  
+  impl func awsRegion = "ap-southeast-2" //old "us-east-1"
+  impl func awsService = "pinpoint"
+  impl func awsServiceScope = "mobiletargeting"
+  
+  /*
+  TEST DATA for Sign test
+  
+  impl func awsSecretAccessKey = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY"
+
+  impl func awsRegion = "us-east-1"
+  impl func awsService = "iam"
+  
+  /*result should be: 
+	kSecret  = '41575334774a616c725855746e46454d492f4b374d44454e472b62507852666943594558414d504c454b4559'
+	kDate    = '969fbb94feb542b71ede6f87fe4d5fa29c789342b0f407474670f0c2489e0a0d'
+	kRegion  = '69daa0209cd9c5ff5c8ced464a696fd4252e981430b10e3d3fd8e2f197d7a70c'
+	kService = 'f72cfd46f26bc4643f06a11eabb6c0ba18780c19a8da0c31ace671265e3c87fa'
+	kSigning = 'f4780e2d9f65fa895f9c67b32ce1baf0b0d8a43505a000a1a9e090d414db404d'
+  */
+  
+  func awsPinpointAppId = "d0e09e01e1424abdb6e08f8ff0e79bb8" //old(us-east-1) - "c24314993e6c417fba3d50e205995e14"
+  
+  // field contactForValidation: PhoneContact
+  func countryCodeForValidation: String = Workspace.current.countryCode
+  field originationNumber: Phone?
+  field appKeyword: String?
+  
+  back func send(destinationNumber: Phone, message: PlainText): Future[String?] = {
+    let messageRequest = MessageRequest(
+      addresses = [destinationNumber -> AddressConfiguration()]
+      messageConfiguration = MessageConfiguration(
+        smsMessage = SMSMessage(
+          body = message
+          originationNumber = this.originationNumber
+          keyword = this.appKeyword
+        )
+      )
+    )
+    
+    //messageRequest.json.log("message request")
+    
+    let r <- this.pinpointHttps("messages").post(messageRequest.json)
+    
+    if (r.code == 200
+        let resMsg = r.body!.parseJson[MessageResponse].msgResult.apply(destinationNumber)){
+        if(resMsg.deliveryStatus == "SUCCESSFUL") resMsg.messageId else {
+       	  Activity.comment("Can't send sms.\n[${resMsg.deliveryStatus}]: ${resMsg.statusMessage}")
+          null[String]
+        }
+    } else null[String]
+  }
+  
+  
+  func smsActivities(p: Period?): [Activity]? = {
+  	Activity.all.filter(
+      (p.isEmpty || p!.contains(dateTime)) &&
+      deliveries.find(d => d.channel==SMS && d.status==Sent)
+    )
+  }
+  
+  field prices: [SMSPrice]?
+  
+  func smsActivitiesCosts(p: Period?): [(activity: Activity, cost: Money?)]? = {
+  	smsActivities(p).map { act =>
+      let contacts = act.deliveries.filter(d => d.channel==SMS && d.status==Sent)*.contact*.as[IPhoneContact]
+      let cost = contacts.map{ c =>
+        prices.find(_.countryCode == c.countryCode && _.carrier == c.carrier)?.price
+      }.sum
+      
+      (act, cost)
+    }
+  }
+  
+  field snsWebhookEndpoint: SNSWebhookEndpoint inline by service
+  field snsTopicArn: String?
+  
+  field smsEventsWebhookEndpoint: SMSEventsWebhookEndpoint inline by service
+  
+  impl event onSave = {
+    if (serviceState == Active && !deleted && !created && updated(serviceState)) {
+      Activity.all.filter(deliveries.exists(d => d.status == Pending && d.channel == SMS)).foreach{a =>
+        IPhoneContact.send(a, a.deliveries.filter(d => d.status == Pending && d.channel == SMS)*.contact*.as[IPhoneContact]!)
+      }.result
+    }
+  }
+  
+  impl view form = nav{grid(labels = Top){
+    issuesView
+    serviceState
+    errorsCount >> field(editMode = AlwaysRead)
+    
+    /*button("Send SMS Test") {
+      UI.info("Sending tst SMS")
+      SendSMSJob(
+        service = this
+        destinationNumber = "+380930981405"
+        message = "flow2b: test sms!!! (from service)"
+      ).enqueue()
+    }*/
+    
+    countryCodeForValidation
+    originationNumber
+    appKeyword
+    snsTopicArn
+    //contactForValidation
+    
+    /*smsActivitiesCosts(null[Period])
+    .groupBy(activity.user)
+    .agg(cost = cost.sum)
+    .toSeq >> table(label="Costs by User"){user, cost}
+    */
+    /*button("Phone Number Validation Test") {
+      UI.info("Sending Phone Number Validation requests")
+      PhoneNumberValidationJob(
+        service = this
+        phoneContact = contactForValidation
+        countryCode = countryCodeForValidation
+      ).enqueue()
+    }*/
+    
+    //prices >> table("Prices"){countryCode, carrier, price}
+    /*button("Costs Report") {
+      SMSCost(smsService = this).list.open
+    }*/
+    
+  }}
+  
+  
+}

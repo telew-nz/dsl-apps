@@ -1,0 +1,19 @@
+report StockReport {
+  plural = "Stock"
+  field legalEntity: LegalEntity?
+  field store: Store?
+  field good: IProduct? {from = IProduct.all.filter(isTangible)}
+  field stocktakeEarlier: Date?
+  view list = StockRegister.current.filter(
+       !isEmpty
+    && legalEntity ==? this.legalEntity
+    && store ==? this.store
+    && good ==? this.good
+    && stocktakeEarlier ?>= lastStocktake?.journalDate.alt(Date.min)
+  ) >> nav(background = "#2e8e67"){table(mode = Static){
+    good >> field (width = 0.4), legalEntity, store, group(label = "Stock") {
+      fact, reserve, available, expectation, outlook
+    }, lastStocktake
+  }}
+}
+

@@ -1,0 +1,15 @@
+interface AnalitTrialBalance[L extends Ledger] extends Report {
+  field legalEntity: LegalEntity? = (LegalEntity.ours.first) {from = LegalEntity.ours}
+  field date: Date?
+  field currency: Currency?
+    
+  func ledger: L.object
+  func query: QueryN[L] = ledger.at(date)
+    .filter(currency ==? this.currency && legalEntity ==? this.legalEntity).query
+  func openLedger(l: GeneralLedger.Report): Void = {
+    l.legalEntity = legalEntity
+    l.to = date
+    l.currency = currency
+    l.list.open
+  }
+}

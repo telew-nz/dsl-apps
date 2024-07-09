@@ -42,3 +42,4 @@ trait ISubProduct extends IBaseProduct {
     }
   }
 }
+

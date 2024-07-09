@@ -1,0 +1,8 @@
+extend class BankData {
+  field particulars: String? 
+  field reference: String?
+  field code: String?
+  
+  extend override func fullMemo = "$memo $particulars $code $reference"
+}  
+  

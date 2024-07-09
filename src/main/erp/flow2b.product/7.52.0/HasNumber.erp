@@ -1,0 +1,21 @@
+trait HasNumber extends RefEntity with IBarcode {
+  ref field refNum: String? {label = "Reference Number"} 
+  compute fullNum: String {
+    label = "Number"
+    value = if (let r = refNum) "$number ($refNum)" else number
+  }
+  impl func barcodeItem: RefEntity = this
+  impl func title {
+    default value = fullNum
+  }
+  impl func entityNumbers = [number, refNum]
+}
+
+trait HasN extends HasNumber {
+  ref const field n: Int? = nextN
+  func nextN: Int?
+  func numPrefix: String
+  impl compute number {
+    value = numPrefix + n.format(3, 0)
+  }
+}

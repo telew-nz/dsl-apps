@@ -1,0 +1,218 @@
+trait IPurchaseDelivery extends OrderDlv {
+  background = "#2e8e67"
+  field _supplier: LegalEntity? {
+    update = updateSupplier()
+  }
+  ref compute supplier: LegalEntity? = _supplier.or(order.orderVendor?.legalEntity)
+  field purchaseOrders: [PurchaseOrder] by deliveries {
+    available(All)
+    default =? defaultPurchaseOrders
+  }
+  func deliveryHeader: Layout
+  func defaultPurchaseOrders: [PurchaseOrder]? = []
+  func updateSupplier(): Void = {}
+  impl func ledgers(journal: Journal, date: Date): Future[[Ledger]?] = purchaseLedgers(journal, date)
+}
+
+entity PurchaseDelivery extends IPurchaseDelivery with IProdMoveIn with IProdMoveOut {
+  icon = "truck"
+  background = "#2e8e67"
+ 
+  impl func priceLevel = purchaseOrders.first.priceLevel
+  impl func dlvLocOwners = (purchaseOrders*.vendor*.legalEntity + supplier.toSeq).distinct
+  impl func counterparty: LegalEntity? = supplier
+  
+  override impl func journalDate = moveInDate
+  impl func needLedgers = dlvState == Complete
+  impl func isProdMoveOut = hasProgress && end && end! <=? repeat?.next
+  
+  impl func dlvReceiver = legalEntity?.legalEntity
+  impl func shipTo = if (!shipping) store
+  
+   
+  override func moveItems = items*.as[IOrderDlvItem with IProdMoveItem] 
+  
+  impl func moveInDate = dlvInProgessDate
+  impl func moveInState = state.path0.move1
+  impl func moveInLE = legalEntity
+  impl func moveInStore = store!
+  impl func moveInItems = items*.as[IOrderDlvItem with IProdMoveItemIn]
+  
+  impl func moveOutDate = dlvRetInTransitDate
+  impl func moveOutState = state.path1.move0
+  impl func moveOutLE = legalEntity
+  impl func moveOutStore = retStore!
+  impl func moveOutItems = items*.as[IOrderDlvItem with IProdMoveItemOut]
+  
+  override func itemOrder = if (state.started) ("Date", dlvEnd) else ("Date", moveInDate)
+  
+  
+  //impl func deliveryReceiver = order.legalEntity.legalEntity
+  impl func legalEntity = order.legalEntity
+  impl func title = "$fullNum $(try? supplier?.title)"
+  
+  impl ref compute number: String {
+    value = if (primary) "PD" + orders.first.nakedN else "PD" + n.format(3, 0)
+  }
+  override func entityNumbers = [number, refNum, shipping?.trackingNumber.replace(" ", "")]
+  impl func orders: [Order] = purchaseOrders
+  //impl compute vendor = order.orderVendor
+  
+  field primary: Bool
+  
+  impl field shipping: PDShipping? inline by dlv {
+    visible = supplier
+  }
+  
+  impl field stockType: StockInvType = Inventory
+  const ref field n: Int? = if (primary) order.n else increment(Order.gen)
+  impl ref field store: IStore? {
+    default = onlyOne
+    validate = if (!store && (!items || items.exists(storeRequired))) "Store field in delivery $(this) is required"
+  }
+  field _retStore: IStore?
+  impl compute retStore: IStore? {
+    label = "Return Store"
+    value = _retStore.or(store)
+    visible = hasProgress
+  }
+  impl field retShipping: PDRetShipping? inline by dlv {
+    label = "Return Shipping"
+    visible = supplier && hasProgress
+  }
+  compute shippingText {
+    availableFor = List
+    value = shipping?.loc?.locationAddress?.title
+  }
+  
+  impl back func doRepeat: Future[OrderDlv?] = {
+    let s = state
+    
+    guard (let r = repeat where (r.next <? end  || !hasProgress) && (s == InProgress || s == Complete)) else return null
+    
+    _state = Complete
+    save
+    
+    let d = r.nextEnd
+    
+    let po = purchaseOrders.first.copy(     
+      date = now
+      accepted = now
+      deliveries = [this.copy(
+        _state = if (s == InProgress) InProgress else Planned,
+        prev = this, next = null,
+        start = r.next, 
+        shipping = null,
+        repeat = if (!hasProgress || d <? end) r.copy(next = d),
+        allItems = []
+      )],
+      payments = []
+      invoices = []
+      allItems = []
+    ).save
+    let pd = po.deliveries.first
+    
+    items.filter(!this.hasProgress || _.is[IDlvProgressItem]).foreach{i =>
+      i.purchase!.doRepeat(po, pd)
+    }
+    let _ <- pd.updateDurs()
+    pd
+  }
+  
+  //func debtDueDate = deliveryDate
+
+  impl view deliveryHeader = grid(width = 1.2){
+    issuesView
+    stateView
+    row {store, supplier, start}
+    row {retStore, space end}
+    shipping
+    retShipping
+    prev >> field(title = title)
+    repeat
+    next >> field(title = title)
+    items >> list(editMode = AlwaysRead, mode = EditSelect){form.unnav}
+  }
+  
+  impl view form = nav(newEngine){grid(width = 1.2, labels = Top) {
+    purchaseOrders
+    number
+    deliveryHeader    
+  } generalLedgerButton } 
+  
+  impl view ref = y {
+    x{title rentPeriod >> field(frame = false, fontStyle = Label) start >> field(visible = !rentPeriod, fontStyle = Label) }
+    stateView
+  }
+  impl view dash = grid(labels = None) {
+    row {
+      y (width = 0.6) {
+        rentPeriod >> field(frame = false, fontStyle = Label) 
+        start >> field(visible = !rentPeriod, fontStyle = Label)
+        x{number >> field(fontStyle = Label) supplier >> field(title = title)}
+        stateView
+      }
+      shippingText >> field(width = 0.4)
+    }
+    refItems
+  }
+  impl view dashIn = grid(labels = None) {
+    row {
+      y (width = 0.6, spacing = false) {
+        start >> field(fontStyle = Label)
+        x{number >> field(fontStyle = Label) supplier >> field(title = title)}
+        stateView
+      }
+      shippingText >> field(width = 0.4)
+    }
+    refItems
+  }
+  impl view dashOut = grid(labels = None) {
+    row {
+      y (width = 0.6, spacing = false) {
+        dlvRetInTransitDate >> field(fontStyle = Label)
+        x{number >> field(fontStyle = Label) supplier >> field(title = title)}
+        stateView
+      }
+      shippingText >> field(width = 0.4)
+    }
+    refItems
+  }
+  
+  impl event onSave = {
+    if (primary) n = order.n 
+    else if (!n) n = increment(Order.gen)
+    purchaseOrders*.touch
+  }
+  
+  view stateView = x{
+    state //>> field(editMode = AlwaysEdit) 
+    stockType >> field(visible = ui.edit || stockType != Inventory)}
+  
+  impl object view list = PurchaseDelivery.all >> nav{list(canAdd = false){grid(labels = None){row{
+    itemImage >> field(miniature = List, width = 0.15)
+    dash >> field(width = 0.85)
+  }}}}
+}
+
+entity PDShipping extends Shipping {
+  impl field dlv: PurchaseDelivery by shipping
+
+  impl func startAttached = true
+  impl compute dlvDate = dlv.start
+  impl func pathItems = dlv.moveInItems
+  impl func pathSrc: ILocation? = loc
+  impl func pathDst = dlv.store
+  impl func pathState = dlv.state.path0
+}
+
+entity PDRetShipping extends Shipping {
+  impl field dlv: PurchaseDelivery by retShipping
+
+  impl func startAttached = false
+  impl compute dlvDate = dlv.dlvEnd
+  impl func pathItems = dlv.moveOutItems
+  impl func pathSrc = dlv.retStore
+  impl func pathDst = loc
+  impl func pathState = dlv.state.path1
+}

@@ -1,0 +1,24 @@
+extend entity Vendor {
+  event onSave = {
+    if (updated(gstStatus) && gstStatus == NotRegistered) {
+      PaymentExpense.all.filter(gstRate && payment.payee == this.legalEntity)
+        .update(gstRate = null) 
+    }
+  }
+  field expense: IExpenseType? {
+    label = "Usual Expense"
+  }
+  
+  extend view form = extend("top") {
+    button("Recode", visible = !ui.edit) {
+      let _ <- IPaymentExpense.all.filter(payment.payee == this.legalEntity)
+      .foreach{e => 
+        let ee = e.as[PaymentExpense].alt(e.convertTo(PaymentExpense))
+        ee.expense =? this.expense
+        ee.recode()
+      }.result
+      UI.info("Expense type, claimable percentage and GST rate have been updated in the relevant transactions")
+    }
+    expense
+  }
+}

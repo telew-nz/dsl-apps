@@ -1,0 +1,15 @@
+extend role BusAdmin {
+  menu Manufacturing {
+    trait IProductionOrder
+    entity OutputProduct
+    entity Material
+  }
+}
+
+extend role WarehouseOperative {
+  menu Manufacturing {
+    trait IProductionOrder
+    entity OutputProduct
+    entity Material
+  }
+}

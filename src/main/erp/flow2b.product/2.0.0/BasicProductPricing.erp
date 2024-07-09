@@ -1,0 +1,19 @@
+inline entity BasicProductPricing extends ProductPricing {
+  field products: [ProductPrice]? inline by pricing
+  func baseSuperProductPrice(superProduct: ISuperProduct): Future[Money?] = {
+    products.find(product == superProduct)?.price
+  }
+  view form = grid{products >> table {
+    product >> field(width = 0.7) price >> field(width = 0.3)
+  }}
+}
+  
+inline entity ProductPrice {
+  func currency = pricing.vendor.getCurrency
+  system field pricing: BasicProductPricing inline by products
+  field product: ISuperProduct
+  field price: Money[currency]
+    
+  func onSave(): Void = product.touch
+}
+

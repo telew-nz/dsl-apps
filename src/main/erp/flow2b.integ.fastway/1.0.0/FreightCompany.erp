@@ -1,0 +1,5 @@
+extend enum FreightCompany {
+  case Fastway(trackingUrl = "https://www.fastway.co.nz/tools/track?l=$number") {
+    background = "#1c5fd0" color = "#f70000"
+  }
+}

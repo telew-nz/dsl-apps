@@ -1,0 +1,23 @@
+extend trait ISubProduct {
+  field rentService: AssetRentService? inline by product {
+    views = []
+  }
+  compute canBeRented: Bool {
+    value = rentService
+    update = {
+      if (new) rentService = AssetRentService(product = this)
+      else rentService = null
+    }
+    views = []
+  }
+}
+
+extend entity Good {
+  extend view form = extend("tabs") {
+    grid (label = "Rent", labels = None, visible = rentService || ui.edit) {
+      canBeRented 
+      rentService!.form
+    }
+  }
+}
+

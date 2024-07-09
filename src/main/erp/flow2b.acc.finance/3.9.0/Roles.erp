@@ -1,0 +1,6 @@
+extend role Bookkeeper {
+  extend view dashboard = FinanceAccount.widget
+}
+extend role Director {
+  extend view dashboard = FinanceAccount.widget
+}

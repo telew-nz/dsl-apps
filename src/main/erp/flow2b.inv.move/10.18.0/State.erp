@@ -1,0 +1,61 @@
+enum GoodAvailability(isIssue: Bool) {
+  case Unavailable(isIssue = true) {background = "#e99" icon = "radiation-alt"}
+  case UnavailableProdItems(isIssue = true) {background = "#e99" label = "Serial Numbers Unavailable" icon = "exclamation-triangle"}
+  case AvailableLater(isIssue = true) {background = "#e99" icon = "hourglass-start"}
+  case Waiting(isIssue = false) {background = "#ed9" icon = "hourglass"}
+  case Available(isIssue = false) {background = "#dea" icon = "check"}
+  case ToDispatch(isIssue = false) {background = "#dea" icon = "dolly"}
+  case Canceled(isIssue = false) {background = "#ddd" icon = "times-circle"}
+  case Dispatched(isIssue = false) {
+    icon = "check-circle"
+    color = "white"
+    background = "#090"
+  }
+}
+
+enum DispatchState(display: Bool) {
+  case Canceled(display = false) {background = "#ddd" icon = "times-circle"}
+  case NotReady(display = false) {background = "#ddd" icon = "hourglass"}
+  case ToDispatch(display = true) {background = "#dea" icon = "dolly"}
+  case NoDispatch(display = true) {background = "#e99" icon = "times"}
+  case Dispatched(display = false) {
+    icon = "check-circle"
+    color = "white"
+    background = "#090"
+  }
+}
+
+enum DeliveryOverdueState {
+  case NoDeliveryOverdue {background = "#dea" icon = "check"}
+  case DeliveryOverdue {background = "#e99" icon = "clock"}
+  case Delivered {
+    icon = "check-circle"
+    color = "white"
+    background = "#090"
+  }
+}
+
+enum PathState(active: Bool, started: Bool, move0: ProdMoveState, move1: ProdMoveState) {
+  case Draft(active = true, started = false, move0 = Draft, move1 = Draft) {background = "#ecd" icon = "edit"}
+  case Planned(active = true, started = false, move0 = Planned, move1 = Planned) {background = "#ed9" icon = "play"}
+  case InTransit(active = true, started = true, move0 = InTransitComplete, move1 = InTransitPlanned) {background = "#cce0ff" icon = "truck-moving"}
+  case Complete(active = false, started = true, move0 = Complete, move1 = Complete) {
+    icon = "check-circle"
+    color = "white"
+    background = "#090"
+  }
+  case Canceled(active = false, started = false, move0 = Canceled, move1 = Canceled) {background = "#ddd" icon = "times-circle"}
+}
+
+
+enum ProdMoveState(active: Bool, sort: UDec[2]?) {
+  case Draft(active = true, sort = 2) {background = "#ecd"}
+  case Planned(active = true, sort = 1) {background = "#ed9"}
+  case InTransitPlanned(active = true, sort = 1){background = "#cce0ff" icon = "truck-moving"}
+  case InTransitComplete(active = true, sort = 0){background = "#cce0ff" icon = "truck-moving"}
+  case Complete(active = false, sort = 0) {
+    color = "white"
+    background = "#090"
+  }
+  case Canceled(active = false, sort = 0) {background = "#ddd"}
+}

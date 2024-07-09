@@ -1,0 +1,7 @@
+extend trait IContact {
+  func contactPerson: Person? = null
+}
+
+extend trait ActorContact {
+  impl func contactPerson: Person? = person
+}

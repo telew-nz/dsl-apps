@@ -1,0 +1,17 @@
+entity Location extends IActorLocation {
+  impl field types: [LocationType] = [Real]
+  ref field address: Address
+  impl func locationAddress: Address? = address
+  impl view form = nav{grid(labels = None){
+    actor
+    types
+    address
+    contacts
+  }}
+}
+
+enum LocationType {
+  case Real
+  case Post
+  case Legal
+}

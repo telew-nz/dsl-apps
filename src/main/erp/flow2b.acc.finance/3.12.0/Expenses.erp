@@ -1,0 +1,16 @@
+analytic ExpenseType(dataType = "IExpenseType")
+
+acctemplate Expenses {
+  key field expenseType: IExpenseType
+}
+
+account GeneralExpenses(template = "Expenses", number = 600, type = Expense)
+
+trait IExpenseType
+entity ExpenseType extends IExpenseType {
+  background = "#d68400"
+  field title: String
+  field description: Text?
+}
+
+account DiscountsReceived(template = "Counterparty", number = 670, type = Expense) 

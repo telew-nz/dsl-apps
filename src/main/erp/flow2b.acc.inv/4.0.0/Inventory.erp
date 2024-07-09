@@ -1,0 +1,89 @@
+extend register LInventory {
+  field isDebit: Bool
+  field contraLegalEntity: OurLegalEntity?
+  stored compute costQueue: QtyAmountQueue[Qty[product.unit], Money[currency]]?
+  stored compute qtyBalance: Qty[product.unit]? = prev?.qtyBalance + if (isDebit) qty else -qty
+  register error: LBasic?
+  field contraAmount: Money[currency]?
+  field gstRate: Percent[2]??
+  field gstAmount: Money[currency]?
+  event onSave = {
+    if (let qty) {
+      if (isDebit) {
+        let q = qtyBalance.min(qty)
+        if (q != qty) {
+          amount = amount*q/qty
+          baseAmount = amount
+        }
+        if (q > 0) {  
+          costQueue = prev?.costQueue.enqueue(FIFO, q, amount)          
+        } else {
+          costQueue = prev?.costQueue
+        }
+        if (let d = trAmount - amount) {
+          if (contraAccount?.template == Product) error = null
+          else error = LBasic(account = InventoryErrors, journal = journal, trAmount = d)
+        } else {
+          error = null
+        }
+      } else {
+        let r = prev?.costQueue.dequeue(qty)
+        costQueue = r.queue
+        amount = -r.value
+        baseAmount = -r.value
+        error = null
+      }
+    } else if (let q = prev?.costQueue) {
+      costQueue = null
+      error = null
+      costQueue = costQueue.enqueue(FIFO, q.qty, prev?.balance + trAmount)
+    } else {
+      costQueue = null
+      error = null
+      amount = -prev?.balance
+      baseAmount = amount
+    }
+    balance = prev?.balance + amount
+    createContraLedger()
+    calcLedger
+  }
+  
+  register contraLedger: Ledger?
+  register intraLedgers: [Ledger]?
+  
+  func createContraLedger(): Void = {
+    if (contraAccount?.template == Product) {
+      contraLedger = LProduct(this, legalEntity = legalEntity, 
+                              product = product, account = contraAccount!, contraAccount = Inventory, 
+                              trAmount = -amount, qty = qty!)
+    } else {
+      contraLedger = null
+    }
+    if (let contraLe = contraLegalEntity) {
+      let a = contraAmount.or(amount)
+      intraLedgers = [
+        LDebt(this, account = IntercompanyDebts, currency = legalEntity.getCurrency, 
+              counterparty = contraLe?.legalEntity, trAmount = -a),
+        LDebt(this, account = IntercompanyDebts, currency = legalEntity.getCurrency, 
+              legalEntity = contraLe, counterparty = legalEntity?.legalEntity, trAmount = a),
+        LInventory(this, isDebit = true, legalEntity = contraLe, contraAccount = null, 
+                   contraLegalEntity = null, product = product, trAmount = -a, qty = qty),
+        LSales(this, account = Sales, qty = qty.abs, 
+               counterparty = contraLe?.legalEntity, trAmount = a)
+      ] + if (let g = gstRate) {
+        [
+          LTax(this, account = TaxesPayable, tax = Gst, 
+               isInstantPayment = true, rate = g, 
+               trAmount = -gstAmount, taxedAmount = a),
+          LTax(this, account = TaxesPayable, tax = Gst, legalEntity = contraLe, 
+               isInstantPayment = true, rate = g, 
+               trAmount = gstAmount, taxedAmount = -a)
+        ]
+      }
+    }
+  }
+}
+
+extend entity MLInventory {
+  func calculatedAmount = !isDebit && qty
+}

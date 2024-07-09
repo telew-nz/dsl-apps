@@ -1,0 +1,5 @@
+extend role FinanceManager {
+  menu Finance {
+    trait IInvoice
+  }
+}

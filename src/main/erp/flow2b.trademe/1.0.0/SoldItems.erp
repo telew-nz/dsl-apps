@@ -1,0 +1,125 @@
+inline entity RetrieveSoldItemsJob extends ScheduledJob {
+  impl field service: ITrademeIntegration by retrieveSoldItemsJob
+  impl func schedule = "0 30 * * * ?" //Every hour
+  impl func dependsOnRegisters = false
+  field lastUpdate: Date?
+  impl func do: Future[Any] = {
+    let d = if (let lu = lastUpdate) Date.now.add(10_minute).sub(lu).to[Duration[hour]] else 24000.as[Duration[hour]]
+    let dd = d.to[Duration[day]] 
+    this.lastUpdate = Date.now
+    save()
+    nextPage(number = 1, filter = {
+      if (d < 1_hour) "LastHour"
+      else if (d < 24_hour) "Last24Hours"
+      else if (dd < 3_day) "Last3Days"
+      else if (dd < 7_day) "Last7Days"
+      else if (dd < 30_day) "Last30Days"
+      else "Last45Days"
+    })
+  }
+  
+  back func nextPage(number: UInt, filter: String): Future[Any] = {
+    let result <- service.https("MyTradeMe/SoldItems/$filter.json").param("page", number).get
+    let page = result.body!.parseJson[SoldItemsPage]
+    page.list.foreach {i =>
+      if (let l = TrademeListing.all.find(l => l.listingId == i.listingId).result.get) {
+        i.listing = l
+        RetrieveSoldItemJob(service = service, item = i).enqueueFirst
+      }
+    }
+
+    if (page.hasNext) {
+      nextPage(number + 1, filter)
+    } else {
+      Future(1)
+    }
+  }
+}
+
+back class RetrieveSoldItemJob extends SystemJob {
+  impl field service: ITrademeIntegration
+  impl func dependsOnRegisters = false
+  field item: SoldItem
+  impl func do: Future[Any] = {
+    let _ <- item.make(item.listing.template)
+    RetrieveListingStats(listing = item.listing).enqueueFirst
+  }
+}
+
+back interface IPage[I] {
+  extFieldNaming = UpperCamelCase
+  field totalCount: Int?
+  field page: Int
+  field pageSize: Int?
+  func list: [I]?
+  
+  func hasNext = totalCount > page*pageSize
+}
+
+back class SoldItemsPage extends IPage[SoldItem] {
+  extFieldNaming = UpperCamelCase
+  impl field list: [SoldItem]?
+}
+
+back class SoldItem extends ESalesOrder[Int] with ESalesOrderItem[Int] with EIncomingPayment[Int] {
+  extFieldNaming = UpperCamelCase
+  field listingId: Int
+  field salePrice: UMoney
+  field selectedShipping: String
+  field buyerDeliveryAddress: String?
+  field messageFromBuyer: String?
+  field successFees: UMoney?
+  field shippingPrice: UMoney?
+  field offerId: Int?
+  field invoiceId: Int?
+  field buyer: TrademeAccount
+  impl field deliveryAddress: TrademeLocation?
+  field quantitySold: UInt
+  field purchaseId: Int
+  field price: UMoney
+  field orderId: Int?
+  field referenceNumber: String?
+  field soldDate: Date {extMap = TrademeDate}
+  field isPayNowPurchase: Bool
+  field isPaymentPending: Bool
+  field isFlatShippingCharge: Bool
+  field shippingType: ShippingOptionType {extMap[Int?](apply = id, unapply = i => ShippingOptionType.all.find(id == i)!)}
+  field tmPaymentMethod: PaymentMethod {
+    extName = "PaymentMethod"
+    extMap[Int?](apply = id, unapply = i => PaymentMethod.all.find(id == i)!)
+  }
+  impl func paymentMethod = tmPaymentMethod.name
+  
+  field listing: TrademeListing
+  
+  func shippingAmount = if (isFlatShippingCharge) shippingPrice else shippingPrice*quantitySold
+  impl func extId = purchaseId
+  impl func number = referenceNumber
+  impl func orderDate = soldDate
+  impl func currencyCode = "NZD"
+  impl func billingAddress = deliveryAddress
+  impl func customerExtId = buyer.memberId
+  override func customer = buyer
+  impl func payments = if (isPayNowPurchase) [this]
+  impl func qty = quantitySold
+  impl func amount: UMoney = price*quantitySold + shippingAmount 
+  override func itemAmount = price*quantitySold
+  impl func paymentDate = soldDate
+  impl func customerNote = messageFromBuyer
+  impl func items = [this.as[ESalesOrderItem[Int]]] + if (shippingPrice) [TMDeliveryItem(item = this)]
+  impl func product(pr: ISalesOrderImportProvider[Int]) = {
+    listing.product
+  }
+  
+  impl func updateItem(item: SalesItem): Void = {
+    item.trademeListing = listing
+  }
+}
+
+back class TMDeliveryItem(item: SoldItem) extends ESalesOrderDeliveryItem[Int] {
+  impl func extId = -item.purchaseId
+  impl func amount = item.shippingAmount
+  impl func deliveryMethod = item.shippingType.name
+}
+
+

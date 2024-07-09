@@ -1,0 +1,41 @@
+object RentAdjuster {
+  func adjustPeriods(duration: UQty, pm: IIPriceModel, 
+                       deliverySchedule: ISchedule, returnSchedule: ISchedule, periods: [Period]?
+                     ): [Period]? = 
+  {
+    periods
+      .mapOpt{p =>
+        if (let nd = deliverySchedule.nextWorkingDate(p.start)) {
+          adjustPeriod(duration, pm, deliverySchedule, returnSchedule, 
+                       Period(start = nd, end = p.end), 0)
+        }
+      }
+  }
+  
+  func adjustPeriod(duration: UQty, pm: IIPriceModel, 
+                    deliverySchedule: ISchedule, returnSchedule: ISchedule, 
+                    period: Period, attempts: Int?): Period? = 
+  {
+    let s = period.start
+    let sDesc = ScheduleDate(date = s, schedule = deliverySchedule)
+    let e = pm.rentRetDate(sDesc, returnSchedule, duration)
+    let dur1 = pm.rentDur(
+      sDesc, 
+      ScheduleDate(date = e, schedule = returnSchedule), 
+      duration.unit!.as[DurUnit]!, forceUnit = true
+    )
+    if (e > period.end) null
+    else if (e == s || dur1 < duration) {
+      if (attempts < 10) {
+        if (let np = deliverySchedule.nextPeriod(s)) {
+          let s2 = np.start
+          if (s2 < period.end) {
+            adjustPeriod(duration, pm, deliverySchedule, returnSchedule,
+              Period(start = s2, end = period.end), 
+              attempts + 1)
+          }
+        }
+      }
+    } else period
+  }
+}

@@ -1,0 +1,9 @@
+back object Conversion extends IConversion {
+  func do(version: [Int?]?) = {
+    if (version < [7,8,0]) {
+      Order.all*.updateDashboard
+    } else if (version < [7,11,0]) {
+      recreateAllRegisters
+    }
+  } 
+}    

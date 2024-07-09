@@ -1,0 +1,61 @@
+analytic FinAccount(dataType = "FinAccount")
+ 
+acctemplate Cash {
+  key field finAccount: FinAccount {label = "Account"}
+  func currency: Currency = finAccount.currency
+  field cashFlow: CashFlow?
+}
+  
+extend register LCash { 
+  back func cashFlows: [CashFlowAmount]? = if (amount) cashFlows1
+  back func cashFlows1: [CashFlowAmount] = {
+    if (let cashFlow) {
+      [CashFlowAmount(cashFlow = cashFlow, amount = amount!)]
+    } else if (let o = journal.as[DebtOrigin]) {
+      if (let cfs = o.paymentCashFlows) {
+        if (let err = amount - cfs*.amount.sum) {
+          cfs + CashFlowAmount(cashFlow = Errors, amount = err)
+        } else cfs
+      } else {
+        [CashFlowAmount(cashFlow = Errors, amount = amount!)]
+      }
+    } else { 
+      [CashFlowAmount(cashFlow = Errors, amount = amount!)]
+    }
+  } 
+  
+  event onSave = {
+    if (!next) {
+      finAccount*.touch
+    }
+  }
+}
+
+enum CashFlowType(isIncome: Bool) { 
+  case CashProvided{background = "#dea" color = "black"}
+  case CashUsed{background = "#fcc" color = "black"}
+  case CashUsedOrProvided{background = "#ed9" color = "black" label = "Cash Used or Provided"}
+  case Error {background = "#fb786d" color = "#500"}
+}
+
+enum CashFlow(type: CashFlowType) {
+  case Sales(type = CashProvided) {background = "#dea"}
+  case InterestRevenue(type = CashProvided) {background = "#dea"}
+  case PurchaseReturns(type = CashProvided) {background = "#dea"}
+  case Purchases(type = CashUsed) {background = "#b6d7e2"}
+  case Expenses(type = CashUsed) {background = "#fcc"}
+  case SalesReturns(type = CashUsed) {background = "#fcc"}
+  case Taxes(type = CashUsed) {background = "#fcc"}
+  case Exchange(type = CashUsedOrProvided) {background = "#ed9", label = "Currency Exchange"}
+  case CurrentAccounts(type = CashUsedOrProvided) {background = "#ed9"}
+  case Debts(type = CashUsedOrProvided) {background = "#ed9"}
+  case Capital(type = CashUsedOrProvided) {background = "#dec4ee"}
+  case Errors(type = Error) {background = "#fb786d" color = "#500"}
+}
+
+class CashFlowAmount {
+  field cashFlow: CashFlow
+  field amount: Money
+  
+  func toString = "$cashFlow -> $amount"
+}

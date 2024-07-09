@@ -1,0 +1,23 @@
+extend entity Person extends IProductItem {
+  impl compute products = companies.filter(company.our)*.jobTitle*.jobTypes
+  impl compute canBook: Bool = user || companies.exists(company.our)
+  impl view itemView = grid{_}
+  register prodReg: ProdItemReg? = if (let comp = companies.find(company.our?.as[OurLegalEntity])) {
+    ProdItemReg(
+      item = this, date = Date.min, doc = this, 
+      newLegalEntity = comp.company.our!.as[OurLegalEntity]!, 
+      newStockType = Person,
+      newStore = comp.location?.as[IStore], qty = 1, 
+      isStocktake = true, autoProdReg = true
+    )
+  }
+}
+ 
+extend entity CompanyPerson {
+  field location: ILocation? {
+    views = []
+  }
+  
+  extend view form = extend("preContact") { location}
+  extend view shortForm = extend("preContact") {location}
+}

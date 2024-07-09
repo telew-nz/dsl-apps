@@ -1,0 +1,29 @@
+class BnzCsvData extends BankStatementItem {
+  field date: Date {format = "dd/MM/yyyy"}
+  field amount: Dec[2]?
+  field payee: String?
+  field particulars: String?
+  field code: String?
+  field reference: String?
+  field type: String?
+  field accountNumber: String?
+  field thierAccount: String?
+  field serial: String?
+  field transactionCode: String?
+  field batchNumber: String?
+  field bankBranch: String?
+  field empty: String?
+  func data(account: BankAccount): BankData = {
+    BankData(memo = payee, thierAccount = thierAccount,
+             particulars = particulars, reference = reference, code = code)
+  }
+}
+
+extend enum BankStatementType {
+  case BnzCsv(
+    canProcess = file.is("csv") && data.toString.lines(CSV).first == "Date,Amount,Payee,Particulars,Code,Reference,Tran Type,This Party Account,Other Party Account,Serial,Transaction Code,Batch Number,Originating Bank/Branch,", 
+    process = ProcessResult(
+       items = data.toString.lines(CSV).drop(1).map(splitTo[BnzCsvData](",", CSV))), 
+    knowOurAccount = true
+  )
+}

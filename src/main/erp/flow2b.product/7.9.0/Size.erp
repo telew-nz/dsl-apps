@@ -1,0 +1,10 @@
+entity Size extends ProductAttrTerm {
+  singular = "Size"
+  plural = "Sizes"
+  object func attrName: String = "Size"
+  
+  field title: String
+  view form = nav {grid {
+    title
+  }}
+}

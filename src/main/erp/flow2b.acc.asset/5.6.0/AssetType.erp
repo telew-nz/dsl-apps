@@ -1,0 +1,11 @@
+entity AssetType {
+  impl field title: String
+  field depreciation: Depreciation
+  field description: Text?
+  field products: [ISuperProduct]? read by assetType 
+}
+
+extend trait ISuperProduct {
+  field assetType: AssetType? by products 
+  extend view categoriesView = assetType
+}

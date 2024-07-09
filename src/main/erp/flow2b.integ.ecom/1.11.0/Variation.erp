@@ -1,0 +1,28 @@
+extend trait ICustomerComplexProduct {
+  event onSave = {
+	if (!IUser.current.is[ECommerceIntegration] && touched) {
+      ECommerceIntegration.all.map {service =>
+        ProductUpdateJob(service = service, product = this, updatedPhotos = updated(photos)).run
+      }.result
+    }
+  }
+}
+
+class ProductUpdateJob extends SystemJob {
+  field service: ECommerceIntegration
+  field product: ICustomerComplexProduct
+  field updatedPhotos: Bool
+  func do = {
+    let po <- service.productUpdate(product, shouldDelete = service.shouldDeleteVariations, updatedPhotos)
+    let b = BatchChange.create(service, [po])
+    if (!b.isEmpty) service.uploadVariationJobs(b)*.run
+  }
+}
+
+extend trait ECommerceIntegration {
+  back func uploadAllVariations(): Future[Void] = {
+    let prods <- ICustomerComplexProduct.all.map(productUpdate(_, shouldDelete = shouldDeleteVariations, photosUpdated = true)).result
+    let b = BatchChange.createAndFilter(this, prods, item.enabled || extId)
+    if (!b.isEmpty) uploadVariationJobs(b)*.run()
+  }
+} 

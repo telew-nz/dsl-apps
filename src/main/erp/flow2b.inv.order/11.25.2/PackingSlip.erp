@@ -1,0 +1,65 @@
+extend entity ISalesDelivery {
+  compute logo = legalEntity.legalEntity.as[Company]?.logo 
+  list compute customer = salesOrders.first.customer
+  compute customerRefNum = customer?.legalEntity?.refNum(receiver)
+  compute references = orders*.references + refNums
+//  compute shipToPhone = shipTo?.
+  view packingSlip {
+    printable = true
+    layout = nav{grid (labels = None, width = 1.2) {
+      x (margin = None) {
+        y (width = 0.75, margin = Bottom, spacing = false, yAlign = Top) {
+          h1("Packing Slip")
+          x {label("Delivery Number") number >> field(title = this.number) start.date}
+        }
+        y ( margin = Bottom, stretch = 1, spacing = false, yAlign = Top) {
+          logo >> field(height = 4, margin = None, editMode = AlwaysRead, align = Right)
+          legalEntity.title >> field(fontStyle = H1, margin = None, visible = !logo, align = Right, editMode = AlwaysRead)
+          x {label("GST Number", stretch = 1, align = Right) legalEntity.legalEntity.legalInfo?.gstNumber >> field(editMode = AlwaysRead)}
+        }
+        
+      }
+            
+      
+      grid(labels = Top, width = 1.2) {
+        row {
+          y (width = 0.8, spacing = false, label = "Ship to:") {
+            receiver >> field(title = legalName)
+            x (visible = shipTo?.locationActor && receiver?.legalEntity != shipTo?.locationActor?.as[LegalEntity]) {
+              label ("C/O") shipTo?.locationActor?.as[LegalEntity] >> field(title = legalName)
+            }
+            shipTo?.locationAddress >> field(frame = false)
+            shipTo?.phones*.phone.join(", ")
+          }
+          legalEntity >> y (width = 0.4, spacing = false label = "Vendor:") {
+            _ >> field(title = legalEntity.legalName, label = "")
+            legalEntity.legalAddress >> field(frame = false)
+            legalEntity.contacts*.as[PhoneContact]*.phone.join(", ")
+            legalEntity.contacts*.as[EmailContact]*.email.join(", ")
+          }
+        }
+        customer >> y (label = "Order from Customer:", visible = customer?.legalEntity != receiver) {
+          _ >> field(title = legalEntity.legalName)
+          customerRefNum
+        }
+      }
+      
+      x (visible = references) {label("Reference") references }
+
+      label("", margin = Around)
+      
+      items*.as[IDlvProductItem] >> table {
+          header{
+            label("Code", width = 0.15) 
+            label("Product", width = 0.81) 
+            label("", align = Right, width = 0.12) 
+            label("Quantity", align = Right, width = 0.12) 
+          }
+          body{row{rowView}}
+          //row{product qty price amount}
+          //row(visible = discount){label("Discount") space space discount}
+        }
+      }
+    }
+  }
+}

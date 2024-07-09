@@ -1,0 +1,144 @@
+generator notify[T] {
+  field required: Bool = true
+  field fullFormat: Bool = false
+  field preferred: ( => Dsl)?
+  field supported: ( => Dsl)?
+  field text: ( => Dsl)?
+  field plainText: ( => Dsl)?
+  field to: => Dsl
+  field contacts: ( => Dsl)?
+  field from: ( => Dsl)?
+  field subject: ( => Dsl)?
+  field mainEntity: ( => Dsl)?
+  field title: ( => Dsl)?
+  field embeddedComment: Bool = false
+  
+  impl func generate = 
+'object $name extends NotifyTemplate[$T] {
+  impl func title = "$(name.fromCamelCase)"
+  impl func fullFormat = $fullFormat
+  impl func required = $required
+$(if (let preferred) 'impl func preferred = $(preferred())')
+$(if (let supported) 'impl func supported = $(supported())')
+
+$(if (let text) 
+'  impl func text(data: $T, channel: CommChannel, activity: Activity) = {
+    let f: ($T, channel: CommChannel, activity: Activity, comment: Text?) => Text? = ($(text()))
+    let r: Text? = f(data, channel, activity, activity.comment)
+    $(if (embeddedComment) 'r' else 'activity.comment + "<p></p>" + r' )
+  }' else if (let plainText) {
+'  impl func text(data: $T, channel: CommChannel, activity: Activity) = {
+    let f: ($T, channel: CommChannel, activity: Activity, comment: Text?) => PlainText? = ($(plainText()))
+    let r: Text? = f(data, channel, activity, activity.comment)
+    $(if (embeddedComment) 'r' else 'activity.comment + "<p></p>" + r' )
+  }'
+  }
+)
+  
+$(if (let subject) 
+'  impl func subject(data: $T, channel: CommChannel) = {
+    let f: ($T, channel: CommChannel) => Text? = ($(subject()))
+    f(data, channel)
+  }'
+)
+$(if (let mainEntity) 
+'  impl func mainEntity(data: $T) = {
+    let f: ($T) => Entity = ($(mainEntity()))
+    f(data)
+  }'
+)
+$(if (let title) 
+'  impl func title(data: $T) = {
+    let f: ($T) => String = ($(title()))
+    f(data)
+  }'
+)
+$(if (let from) 
+'  impl func from(data: $T, channel: CommChannel) = {
+    let f: ($T, channel: CommChannel) => Contact? = ($(from()))
+    f(data, channel)
+  }'
+)
+  
+  impl func to(data: $T) = {
+    let f: ($T) => [Addressee]? = ($(to()))
+    f(data)
+  }
+$(if (let contacts) 
+'  impl func contacts(data: $T, addressee: Addressee) = {
+    let f: ($T, addressee: Addressee) => [Contact]? = ($(contacts()))
+    f(data, addressee)
+  }'
+)  
+}
+
+'
+  
+/********************
+ * trigger
+ ********************/
+  
+  generator trigger {
+    field on: (=> Dsl)? // Date
+    field when: (=> Dsl)? //onSave
+    field schedule: (=> Dsl)? 
+  
+    func notifyName: Dsl = this[notify].name
+    func fullName: Dsl = this[notify].name + name
+    func guardWhen: Dsl? = if (let when) 'guard (!$(when())) else return {}'
+    func send: Dsl = {
+      if (let when )
+'let p: $T => Bool = ($(when()))
+if (p(item)) {
+  $(this[notify].name).send(item)
+}'      
+      else {
+        '$(this[notify].name).send(item)'
+      }
+    }
+  impl func generate: Dsl = {
+    let r = if (let on) { 
+'
+extend entity $T {
+  system field _$fullName: $fullName inline by item = $fullName()
+}
+inline entity $fullName extends DeferredJob {
+  field item: $T
+  impl func service = NotifyService
+  impl func jobDate = {
+    let f: $T => Date? = ($(on()))
+    if (let d = f(item) where d > now) d
+  }
+  impl func do = {
+    $send
+  }
+}
+'
+    } else if (let schedule) { 
+'
+object $fullName extends Entity with ScheduledJob {
+  impl func title = "$(fullName.fromCamelCase)"
+  impl func service = NotifyService
+  impl func schedule = $(schedule())
+  impl func do = {
+    $guardWhen
+    $(this[notify].name).touch
+    $(this[notify].name).saveMain
+    $(this[notify].name).send($fullName)
+  }
+}
+'
+    } else if (let when) {
+'extend entity $T {
+  impl event onSave = {
+    if ($(when())) {
+      $(this[notify].name).send(this)
+    }
+  }
+}'
+    } 
+    r!
+  }
+}
+}
+

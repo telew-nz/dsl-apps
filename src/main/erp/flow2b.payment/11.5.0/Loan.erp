@@ -1,0 +1,47 @@
+entity Loan extends Debt {
+  background = "#d68400"
+  object field gen: Int?
+  const ref field n: Int? = increment(Loan.gen)
+  func origin: Debt? = debits.first?.debit?.as[Debt].or(credits.first?.credit)
+  ref field date: Date = now
+  func number: String = "LOAN$n"
+  func journalPriority: Int? = -100
+  
+  func startingBalance: Money[currency]? = 0
+  func journalDate = date
+  func cashFlows(date: Date, amount: Money): [CashFlowAmount] = [CashFlowAmount(category = Notes, amount = amount)]
+  compute debtCounterparty: LegalEntity? {
+    value = counterparty
+    update = {
+      counterparty =? new
+    }
+  }
+  ref field counterparty: LegalEntity =? origin?.debtCounterparty
+  ref field legalEntity: OurLegalEntity {
+    default =? origin?.legalEntity.or(OurLegalEntity.onlyOne)
+  }
+  ref field currency: Currency = origin?.currency.alt(Currency.our)
+ 
+  func originLedgers(journal: Journal, date: Date, amount: Money): Future[[Ledger]?] = {
+    [LDebt(account = Loans, journal = journal, date = date, 
+           counterparty = counterparty, trAmount = amount, currency = amount.unit!.as[Currency]!)]
+  }
+  func title = "$number $counterparty"
+    
+  view form = nav{grid{
+    number
+    date
+    legalEntity
+    counterparty
+    currency
+    balance >> field(showPlus = true)
+    credits
+    debits
+    generalLedgerButton
+  }}
+  view ref = x {title balance}
+  object view list = Loan.all >> nav {list{grid(labels = None){
+    row {number legalEntity counterparty}
+    row {balance >> field(showPlus = true)}
+  }}}
+}

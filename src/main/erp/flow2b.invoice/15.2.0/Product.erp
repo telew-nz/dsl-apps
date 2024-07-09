@@ -1,0 +1,15 @@
+extend trait IBaseProduct {
+  func invoiceDesc: Text? 
+}
+extend trait ISuperProduct {
+  field invoiceDesc: Text? {label = "Invoice Description"}
+  extend view superProductTabView = grid(label = "Invoice") {
+    invoiceDesc
+  }
+}
+extend trait IIntermediateProduct {
+  compute invoiceDesc: Text? = superProduct.invoiceDesc
+}
+extend trait ISubProduct {
+  compute invoiceDesc: Text? = superProduct.invoiceDesc
+}

@@ -1,0 +1,40 @@
+extend entity CustomerAccountTerms extends DeferredJob {
+  const system field nextGenDate: Date = now
+  impl func jobDate = period(nextGenDate).end + 1_minute
+  impl func service = FinanceNotificator
+  impl func do = {
+    let genDate = nextGenDate
+    nextGenDate = now
+    save
+    
+    guard (FinanceNotificator.sendStm) else return {}
+    
+    let pp = period(genDate)
+    Customer.all.filter(accountTerms == this).foreach {c =>
+      GenAccStm(customer = c, period = pp).enqueue
+    }
+    
+  }
+}
+ 
+class GenAccStm extends SystemJob {
+  impl func service = FinanceNotificator
+  
+  field customer: Customer
+  field period: Period
+  
+  impl func do = {
+    guard (!customer.accountStatements.exists(s => s.period == this.period)) else return {}
+    
+    LMoneyDebt.between(period.start, period.end)
+      .filter(
+        start.counterparty == customer.legalEntity 
+        && (start.balanceDue || items))
+      .groupBy(start.legalEntity, start.currency)
+      .foreach {
+        let stm = CustAccStm(legalEntity = legalEntity, currency = currency, customer = customer, period = period).save
+        NewStmNotif(stm = stm).enqueue
+      }
+      .result
+  }
+}

@@ -1,0 +1,5 @@
+extend class BankData {
+  field particulars: String? 
+  field reference: String?
+  field code: String?
+}  

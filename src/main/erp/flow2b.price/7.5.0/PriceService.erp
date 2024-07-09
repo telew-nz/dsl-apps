@@ -1,0 +1,17 @@
+object PriceService extends SystemService {
+  impl func title = "Price Service"
+  impl func roles: Set[Role]? = [Admin]
+  
+  impl view form = nav{grid(labels = Top){
+    issuesView
+    serviceState
+    errorsCount >> field(editMode = AlwaysRead)
+  }}
+}
+
+extend trait IPriceModel extends DeferredJob {
+  impl func service = PriceService
+  impl func jobDate = if ((try? start).alt(now) > now) start else end
+  impl func do = touchAllProducts()
+  
+}

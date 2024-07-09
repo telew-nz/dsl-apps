@@ -1,0 +1,107 @@
+inline entity DiscountDeliveryItem extends IOrderDlvItem {
+  impl field sales: SalesDiscountItem? inline by deliveryItem {
+    default = if (let d = delivery?.as[ISalesDelivery]) {
+      SalesDiscountItem(deliveryItem = this, order = d.salesOrders.first)
+    }
+  }
+  impl field purchase: PurchaseDiscountItem? inline by deliveryItem {
+    default = if (let d = delivery?.as[IPurchaseDelivery]) {
+      PurchaseDiscountItem(deliveryItem = this, order = d.purchaseOrders.first)
+    }
+  }
+  
+  impl view form = grid(labels = None, width = 1.2, margin = TopBottom) {
+    label("Discount")
+  }
+  func clearSales: Void = sales = null
+  func clearPurchase: Void = purchase = null
+}
+
+trait DiscountItem extends OrderItem {
+  override func validateDiscount = ""
+  impl func name: String = "Discount"
+  impl func distributeGst = true
+  impl func invoicePosition = Subtotal
+  impl func invoiceOrder = -1
+  impl func orderDiscount: Money? = discount
+  func deliveryItem: DiscountDeliveryItem
+  impl func orderDlvItem: IOrderDlvItem? = deliveryItem
+  
+  impl view rowView = group {
+    row{label("Discount", span = 5, align = Right) discountEditor}
+    row(visible = invoiceDesc) {invoiceDesc >> field(span = 6)}
+  }
+  
+  impl view form = grid(margin = None, width = 1.2, labels = Top) {
+    row {
+      label("Discount", width = 1.0, align = Right)
+      discountEditor >> field(width = 0.2, label = "", align = Right)
+    }
+    desc >> field(visible = ui.isSelected || desc)
+    deliveryItem.delivery >> field(visible = ui.isSelected && this.order.deliveries.count > 1)
+  }
+  
+  func labelTitle = if (_discountUnit == PercentUnit) "Discount " + sDiscount.as[Percent] else  "Discount"
+  impl view labelView = grid(width = 0.8, labels = None){row {
+    labelTitle >> field(fontStyle = Label)
+    invoiceAmountNoGst >> field(width = 0.18)
+  }}
+  impl view labelNoteView = grid(width = 0.8, labels = None){row {
+    labelTitle >> field(fontStyle = Label)
+    x (align = Right, width = 0.49) {
+      invoiceAmountNoGst
+    }
+  }}
+  
+  func discountItems = {
+    invoices.last.or(order)*.items
+         .filter(invoicePosition == Lines)
+  }
+  override func calcDiscount: Money[currency]? = {
+    if (_discountUnit == PercentUnit) {
+      discountItems
+        *.invoiceAmount(noGst = !pricesIncludingGst).sum * sDiscount
+    } else {
+      super.calcDiscount
+    }
+  }
+  override func calcDiscountNoGst = {
+    if (_discountUnit == PercentUnit) {
+      discountItems*.invoiceAmountNoGst.sum * sDiscount
+    } else {
+      super.calcDiscountNoGst
+    }
+  }
+  override func calcDiscountWithGst = {
+    if (_discountUnit == PercentUnit) {
+      discountItems*.invoiceAmountWithGst.sum * sDiscount
+    } else {
+      super.calcDiscountWithGst
+    }
+  }
+  override func gstRateK : UPercent[8] = if (let wg = discountItems*.invoiceAmountNoGst.sum) {
+    (discountItems*.invoiceAmountWithGst.sum.as[Percent[8]]/wg).positive!
+  } else 1.0
+  
+  override func needsRevision: Bool = updated(sDiscount) || updated(_discountUnit) || updated(desc) || (
+    _discountUnit == PercentUnit && order*.items.filter(invoicePosition == Lines).exists(needsRevision)
+  )
+  override func sameAsPrev: Bool = !_discountUnit && if (let p = prev?.as[DiscountItem]) {
+    p.sDiscount == sDiscount && p.discountUnit == discountUnit && p.desc == desc
+  }
+}
+
+
+inline entity SalesDiscountItem extends DiscountItem with ISalesItemWithDelivery {
+  icon = "percent"
+  singular = "Discount"
+  impl field deliveryItem: DiscountDeliveryItem inline by sales
+  impl func revenueLedgers(journal: Journal, date: Date, baseAmount: UMoney?) = []
+}
+
+inline entity PurchaseDiscountItem extends DiscountItem with IPurchaseItemWithDelivery {
+  icon = "percent"
+  singular = "Discount"
+  impl field deliveryItem: DiscountDeliveryItem inline by purchase 
+  impl func expenseLedgers(journal: Journal, date: Date, baseAmount: UMoney?) = []
+}

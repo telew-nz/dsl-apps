@@ -1,0 +1,126 @@
+enum OpportunityStatus {
+  case Open {background = "#ed9"}
+  case Dormant {background = "#ccc"}
+  case Lost {background = "#fcc"}
+  case Won {color = "white" background = "#090"}
+} 
+
+enum AwaitingFollowUpStatus {
+  case AwaitingFollowUp {background = "#fcc"}
+}
+
+trait IOpportunity[Stage extends Enum] extends Entity {
+  background = "#a73e6c"
+  singular = "Opportunity"
+  plural = "Opportunities"
+  
+  func mustAddPublicLink = false
+
+  func itemRoles = [Salesperson]
+  object field generator: Int?
+  const system ref field n: Int =? increment(IOpportunity.generator)
+  compute number: String = prefix + n.format(3, 0)
+  func entityNumbers = [number]
+  func entitySubject = OurActor.our!.title
+  func prefix: String
+  ref field status: OpportunityStatus = Open
+  field contacts: [ActorContact]? {
+    visible = actor.isEmpty
+  }
+  field nextFollowUpDate: Date?
+  compute nextFollowUpDateEditor: Date[day]? {
+    value = nextFollowUpDate
+    update = {nextFollowUpDate = new}
+  }
+  
+  ref field actor: Actor? inline by opportunities {
+    init = {
+      new.contacts = new.contacts + contacts
+    }
+    update = {
+      roles = []
+      doOnLoad
+    }
+    deleteCascade = false
+  }
+  
+  event onLoad = {
+    doOnLoad
+  }
+  
+  func doOnLoad = {
+    actor?.people.filter(!_.id.isEmpty)
+      .filter(r => !roles.exists(_.companyPerson.person == r.person))
+      .foreach(r => OpportunityPersonRole(companyPerson = r, opportunity = this))
+  }
+
+  func estimatedAmount: Dec[2]?
+  func probability: Percent?
+  list compute orderedAmount: Dec[2]? = salesOrders*.orderTotal.sum
+  list compute paidAmount: Dec[2]? = salesOrders*.invoices.distinct*.paidAmount.sum
+  field roles: [OpportunityPersonRole]? inline by opportunity {
+    singular = "Role"
+  }
+
+  field salesOrders: [SalesOrder]? read by opportunity {
+    visible = actor.nonEmpty
+    init = {new.customer = actor.alt(throw "Actor is empty").legalEntities.first.makeCustomer?.as[Customer]}
+  }
+
+  field source: OpportunitySource? 
+  func stage: Stage
+  func lost: Bool = status == Lost
+  func won: Bool = status == Won
+  func active: Bool = status == Open
+  ref compute awaitingFollowUp: AwaitingFollowUpStatus? {
+    value = if (status == Open && nextFollowUpDate ?<= Date.now) AwaitingFollowUp
+  }
+
+  func title: String = number + " " + actor
+
+  func rowStyle: FontStyle = if (lost) Strikeout else Normal
+  
+  view actorView = grid(labels = Top) {
+    actor >> inline(frame = false){nav{shortForm}} //nav{inline(frame = false){shortForm}}
+    contacts
+  }
+  view followUpView = x(label = "Follow Up") {
+    awaitingFollowUp
+    nextFollowUpDateEditor >> field (editMode = AlwaysEdit)
+    button("Tomorrow") {
+      nextFollowUpDateEditor = Date.now + 1_day
+      UI.save(this)
+    }
+    button("In a Week") {
+      nextFollowUpDateEditor = Date.now + 1_week
+      UI.save(this)
+    }
+    button("In a Month") {
+      nextFollowUpDateEditor = Date.now + 1_month
+      UI.save(this)
+    }
+  }
+  report Report {
+    field awaitingFollowUpOnly: Bool
+    field salesperson: User? {
+      from = User.all.filter(is(Salesperson))
+    }
+    field status: [OpportunityStatus]?
+    field probabilityHigher: Percent?
+    field probabilityLower: Percent?
+    view list = IOpportunity.all.filter(
+         isFor(salesperson, Salesperson) && (!this.status || this.status.contains(status)) 
+      && probabilityHigher ?< probability && (!probability || probability <? probabilityLower)
+      && (!this.awaitingFollowUpOnly || awaitingFollowUp)
+    ).sortBy(nextFollowUpDate, n) >> nav{
+      list{}
+    }
+  }
+}
+extend trait SalesOrder {
+  field opportunity: IOpportunity? {
+    from = customer?.legalEntity?.opportunities
+    views = []
+  }
+  extend view posView = opportunity
+}

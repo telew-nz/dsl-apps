@@ -1,0 +1,34 @@
+entity AssetDisposal extends AssetOperation {
+  background = "#56940b"
+  singular = "Disposal"
+  func title = "FAD $asset"
+  ref field date: Date = now
+  func journalDate = date
+  field destination: Store?
+  ref field asset: IFixedAsset by disposal
+  view form = nav{grid{
+    asset
+    row{date destination}
+  }}
+  
+  register stock: [StockRegister]? = if (let d = destination){
+    asset.products.toSeq.map {p =>
+      StockRegister(
+        legalEntity = legalEntity, store = d, good = p.#0,
+        sort = 0, date = date, document = this, factualQty = p.#1
+      )
+    }
+  } else []
+    
+  register ledger = {
+    LAccumulatedDepreciation(
+      journal = this, fixedAsset = asset, 
+      isClosing = true, contraAccount = if (destination) Inventory else AssetDisposals)
+  }
+  object view list = AssetDisposal.all >> nav{list{grid(labels = None){
+    row{asset date destination}
+  }}}
+  register move = {
+    FAReg(asset = asset, date = date, toAvailable = -1, document = this)
+  }
+}

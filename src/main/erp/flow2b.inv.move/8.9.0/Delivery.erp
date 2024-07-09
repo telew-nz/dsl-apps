@@ -1,0 +1,197 @@
+trait IDelivery extends Journal with DashboardItem {
+  background = "#2e8e67"
+  func isForCurrent(role: Role): Bool = isFor(User.current, role)
+  
+  func itemRoles = [StoreOperative, BusAdmin]
+  func number: String
+  func legalEntity: OurLegalEntity
+  func deliverySupplier: LegalEntity?
+  func deliveryReceiver: LegalEntity?
+  func deliverySrc: IStore?
+  func deliveryDst: IStore?
+  func stockTypeSrc: StockType?
+  func stockTypeDst: StockType?
+  func canBeDeliveredInstantly(store: IStore): Bool = true
+  func items: [IDeliveryItem]?
+  func hasInTransit = true 
+  func priorityDate: Date = dispatchDate
+  func dispatchDate: Date
+  func deliveryDate: Date
+  func deliveryStatus: DeliveryStatus
+  func pathState: DeliveryStatus = deliveryStatus
+  
+  func canCancel: Bool = true
+  func dueDate: Date? = if (deliveryStatus == Planned) dispatchDate else if (deliveryStatus == InTransit) deliveryDate
+
+  func isBeforeInit = {
+    let d1 = deliverySrc?.initialDate(legalEntity)
+    let d2 = deliveryDst?.initialDate(legalEntity)
+    (deliverySrc && d1 && d1! > deliveryDate) || 
+    (deliveryDst && d2 && d2! > deliveryDate)
+  }
+  func active = deliveryStatus.active && items
+  
+  func assetProducts: [IProduct: UQty]? = {
+    items*.as[IIDeliveryPItem].filter(!productItems).flatMap(product.productQtys(qty))
+      .map(product, qty).toMap
+  }
+  
+  ref compute refItems {
+    value = RefProductItems.create(items*.as[IIDeliveryPItem].map(RefProductQty(product = product, qty = qty)))
+  }
+}
+
+trait IDeliveryPath extends IDelivery with RoutePath with HasTracking {
+  ref field dispatchDate: Date {
+    default = defaultDate
+    dynamicLabel = dispatchDateLabel
+    update = {
+      if (new > deliveryDate || !hasInTransit) deliveryDate = new
+      if (new > now && status == Delivered) status = Planned
+      updatedDispatchDate()
+    }
+  } 
+  func updatedDispatchDate(): Future[Void] = {
+  }
+  func dispatchDateLabel = if (this.hasInTransit) "Dispatch Date" else deliveryDateLabel
+  ref field deliveryDate: Date {
+    default = defaultDate
+    validate = if (deliveryDate < dispatchDate) "Delivery Date should be more or equal Dispatch Date"
+    dynamicLabel = deliveryDateLabel
+    visible = hasInTransit
+    update = {
+      if (new < dispatchDate && status == Planned) dispatchDate = new
+      updatedDeliveryDate()
+    }
+  }
+  
+  func updatedDeliveryDate(): Future[Void] = {
+  }
+  func pathCanBeExecuted = !freightCompany
+  func defaultDate: Date = now
+  func deliveryDateLabel = "Delivery Date"
+  func deliveryStatus: DeliveryStatus = status
+  ref field status: DeliveryStatus {
+    default = Planned
+    update = {
+      if (new == InTransit && old != Delivered) {
+        dispatchDate = now
+        if (dispatchDate > deliveryDate) deliveryDate = dispatchDate
+      } else if (new == Delivered) {
+        if (!hasInTransit || old == Planned) dispatchDate = now
+        deliveryDate = now
+      }
+    } 
+    from = {
+      let v = if (hasInTransit) DeliveryStatus.all! else [DeliveryStatus.Planned, DeliveryStatus.Delivered, DeliveryStatus.Canceled]
+      if (canCancel) v.toSet else v.filter(_ != DeliveryStatus.Canceled)!.toSet
+    }
+  }
+}
+
+enum DeliveryStatus(active: Bool, started: Bool) {
+  case Planned(active = true, started = false) {background = "#ed9"}
+  case InTransit(active = true, started = true) {background = "#dea"}
+  case Delivered(active = false, started = true) {
+    color = "white"
+    background = "#090"
+  }
+  case Canceled(active = false, started = false) {background = "#ddd"}
+}
+
+interface IDeliveryItem {
+  func isAvailableNow: Bool = true
+  func isUnavailable = !isAvailableNow
+  func awaitingForDate: Date? = null
+  func availablePeriods: [Period]? = if (let d = awaitingForDate) [Period(start = d, end = Date.max)]
+}
+
+interface IHasProductItems {
+  func product: ISubProduct
+  func unit: ProductUnit
+  func qty: UQty[unit]?
+  func productItems: [ProductItem]?
+  
+  front func printLabels(): Void = {
+    labelsView.print()
+  }
+  func labelsQty = qty
+  view labelsView = allProductItems >> list(frame = false){
+    form >> field(pageBreakAfter)
+  }
+  compute allProductItems: [ProdProdItem]? = allProductItems(productItems.drop(qty - labelsQty), labelsQty)
+  func allProductItems(productItems: [ProductItem]?, qty: Qty?): [ProdProdItem]? = if (qty > 0) {
+    ProdProdItem(product = product, unit = unit, item = if (let p = productItems.first) p) + allProductItems(productItems.drop(1), qty - 1.as[Qty[qty.unit!]]!)
+  }
+}
+
+interface IIDeliveryPItem extends IDeliveryItem with IHasProductItems {
+  func itemDelivery: IDelivery?
+  func stockTypeSrc: StockType? = itemDelivery?.stockTypeSrc
+  func stockTypeDst: StockType? = itemDelivery?.stockTypeDst
+  func product: ISubProduct
+  
+  func isTangible: Bool = product.isTangible
+  func unit: ProductUnit
+  func qty: UQty[unit]
+  
+  func active: Bool
+  func stockItem = this.as[AnyEntity]
+  compute baseQty: UQty[product.unit] = product.toBase(qty)  
+  func productItems: [ProductItem]?
+  
+  
+}
+
+trait HasProductItems extends AnyEntity with IHasProductItems {
+  func needProductItems: Bool
+  
+  field productItems: [ProductItem]? {
+    label = "Serial Numbers"
+    singular = "Serial Number"
+    from = product.productItems
+    visible = productItems || product.trackItems
+    validate = if (product.trackItems == Always
+                   && productItems.count != qty.withoutUnit
+                   && needProductItems) {
+      "Serial Numbers are required for all movements of $product"
+    }
+  }
+  view snView = productItems
+  
+  
+}
+
+class ProdProdItem(product: ISubProduct, unit: ProductUnit, item: ProductItem?) {
+  func form = if (let i = item) i.labelView else product.labelView
+}
+
+trait HasProductItemsInline extends AnyEntity {
+  func product: ISubProduct
+  func unit: ProductUnit
+  func qty: UQty[unit]?
+  func needProductItems: Bool
+  field productItems: [ProductItem]? inline {
+    label = "Serial Numbers"
+    singular = "Serial Number"
+    init = {
+      new.product = product.as[IProduct]!
+    }
+    visible = productItems || product.trackItems
+    validate = if (product.trackItems == Always
+                   && productItems.count != qty.withoutUnit
+                   && needProductItems) {
+      "Serial Numbers are required for all movements of $product"
+    }
+  }
+  view snView = productItems >> list{
+    itemView
+  }
+
+}
+
+trait IDeliveryPItem extends AnyEntity with IIDeliveryPItem {
+  
+}
+
+

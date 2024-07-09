@@ -1,0 +1,68 @@
+extend entity CptAcc extends DashboardItem with AutoSend {
+  override func entitySubject: String = "$legalEntity: Statement of Account" 
+  
+  compute logo: Image? = legalEntity.legalEntity.as[Company]?.logo 
+  compute bankAccounts {
+    value = legalEntity.accounts*.as[BankAccount].filter(forCustomerPayments && number && _.currency == this.currency)
+    views = []
+  }
+  //compute name = "Customer Account Statement"
+  impl func sendOut(): Void = NewStmNotif(stm = this).enqueue
+  compute debtBalance {
+    value = cpt.debtBalance(legalEntity, currency)
+    views = []
+  }
+  compute balanceDue {
+    value = debtBalance.balanceDue
+    views = []
+  }
+  
+  impl view form = nav {
+    grid (labels = None, width = 1.25) {
+      issuesView
+      row {
+        y (width = 0.75) {
+          cpt >> field(fontStyle = H1, label = "")
+          h2(label = "Statement of Account")
+        }
+        y (width = 0.5, margin = Bottom) {
+          logo >> field(height = 4, margin = None, editMode = AlwaysRead)
+          legalEntity.legalEntity.legalName >> field(fontStyle = H1, margin = None, visible = !logo, align = Right)
+        }
+      }
+      
+      grid (labels = Top, width = 1.25) {
+        row {
+          balanceDue >> field(label = "Balance to Pay", fontStyle = Bold, showEmpty, editMode = AlwaysRead)
+          debitAllowance
+          creditAllowance
+        }
+        row {
+          bankAccounts >> list {number}
+          terms
+          space
+        }
+      }
+
+      DebtRecon(legalEntity = legalEntity, counterparty = cpt, currency = currency, cptAcc = this).list.unnav
+    }
+  }
+}
+
+class NewStmNotif extends SystemJob {
+  impl func service = FinanceNotificator
+  field stm: CptAcc
+  impl func do = {
+    if (let c = stm.cpt.customer?.invoiceContact) {
+      c.join(stm)
+      stm.touch
+      Activity.current!.setMainEntity(stm)
+      let accs: PlainText? = stm.bankAccounts*.number.join("\n")
+      Activity.current!.makePublic(
+"<p>$(stm.legalEntity): Statement of account.</p>
+<p>$(Date.now)</p>
+<p></p>
+")
+    }
+  }
+}

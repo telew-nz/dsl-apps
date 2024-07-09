@@ -1,0 +1,11 @@
+interface DepreciationMethod {
+  background = "#56940b"
+}
+
+extend trait ISuperProduct {
+  field depreciation: DepreciationMethod?
+}
+
+extend entity Good {
+  extend view form = depreciation
+}

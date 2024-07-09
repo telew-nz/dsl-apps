@@ -25,3 +25,4 @@ class ProdUQty {
   
   impl func toString = "$product -> $qty"
 }
+

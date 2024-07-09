@@ -1,0 +1,59 @@
+inline entity SalesRentItem extends ISalesItemWithDelivery with OrderProductItem {
+  icon = "retweet"
+  singular = "Rent"
+  
+  override func name: String = "Hire $(product.title) for $(deliveryItem.dur): $(deliveryItem.period)"
+  
+  impl field deliveryItem: RentDeliveryItem inline by sales
+
+  impl view form = grid(margin = None, width = 1.2, labels = Top) {
+    row {
+      deliveryItem.product >> field(width = 0.4, label = "") 
+      deliveryItem.itemsQty >> field(width = 0.2, align = Right) 
+      deliveryItem.dur >> field(width = 0.2, align = Right) 
+      priceEditor >> field(width = 0.2, align = Right)
+      amountEditor >> field(width = 0.2, align = Right)
+    }
+    row (labels = false) {
+      deliveryItem.availableView >> field(width = 0.38)
+      space(width = 0.2)
+    }
+    row { 
+      invoiceDesc >> field(width = 0.8, visible = ui.isSelected || desc)
+      gstEditor  >> field(visible = ui.isSelected, width = 0.2, align = Right) 
+      discountEditor >> field(visible = ui.isSelected || discount, width = 0.2, align = Right)
+    }
+    deliveryItem.delivery >> field(visible = ui.isSelected && this.order.deliveries.count > 1)
+    accessories >> list {
+      x {_ add("Add") {
+        let item = SalesItem(
+          order = order, 
+          deliveryItem = DeliveryItem(product = _, delivery = deliveryItem.delivery, qty = deliveryItem.itemsQty.as[UQty[_.unit]]) 
+        )
+        item.deliveryItem.updateAmount()
+      }}
+    }
+    deliveryItem.snView >> field(editMode = Original, visible = ui.isSelected && product.trackItems)
+  }
+   
+  impl func revenueLedgers(journal: Journal, date: Date, baseAmount: UMoney?) = {
+    let rt = product.revenueType
+    [LSales(account = Rent, journal = journal, date = date, product = deliveryItem.product, revenueType = rt, 
+            location = deliveryItem.delivery.store,
+            qty = deliveryItem.period.duration.hours*deliveryItem.itemsQty, unit = Hour,
+            counterparty = order.customer?.legalEntity, trAmount = -baseAmount)]
+  }
+    
+  impl view rowView = group {
+    row{deliveryItem.product >> field(rowSpan = 2)
+        y(margin = None){
+          deliveryItem.dur >> field(align = Right)
+          deliveryItem.itemsQty >> field(align = Right) 
+        }
+        priceEditor >> field (align = Right)
+        amountEditor >> field (align = Right)
+    }
+    row(visible = discount){label("Discount", span = 2, align = Right) discountEditor}
+    row(visible = invoiceDesc) {itemDesc >> field(span = 4)}
+  }
+}

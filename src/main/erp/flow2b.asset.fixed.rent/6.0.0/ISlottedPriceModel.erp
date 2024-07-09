@@ -1,0 +1,165 @@
+interface ISlottedPriceModel extends IPriceModel {
+  func period: Period
+  compute cycle: Duration[day] = period.duration!.to[Duration[day]]
+  func durations: [DurationSlot]
+  func slots: [RentSlot]
+  func currency: Currency
+  func pricesIncludingGst: Bool
+  ref compute rentDurationUnits: [RentDurationUnit]? = durations*.rentUnit.toSet
+  compute night: RentSlot? = slots.find(isNight)
+  func hasNight: Bool = night
+  func hasNightCharge: Bool = night?.charge
+  func nightsCount(deliveryDate: Date, returnDate: Date): Qty[Night]? = {
+    if (night) {
+      slots(deliveryDate, returnDate).filter(isNight).count.as[Qty[Night]]
+    }
+  }
+  func validateSlots: String? = {
+    if (slots.filter(isNight).count > 1) "Should not contain more than one night"
+    else if (!slots.filter(!isNight)) "Cannot not contain only a night slot"
+    else if (slots.exists(!this.period.contains(period.start))) "Slots periods should be inside the period"
+  }
+   
+  func rentDuration(delivery: RentDeliveryDesc, assetReturn: RentDeliveryDesc, unit: RentDurationUnit?): Qty[RentDurationUnit]? = {
+    if (
+      let sc = slots(delivery.dispatchDate, assetReturn.deliveryDate.date)
+        .filter(!isNight)
+        .map(this.toSlotsCount(charge))
+        .sum
+    ) {
+      let u = durations.find(d => d.rentUnit == unit)
+        .or(durations.sortBy(slotsCount.desc).find(_.slotsCount <= sc))
+        .alt(durations.first)
+      sc.as[Qty[u.rentUnit]]/u.slotsCount
+    } else {
+      0.as[Qty[unit.alt(durations.first.rentUnit)]]
+    }
+  }
+  private func delta(date: Date): Duration[day]? = {
+    (date.sub(period.start).days/cycle).floor(0)*cycle
+  }
+  private func slot(date: Date): RentSlot? = {
+    let delta: Duration[day]? = delta(date)
+    slots.sortBy(period.start.desc).mapOpt{s => 
+      let p = s.period.add(delta)
+      if (p.contains(date)) s.copy(period = p)
+    }.first
+  }
+  private func slotOrNext(date: Date): RentSlot = {
+    let delta: Duration[day]? = delta(date)
+    let slot = slots.sortBy(period.start.desc).mapOpt{s => 
+      let p = s.period.add(delta)
+      if (p.contains(date)) s.copy(period = p)
+    }.first.or {
+      slots.sortBy(period.start).mapOpt{s => 
+        let p = s.period.add(delta)
+        if (p.start > date) s.copy(period = p)
+      }.first
+    }.alt {
+      let s = slots.sortBy(period.start).first
+      s.copy(period = s.period.add(delta + cycle))
+    }
+  }
+  
+  private func slots(start: Date, end: Date): [RentSlot]? = if (start < end) {
+    let slot = slotOrNext(start)
+    if (slot.period.start < end) slot + slots(slot.period.end + 1_second, end)
+  }
+  
+  func rentReturnDate(delivery: RentDeliveryDesc, returnSchedule: Schedule?, qty: Qty[RentDurationUnit]?): Date = {
+    adjustToSchedule(
+      delivery, returnSchedule, qty, 
+      moveDate(
+        delivery, 
+        date = delivery.dispatchDate, 
+        slotsCount = toSlotsCount(qty), 
+        first = true)
+    ).max(delivery.dispatchDate)
+  }
+  private func moveDate(delivery: RentDeliveryDesc, date: Date, slotsCount: Qty[Slot]?, first: Bool): Date = {
+    let slot = slotOrNext(date)
+    let sc = toSlotsCount(slot.charge)
+    if (slotsCount >= sc || (slot.isNight && (slotsCount > 0 || !chargeOvernight(delivery) || first)) ) {
+      moveDate(delivery, slot.period.end + 1_second, if (slot.isNight) slotsCount else slotsCount - sc, first = false)
+    } else if (slotsCount > 0 && sc) {
+      (slot.period.start.max(date) + slot.period.duration*slotsCount/sc!).as[Date]!
+    } else {
+      date
+    }
+  }
+  
+  private func adjustToSchedule(delivery: RentDeliveryDesc, returnSchedule: Schedule?, qty: Qty[RentDurationUnit]?, date: Date) = {
+    let d = date.as[Date]!
+    if (let shedule = returnSchedule) {
+      if (let n = slot(d).filter(isNight)?.period) {
+        if (qty && chargeOvernight(delivery)) shedule.workingOrPrevPeriod(n.start.as[Date]!).end
+        else if (shedule.isWorkingDate(n.end.as[Date]!)) n.end
+        else shedule.prevPeriod(n.end.as[Date]!).end
+      } else if (shedule.isWorkingDate(d)) {
+        d
+      } else {
+        shedule.prevPeriod(d).end
+      }
+    } else d
+  }
+  func toSlotsCount(qty: Qty[RentDurationUnit]?): Qty[Slot]? = {
+    if (qty) slotsCount(qty.unit!.as[RentDurationUnit]!)*qty
+  }
+  func slotsCount(unit: RentDurationUnit): Qty[Slot]? = {
+    durations.find(u => u.rentUnit == unit)?.slotsCount
+  }
+}
+
+class RentSlot {
+  field period: Period {label = "Period"}
+  field unit: RentDurationUnit = default
+  field charge: Qty[unit]? {
+    canEditUnit
+    default = 1
+  }
+  field isNight: Bool
+  view form = grid(labels = None) {
+    row {period >> field(frame = false, width = 0.6) charge >> field(width = 0.2) isNight >> field(width = 0.2) }
+  }
+  
+  func toString = "$period => $charge $(if (isNight) 'Night')"
+}
+
+class DurationSlot {
+  field rentUnit: RentDurationUnit = default
+  field slotsCount: Qty[Slot] = 1
+  view form = grid(labels = None) {
+    row {rentUnit >> field(compact = true) slotsCount >> field(align = Right)}
+  }
+}
+
+interface ISlottedProductPrice extends IPrice {
+  func model: ISlottedPriceModel
+  func currency = model.currency
+  func overnightCharge: Money[currency]? = if (let oc = model.night?.charge) durationPrice(oc)
+  func prices: [DurationPrice]?
+  func gstRate: UPercent[2]?
+  
+   protected func durationPrice(duration: Qty[RentDurationUnit]?): Money[currency]? = {
+    if (let sc = model.toSlotsCount(duration)) {
+      let ps = prices.map(price, slotsCount = model.toSlotsCount(_.duration)).sortBy(slotsCount.desc)
+      if (let pp = ps.find(sc >= slotsCount).or(ps.last), let slotsCount = pp.slotsCount) {
+        pp.price*sc/slotsCount
+      }
+    }
+  }
+  
+  func rentSalesAmount(currency: Currency, customer: ICustomer?, itemsQty: Qty, duration: Qty[RentDurationUnit]?, nightsCount: Qty[Night]?, inclGst: Bool): Future[RentAmount] = {
+    let am =  durationPrice(duration)
+    let a <- (am*itemsQty).to[Money[currency]](now)
+    let nm = overnightCharge*nightsCount*itemsQty
+    let n <- nm.to[Money[currency]](now)
+    RentAmount(dayAmount = a, nightAmount = n)
+  }
+
+  func salesPrice(currency: Currency, inclGst: Bool): Future[SalesPrice] = {
+    let p <- prices.find(unit.isFirst)?.price.to[Money[currency]](now)
+    SalesPrice(regular = p, current = p)
+      .convertGst(gstRate, model.pricesIncludingGst, inclGst)
+  }
+}

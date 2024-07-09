@@ -1,0 +1,13 @@
+back object Conversion extends IConversion {
+  func convert(version: [Int?]): Future[Any] = {
+    if (version < [4,0,0]) {
+      renameApp("flow2b.order.parse", "flow2b.inv.order.import")
+      renameField(POIInvoice, purchaseOrder, "purchaseOrder")
+      renameField(POIInvoice, legalEntity, "legalEntity")
+      renameField(POIInvoice, store, "store")
+      renameField(POIInvoiceItem, product, "store")
+      OrderImportService.resolveReferences = field(OrderImportService, "resolveReferences")
+    }
+  }
+}
+ 

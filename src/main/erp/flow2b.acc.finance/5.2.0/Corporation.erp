@@ -1,0 +1,14 @@
+account RetainedEarnings(template = "Basic", credit = acc(Equity, 30), structureSpecific = true)
+//account TreasuryStocks(template = "Counterparty", credit = acc(Equity, 40), structureSpecific = true) 
+  
+account Dividends(template = "Counterparty", contra = true, debit = acc(Equity, 70), closeWithPeriod = true, structureSpecific = true) 
+
+account DividendsPayable(template = "Counterparty", credit = acc(Liability, 90), structureSpecific = true) 
+
+inline trait ICorporation extends LegalStructure {
+  func specificAccounts: [LedgerAccount] = [RetainedEarnings, Dividends, DividendsPayable] //, TreasuryStocks
+  func canCloseIncomeSummary = true
+  func incomeSummaryClosing(journal: Journal, balance: Money[currency]): [Ledger]? = {
+    [LBasic(account = RetainedEarnings, journal = journal, trAmount = -balance)]
+  }
+}

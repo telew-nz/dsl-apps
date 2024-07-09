@@ -1,0 +1,87 @@
+/*entity OwnershipTransfer {
+  //Fields
+  ref field status: OwnershipTransferStatus = (Done) 
+  ref field date: DateTime = now
+  const ref field n: Int? = increment(Transfer.gen)
+  field supplier: LegalEntity =? (try? LegalEntity.ours.onlyOne!) {from = LegalEntity.ours}
+  field receiver: LegalEntity =? (try? LegalEntity.ours.onlyOne!) {from = LegalEntity.ours}
+  field store: Store {from = Store.ours}
+  field items: [OwnershipTransferItem] inline by delivery {
+    isValid = items.isUnique(product)
+  }
+  
+  //Compute
+  func number = "OT" + n
+  func title = number + " " + date.date
+  
+  //Views
+  object view list = OwnershipTransfer.all >> nav{list{grid(labels = None){
+    row{number date.date supplier receiver store}
+    status
+  }}}
+  view ref = x{
+    status title
+  }
+   view form = nav{grid {
+    row {number, date}
+    row {status, space}
+    row {supplier, receiver}
+    row {store, space}
+    
+    items
+  }}
+}
+
+enum OwnershipTransferStatus {
+  case Planned {
+    background = "#ed9"
+  }
+  case Done {
+    color = "white"
+    background = "#090"
+  }
+}
+
+inline entity OwnershipTransferItem {
+  field delivery: OwnershipTransfer by items
+  field product: IGood {
+    available(Ref).with(unit, altUnits)
+    update = {
+      this.unit = new.unit
+      this.qty = this.qty.as[Qty[this.unit]]
+    }
+  }
+  field unit: ProductUnit {from = product.units}
+  field qty: Qty[unit] = 1 {label = "Quantity"}
+  compute price: Money[currency]? = (amount/qty) {
+    update = {amount = qty*new}
+  }
+  field amount: Money[currency]?
+  
+  //Compute
+  compute baseQty: Qty[product.unit] = product.toBase(qty)
+  compute prevOutcomeStock: Stock? = outcomeStock?.prevStock
+
+  //Register
+  register outcomeStock = {
+    StockRegister(
+      legalEntity = delivery.supplier, store = delivery.store, good = product,
+      sort = if (delivery.status == Planned) 1 else 0, 
+      date = delivery.date, document = delivery,
+      factualQty = if (delivery.status == Planned) 0 else -(baseQty), 
+      reservedQty = if (delivery.status == Planned) baseQty else 0
+    )
+  } {autoRecalc = true availableFor = Inline}  
+  
+  register incomeStock = {
+    StockRegister(
+      legalEntity = delivery.receiver, store = delivery.store, good = product,
+      sort = if (delivery.status == Planned) 1 else 0, 
+      date = delivery.date, document = delivery,
+      factualQty = if (delivery.status == Planned) 0 else baseQty, 
+      expectedQty = if (delivery.status == Planned) baseQty else 0
+    )
+  }  
+}
+*/
+

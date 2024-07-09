@@ -1,0 +1,28 @@
+account Inventory(number = 120, type = Asset) {
+  key field product: IGood
+  field qty: Qty[product.unit]? {label = "Quantity"} 
+}
+
+account CostOfGoodsSold(number = 510, type = Expense) {
+  key field product: IGood
+  field qty: Qty[product.unit] {label = "Quantity"}
+}
+
+account PurchaseExpenses(number = 520, type = Expense) {
+  key field product: IProduct
+  key field counterparty: LegalEntity?
+  field qty: Qty[product.unit] {label = "Quantity"}
+}
+
+extend entity MLCostOfGoodsSold {
+  func needLedger = contraAccount != Inventory
+}
+
+account InventoryAdjustments(number = 650, type = RevenueOrExpense) {
+  key field product: IGood
+  field qty: Qty[product.unit]? {label = "Quantity"}
+}
+
+extend entity MLInventoryAdjustments {
+  func needLedger = contraAccount != Inventory
+}

@@ -1,0 +1,82 @@
+trait IReasonOwner extends AnyEntity {
+  func reasons: [IReason]?
+  func validateReasons: String? = ""
+  func currency: Currency
+  func unreconAmount: Money[currency]?
+  func account: FinAccount
+  func journal: Journal
+  func legalEntity: OurLegalEntity
+  func date: Date
+  func debtCounterparty: LegalEntity?
+}
+
+trait IReason extends AnyEntity {
+  func payment: IReasonOwner
+  func cashFlows: [CashFlowAmount]?
+  func ledgers: Future[[Ledger]?]
+  func gstLedger: Ledger? = null
+  func refs: [RefEntity]? = []
+  var amount: UMoney?
+  func journal = payment.journal
+  func account = payment.account
+}
+trait IReturnReason extends IReason with IReasonOwner {
+  impl func currency = payment.currency
+  impl func unreconAmount = payment.unreconAmount
+  impl func legalEntity = payment.legalEntity
+  impl func date = payment.date
+  impl func debtCounterparty = payment.debtCounterparty
+  impl func cashFlows = reasons*.cashFlows.map{cf => cf.copy(amount = -cf.amount)}
+  impl func ledgers: Future[[Ledger]?] = {
+    let ls <- reasons.oneByOne(_.ledgers)
+    let lss = ls.flatMap(i => i)
+    lss*.makeContra
+    lss
+  }
+  impl func amount = reasons*.amount.sum
+}
+
+trait IPReasonOwner extends IReasonOwner {
+  func payer: LegalEntity?
+  impl field reasons: [IPReason]? inline by payment {
+    validate = validateReasons
+  }
+}
+trait IPReason extends InlineEntity with IReason {
+  impl system field payment: IPReasonOwner by reasons
+}
+inline entity IPReturn extends IPReason with OPReasonOwner with IReturnReason {
+  singular = "Return"
+  icon = "undo"
+  
+  impl func payee = payment.payer
+  impl view form = y {
+    label("Return")
+    reasons
+  }
+}
+
+trait OPReasonOwner extends IReasonOwner {
+  func payee: LegalEntity?
+  impl field reasons: [OPReason]? inline by payment {
+    default = defaultReasons
+    validate = validateReasons
+  }
+  func defaultReasons: [OPReason]? = []
+}
+
+trait OPReason extends InlineEntity with IReason {
+  impl system field payment: OPReasonOwner by reasons
+  
+  impl func gstLedger: LTax? = null  
+}
+inline entity OPReturn extends OPReason with IPReasonOwner with IReturnReason {
+  singular = "Return"
+  icon = "undo"
+  
+  impl func payer = payment.payee
+  impl view form = y {
+    label("Return")
+    reasons
+  }
+}

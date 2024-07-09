@@ -1,0 +1,95 @@
+extend trait FinAccount {
+  func isPrecise: Bool = false
+  
+  back func isCounterparty(data: BankData, actor: LegalEntity): Bool = {
+    !actor.our && (
+         actor.isName(data.thierName) 
+      || actorContainsWords(data.fullMemo.flexWholeWords, actor)
+      || (
+           actorContainsForTrans(data.fullMemo.flexWholeWords, actor)
+        && DebtOrigin.all
+             .exists(debtCounterparty == actor && debtUnpaidAmount == data.amount)
+             .result.get
+      )
+    )
+  }
+  
+  back func actorContainsWords(fullMemo: FlexString, e: LegalEntity): [String]? = {
+    let words = e.title.words
+    (if ( (words.filter(_.length >= 3).count >= 2 || (e.is[Company] && words.exists(_.length >= 4)) ) && words.all(fullMemo.contains(_)) ) [e.title]) 
+    +
+    (if (let n = e.legalInfo?.name.trim where n.length >= 3 && fullMemo.contains(n)) [n])
+    +
+    e.altNames.filter(n => n.trim.length >= 3 && fullMemo.contains(n))
+  }
+  
+  back func actorContainsForTrans(fullMemo: FlexString, e: LegalEntity): Bool = {
+    e.title
+      .replace(".", " ").words
+      .exists{w => 
+        w.lower !in ["ltd"] && w.length >= 3 && fullMemo.contains(w)
+      }
+  }
+  back func counterparty(data: BankData): LegalEntity? = {
+      //2. Reference full word SO1397
+      origins(data)*.debtCounterparty.distinct.onlyOne
+    .or {
+      //3. Customer Name match
+      LegalEntity.filterByName(data.thierName).filter(!our).onlyOne
+    }.or {
+      let memo = data.fullMemo.replace(" ", "").replace("-", "").flex
+      //4. Reference without a prefix contains in memo (INVSO1397 || SO 1397) 
+      //&& Amount matches
+
+      DebtOrigin.all
+        .filter(debtCounterparty && debtUnpaidAmount == data.amount && _.mainOrigin.entityNumbers.exists(memo.contains(_)))
+        .result.get
+        *.debtCounterparty.distinct.onlyOne
+    }.or {
+      //5. All words of Quality customer name contains in memo 
+      //  - Companies: >= 2 words >= 3 characters || >= 4 characters
+      //  - Person: >= 2 words >= 3 characters
+      //  - Alt name or legal name >= 3 characters
+
+      let in = data.fullMemo.flexWholeWords
+      chooseLe(null, [], LegalEntity.all.flatMap{e => (if (let words = actorContainsWords(in, e)) (e, words)).toSeq}.result.get)
+    }.or {
+      //6. Any words >= 3 characters of customer name contains in memo 
+      //&& An unpaid amount on an order for the customer matches.
+      let in = data.fullMemo.flexWholeWords
+      DebtOrigin.all
+        .filter(debtCounterparty && debtUnpaidAmount == data.amount && actorContainsForTrans(in, debtCounterparty!))
+        .result.get
+        *.debtCounterparty.distinct.onlyOne
+    }
+  }
+  back func chooseLe(le: LegalEntity?, words: [String]?, candidates: [(LegalEntity, [String])]?): LegalEntity? = {
+    if (let f = candidates.first) {
+      if (words.all(w => f.#1.exists(v => v.flexWholeWords.startsWith(w)))) {
+        chooseLe(f.#0, f.#1, candidates.drop(1))
+      } else if (f.#1.all(w => words.exists(v => v.flexWholeWords.startsWith(w)))) {
+        chooseLe(le, words, candidates.drop(1))
+      } else {
+        null
+      }
+    } else {
+      le
+    }
+  }
+  
+  back func origins(data: BankData): [DebtOrigin]? = {
+    Entity.numbers(data.fullMemo).flatMap {number =>
+      DebtOrigin.all.filter(_.entityNumbers.exists(n => n =%= number)).result.get
+    }
+  }
+  
+  //1. Source account number matches a payment method
+  back func paymentMethod(data: BankData): PMBankAccount? = if (let a = data.thierAccount.trim where a.length > 3) {
+    PMBankAccount.all.find(number =%= a).result.get
+  }
+}
+
+extend trait ICardAccount {
+  impl func isPrecise: Bool = true
+
+}

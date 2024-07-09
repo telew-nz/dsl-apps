@@ -1,0 +1,5 @@
+trait IExpenseType
+entity ExpenseType extends IExpenseType {
+  field title: String
+  field description: Text?
+}

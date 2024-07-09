@@ -1,0 +1,24 @@
+entity Brand {
+  field logo: Image? 
+  field actors: [Actor]?
+  field superBrand: Brand? by subBrands
+  field subBrands: [Brand]? read by superBrand
+  ref field name: String
+  field description: Text?
+  field products: [ISuperProduct]? by brands
+  ref compute title = if (let s = superBrand) "$s / $name" else name
+
+  view form = nav{grid{
+    logo
+    superBrand
+    name
+    subBrands >> list {field(title = _.name)}
+    actors
+    description
+    products
+  }}
+}
+
+extend entity Actor {
+  field brands: [Brand]? by actors
+}

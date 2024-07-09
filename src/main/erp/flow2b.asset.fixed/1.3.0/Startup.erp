@@ -1,0 +1,55 @@
+entity AssetsStartup {
+  background = "#56940b"
+  func title = "Assets Startup $store"
+  compute date: Date = stocktake.date
+  compute legalEntity: LegalEntity = stocktake.legalEntity
+  ref compute store: Store = stocktake.store
+  field stocktake: Stocktake inline
+  field products: [AssetsStartupProduct] inline by startup
+  view form = nav{grid(labels = None) {
+    stocktake >> grid(labels = Top){
+      date
+      legalEntity
+      store
+    }
+    products >> list{grid(labels = None) {
+      good.assetsStartup
+      assets >> table{
+        asset.number >> field(width = 0.5) cost >> field(width = 0.5)
+      }   
+    }}
+  }}
+  
+  
+}
+
+extend entity Good {
+  view assetsStartup = grid(labels = Top, label = "") {
+    row{title >> field (label = "Good Name") depreciation}
+  }
+}
+
+inline entity AssetsStartupProduct {
+  singular = "Product"
+  system field startup: AssetsStartup
+  field good: Good inline 
+  field assets: [AssetsStartupAsset] inline by product 
+  compute count = assets.count.as[Qty[ProductUnit.Item]]
+}
+
+inline entity AssetsStartupAsset {
+  singular = "Asset"
+  func stocktake = product.startup.stocktake
+  func currency = stocktake.legalEntity.getCurrency
+  system field product: AssetsStartupProduct
+  field asset: FixedAsset inline = FixedAsset(product = product.good)
+  field cost: Money[currency]? {
+    update = {
+      stocktakeItem.differencePrice = new
+    }
+  }
+  field stocktakeItem: StocktakeItem inline = StocktakeItem(stocktake = stocktake, product = product.good, unit = Item, qty = 1)
+  func onSave = {
+    asset.creation.date = stocktake.date + 1_minute
+  }
+}

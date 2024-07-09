@@ -1,0 +1,50 @@
+trait DebtReason extends PseudoEntity with IReason with DebtOrigin {
+  impl field legalEntity: OurLegalEntity = payment.legalEntity
+  impl field amount: UMoney[payment.currency] =? payment.unreconAmount.abs
+  field counterparty: LegalEntity =? payment.debtCounterparty
+  impl func mainEntity = journal
+  impl func journalDate = journal.journalDate
+  impl func debtCurrency = payment.currency
+  impl func debtCounterparty = counterparty
+  impl func isInstant = false
+  impl func debtCashFlows = cashFlows
+  
+  impl view form = grid(labels = Top) {
+    h3("Debt")
+    row{counterparty legalEntity amount >> field(align = Right) }
+    debtOriginsView >> field(label = "Origins")
+  }
+  impl func title = "Debt $payment "
+}
+ 
+inline entity OPDebt extends DebtReason with OPReason {
+  icon = "balance-scale"
+  singular = "Debt"
+   
+  impl func debtAmount = amount
+  impl func isPurchase = true
+  impl func cashFlows = [CashFlowAmount(cashFlow = Debts, amount = -amount)] 
+  
+  impl func ledgers: Future[[Ledger]?] = {
+    [LMoneyDebt(
+      journal = journal, origin = this, date = payment.date + 1_second,
+      legalEntity = legalEntity, trAmount = amount, 
+      counterparty = counterparty, currency = payment.currency)]
+  }
+} 
+ 
+inline entity IPDebt extends DebtReason with IPReason {
+  icon = "balance-scale"
+  singular = "Debt"
+  
+  impl func debtAmount = -amount
+  impl func isPurchase = false
+  
+  impl func cashFlows = [CashFlowAmount(cashFlow = Debts, amount = amount)] 
+  impl func ledgers: Future[[Ledger]?] = {
+    [LMoneyDebt(
+      journal = journal, origin = this, date = payment.date + 1_second,
+      legalEntity = legalEntity, trAmount = -amount, 
+      counterparty = counterparty, currency = payment.currency)]
+  }
+} 

@@ -1,0 +1,42 @@
+trait ISalesInvoice extends IInvoice with DebtDebit {
+  func hasSalesIssues = debitPaymentState == Overpaid || overdueState == PaymentOverdue
+  func isPurchase: Bool = false
+  func cashFlowCategory: CashFlowCategory = Sales
+  func startingBalance: Money[currency]? = -total
+  func paidAmount = debitRepaid
+  func cancelable = true    
+  func cancel(): Void = cancelationDate = Date.now
+  compute vendor = legalEntity
+  compute customer = counterparty
+
+  func setoffs: [Setoff]? = credits
+  func debitOriginLedger(setoff: Setoff): Future[LDebt] = {
+    LDebt(account = AccountsReceivable, origin = this, journal = setoff.journal, date = setoff.date, trAmount = -setoff.amount, counterparty = customer, currency = currency)
+  }
+  register receivableLedger = LDebt(account = AccountsReceivable, origin = this, journal = this, trAmount = total, counterparty = customer, currency = currency)
+  register unearnedLedgers: [LDebt]? = items
+    .groupBy(delivery).agg(orderAmount.sum).toSeq
+    .filter(orderAmount)
+    .map{
+      LDebt(account = UnearnedRevenues, origin = _.delivery?.as[Journal].alt(this), journal = this, 
+            trAmount = -orderAmount, counterparty = customer, currency = currency)
+    }
+  func debtLedger: LDebt = receivableLedger
+  register receivableCancelLedger: LDebt? = if (let d = cancelationDate) receivableLedger.copy(date = d, trAmount = -receivableLedger.trAmount) else null
+  register unearnedCancelLedgers: [LDebt]? = if (let d = cancelationDate) unearnedLedgers.map(_.copy(date = d, trAmount = -_.trAmount)) else null
+  func isTheir = customer.isTheir
+  
+  view statusesView = x {
+    issueState
+    debitPaymentState
+    debitUnpaid + " unpaid" >> field(visible = debitState == PartiallyReconciled)
+    overdueState
+  }
+  
+  func addPayment(): Void = {
+    let a = debitUnpaid
+    IncomingPayment(amount = a, debits = [Setoff(debit = this, amount = a)]).form.open
+  }
+  
+  view ref = x{title statusesView}
+}

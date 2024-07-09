@@ -1,0 +1,49 @@
+object OrderImportService extends SystemService with MsgProcActivity {
+  impl func title: String = "Order Import Service"
+  impl func roles: [Role]? = [Admin]
+  impl func priority = 0.7
+  
+  field resolveReferences: Bool = true
+  field importMsg: Bool {
+    default = true
+    label = "Import messages from vendors"
+  }
+  
+  impl func canProc(msg: ExtMsg): Bool = {
+       importMsg 
+    && msg.attachs.exists(name.lower.endsWith(".pdf"))
+    && msg.from.contact?.legalEntity?.vendor
+  }
+  
+  func invoiceTitleTerms = ["tax invoice", "credit note", "debit note", "adjustment note"]
+  impl func refs(msg: ExtMsg): [Entity]? = {
+    if (let aa = msg.refActivities.first) [aa.mainEntity]
+  }
+  impl func item(msg: ExtMsg, from: Contact?, recipients: [Contact], refs: [Entity]?): Entity? = {
+    let files = msg.attachs!*.make
+    guard(let invoices = files
+      .filter(is("pdf"))!
+      .filter{f =>
+        let t = f.plainText.get.flex
+        invoiceTitleTerms.exists(t.contains(_))
+      }
+    ) else return {
+      files*.delete
+      null
+    }
+
+    Activity.current!.entities = files
+    PurchaseOrderImport(files = invoices, from = from)
+  }
+  
+  impl func attachs(msg: ExtMsg, item: Entity): [File]? = []
+  
+  impl view form = nav{grid(labels = Top){
+    issuesView
+    serviceState
+    errorsCount >> field(editMode = AlwaysRead)
+    
+    resolveReferences
+    importMsg
+  }}
+}

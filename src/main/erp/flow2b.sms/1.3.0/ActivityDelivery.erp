@@ -1,0 +1,11 @@
+
+extend class ActivityDelivery {
+  field messageId: String?
+  field numberOfParts: Int?
+  field deliveredParts: Int?
+  field awsCost: Money[5]?
+}
+
+extend enum ActivityDeliveryStatus {
+  case Delivered {color = "white" background = "#090" icon = "check-circle"}
+}

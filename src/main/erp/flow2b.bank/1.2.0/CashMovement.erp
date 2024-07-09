@@ -1,0 +1,38 @@
+/*extend trait CashMovement {
+  extend report Report {
+    extend view list = extend("nav") {
+	  button("Statement Uploads") {BankStatementUpload.Report().list.open}
+      add("Upload") {BankStatementUpload().form.open}
+    }
+  }
+}*/
+
+extend trait CashMovement {
+  const field uploads: [BankStatementUpload]? by payments
+  
+  ref stored compute uploadState: BankUploadState {
+    value = {
+      if (let ss = srcBankData?.uploadState) {
+        if (ss == Missing) Missing
+        else if (let ds = dstBankData?.uploadState) {
+          if (ds == Missing) Missing
+          else if ((ds == Uploaded || !dstAccount!.is[BankAccount]) && (ss == Uploaded || !srcAccount!.is[BankAccount])) Uploaded
+          else NotUploaded
+        }
+        else ss
+      } else dstBankData?.uploadState.alt(NotUploaded)
+    }
+    visible = hasBankAccount && uploadState != Uploaded
+  }
+  override func hasIssue = reconcileState.isIssue || uploadState == Missing 
+}
+
+extend entity IncomingPayment {
+  extend view stateView = uploadState
+}
+extend entity OutgoingPayment {
+  extend view stateView = uploadState
+}
+extend entity CashTransfer {
+  extend view stateView = uploadState
+}

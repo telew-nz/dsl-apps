@@ -1,0 +1,28 @@
+report AssetMovement {
+  background = "#56940b"
+  field asset: IFixedProductAsset?
+  field store: IStore?
+  field legalEntity: OurLegalEntity? 
+  
+  view list = FAReg.all.filter(asset ==? this.asset && store ==? this.store && legalEntity ==? this.legalEntity).sortBy(date.desc) >> nav{table(action = document.form.open) {
+    asset, legalEntity, store, document >> field(width = 0.5), date, available, inUse
+  }}
+}
+
+report AssetProductMovement {
+  background = "#649023"
+  field product: ISubProduct? {
+    from = ISubProduct.all.filter(unit == Item)
+  }
+  field store: IStore?
+  field legalEntity: OurLegalEntity?
+    
+  view list = FAProdReg.all.filter(
+          (!this.product || this.product!.products.keys.contains(product)) 
+       && store ==? this.store && legalEntity ==? this.legalEntity
+    ).sortBy(date.desc) 
+  >> nav{table(action = document.form.open){
+    product >> field(width = 0.3), legalEntity, store, document >> field(width = 0.5), date, qty, available
+  }}
+}
+

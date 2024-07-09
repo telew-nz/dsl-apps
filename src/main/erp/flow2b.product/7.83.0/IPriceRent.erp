@@ -1,0 +1,76 @@
+class RentPeriod(dispatch: ScheduleDate, ret: ScheduleDate, dur: UQty?)
+class ScheduleDate(date: Date, schedule: ISchedule)
+
+interface IPriceRent extends IPrice {
+  list compute rentPrices: Future[[DurPrice]?] {
+    value = back{
+      if (!has(Rent)) []
+      else rentPrices(PriceRequest(currency = currency, inclGst = vendor.pricesIncludingGst, level = model.mainPriceLevel))
+    }
+  }
+  impl func has(type: PriceType): Bool = type == Rent
+  impl view form = y {
+    levels >> field(visible = !IPriceLevel.onlyOne)
+    x {rentPrices >> field(frame = false) model >> field(title = fullTitle, stretch = 1, align = Right)}
+  }
+  
+  object back func defRentDur(dispatch: ScheduleDate, ret: ScheduleDate, unit: DurUnit?, forceUnit: Bool): UQty = {
+    if (let dur = ret.schedule.workingTime(Period(start = dispatch.date, end = ret.date))) {
+      if (let u = unit?.defDur) {
+        dur.to[Duration[u.unit!]].as[UQty[unit!]]!
+      } else {
+        dur.to[Duration[hour]].as[UQty[DurUnit.Hour]]!
+      }
+    } else {
+      1.as[UQty[unit.alt(DurUnit.Hour)]]
+    }
+  }
+  back func rentDur(dispatch: ScheduleDate, ret: ScheduleDate, unit: DurUnit?, forceUnit: Bool): UQty {
+    default value = defRentDur(dispatch, ret, unit, forceUnit)
+  }
+  back func rentPeriods(date: Date, schedule: ISchedule, retSchedule: ISchedule, qty: UQty?): [Period]?  ={
+    []
+  }
+  
+  back object func defRentPeriod(dispatch: ScheduleDate, retSchedule: ISchedule, qty: UQty?): Period = {
+    let d = if (qty) qty.unit!.as[DurUnit]!.defDur*qty
+    //toDuration(qty)
+    if (let start = dispatch.schedule.nextWorkingDate(dispatch.date), let end = retSchedule.addWorkingTime(start, d)) {
+      Period(start = start, end = end)
+    } else {
+      Period(start = dispatch.date, end = dispatch.date)
+    }
+  }
+  back func rentPeriod(dispatch: ScheduleDate, retSchedule: ISchedule, qty: UQty?): Period {
+    default value = defRentPeriod(dispatch, retSchedule, qty)
+  }
+    
+  
+  func rentDurUnits: [DurUnit]? {
+    default value = DurUnit.all.toSet
+  }
+  func defaultDur: UQty? = 0
+  
+  back func rentPrices(request: PriceRequest): Future[[DurPrice]?] 
+  impl back func amount(request: PriceRequest, item: PriceOrderItem): Future[SalesPrice] {
+    default value = {
+      let rps <- rentPrices(request)
+      guard (let rp = rps.first) else return SalesPrice()
+
+      let dur = item.rentPeriod?.dur
+      if (let d1 = dur.unit?.as[DurUnit]?.defDur, let d2 = rp.unit.defDur) {
+        rp.price.mul(item.qty * (dur*d1)/(rp.dur*d2))
+      } else {
+        rp.price.mul(item.qty * dur/rp.dur)
+      }
+    }
+  }
+  func bond: UMoney[currency]? = 0
+  back func bond(request: PriceRequest, item: PriceOrderItem): Future[UMoney?] {
+    default value = {
+      let b <- bond.to[UMoney[request.currency]](now)
+      b*item.qty
+    }
+  }
+}
+

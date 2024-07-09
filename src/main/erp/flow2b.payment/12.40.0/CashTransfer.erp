@@ -1,0 +1,182 @@
+entity CashTransfer extends CashMovement {
+  singularShort = "Transfer"
+  background = "#d68400"
+  impl func itemRoles = [Accountant, BusAdmin]  
+  
+  impl func legalEntity = from.legalEntity
+  impl func srcAccount: FinAccount? = from
+  impl func dstAccount: FinAccount? = to
+  impl compute srcAmount: Number? {
+    value = -outcome
+    update = {outcome =? (-new).positive}
+  } 
+  impl compute dstAmount: Number? {
+    value = income
+    update = {income =? new.positive}
+  }
+  impl compute srcBankData: BankData?{
+    value = outgoingBankData
+    update = {outgoingBankData =? new}
+  }
+  impl compute dstBankData: BankData? {
+    value = incomingBankData
+    update = {incomingBankData =? new}
+  }
+  impl ref compute hasBankAccount: Bool = from.hasBankData || to.hasBankData
+  override func issues = super.issues + {
+   if (uploadState == Missing ||
+       (outgoingBankData.uploadState == Missing || (outgoingBankData.uploadState == NotUploaded && from.uploadedOutgoing?.containsIncl(dateOut))) ||
+       (incomingBankData.uploadState == Missing || (incomingBankData.uploadState == NotUploaded && to.uploadedIncoming?.containsIncl(dateIn)))
+      ) [MissingInBSU]
+  }
+  
+  impl func reconState: ReconState = Recon
+  impl func numPrefix = "CTR"
+  impl func title = fullNum
+  override field dateOut: Date { 
+    default =? if (!updated(dslType)) now 
+    label = "Outgoing date"
+    update = {
+      if (new > dateIn) dateIn = new
+    }
+  }
+  override field dateIn: Date { 
+    default =? if (!updated(dslType)) now 
+    label = "Incoming date"
+    update = {
+      if (new < dateOut) dateOut = new
+    }
+    //validate = if (dateIn < dateOut) "Incoming date cannon be less than outgoing"
+  }
+  impl func date: Date = dateOut
+  field from: FinAccount {
+    update = {
+      if (new.currency == (try? to.currency) && !(try? outcome)) {
+        outcome =? try? income
+      }
+    }
+  }
+  field outcome: UMoney[from.currency] {
+    label = "Outgoing Amount"
+    update = {
+      if ((try? income) == old) {
+        income = new
+      }
+    }
+  }
+  field to: FinAccount {
+    update = {
+      if (new.currency == (try? from.currency) && !(try? income)) {
+        income =? try? outcome
+      }
+    }
+  }
+  field income: UMoney[to.currency]  {
+    label = "Incoming Amount"
+    update = {
+      if ((try? outcome) == old) {
+        outcome = new
+      }
+    }
+  }
+  field outgoingBankData: BankData = BankData()
+  field status: CashTransferStatus = Complete
+  field incomingBankData: BankData = BankData()
+    
+  impl event onSave = {
+    if (!created && outgoingBankData.origin(uploadState) == Uploaded && (from != origin(from) || dateOut != origin(dateOut) || outcome != origin(outcome))) {
+      throw "The uploaded data From for $(this) cannot be modified"
+    }
+    if (!created && incomingBankData.origin(uploadState) == Uploaded && (to != origin(to) || dateIn != origin(dateIn) || income != origin(income))) {
+      throw "The uploaded data To for $(this) cannot be modified"
+    }
+  }
+
+  impl event onDelete = {
+    if (!User.isSu && (outgoingBankData.uploadState == Uploaded || incomingBankData.uploadState == Uploaded)) {
+      throw "The uploaded cash transfer $(this) cannot be deleted"
+    }
+  }
+  
+  impl object view list = CashTransfer.all >> nav{list{grid(labels = None, width = 1.2){
+    row{number, date.as[Date[day]], legalEntity, from, to, space}
+    row{stateView >> field(width = 0.6), -outcome >> field(width = 0.2), income >> field(width = 0.2), space}
+  }}}
+  
+  impl view form = nav{
+    grid{
+      issuesView
+      row {number, refNums}
+      stateView >> field(label = "State")
+      row {dateOut dateIn}
+      row {from, to}
+      row {outcome, income}
+      row {outgoingBankData >> field(editMode = AlwaysRead), incomingBankData  >> field(editMode = AlwaysRead)}
+      row {outgoingBankData.uploadState  >> field(editMode = AlwaysRead) incomingBankData.uploadState >> field(editMode = AlwaysRead) }
+      fees >> field(visible = fees)
+    }
+    generalLedgerButton
+    
+    button("Convert to OP", visible = (outgoingBankData.uploadState == Uploaded && incomingBankData.uploadState != Uploaded)) {
+      convertTo(OutgoingPayment)
+    }
+    
+    button("Convert to IP", visible = (incomingBankData.uploadState == Uploaded && outgoingBankData.uploadState != Uploaded)) {
+      convertTo(IncomingPayment)
+    }
+  }
+  
+  view stateView = x{status >> field(editMode = AlwaysEdit) uploadState}
+  
+  impl func converters = [
+    Converter[OutgoingPayment](to = OutgoingPayment, convert = {r =>
+      let account = from
+      let amount = outcome
+      let b = outgoingBankData
+      let date = dateOut
+      r.silentUpdate(dateIn, date)
+      r.date = date
+      r.account = account
+      r.bankData = b
+      r.amount = amount
+    }).as[Converter]
+    Converter[IncomingPayment](to = IncomingPayment, convert = {r =>
+      let account = to
+      let amount = income
+      let b = incomingBankData
+      let date = dateIn
+      r.silentUpdate(dateOut, date)
+      r.date = date
+      r.account = account
+      r.bankData = b
+      r.amount = amount
+    })
+  ]
+  
+  register ledgers: [Ledger] <- {
+    let trading <- CurrencyTrading.trade(this, outcome, income)
+    let isLong = dateOut != dateIn || status != Complete
+
+    [ LCash(account = from.ledgerAccount, finAccount = from, journal = this, date = dateOut, legalEntity = from.legalEntity, trAmount = -outcome, cashFlow = to.cashFlow)] 
+    + (if (isLong) LCash(account = to.ledgerAccount, finAccount = to, balanceType = Expected, journal = this, date = dateOut, legalEntity = to.legalEntity, trAmount = income, cashFlow = from.cashFlow))
+    + (if (status == Complete && isLong) LCash(account = to.ledgerAccount, finAccount = to, balanceType = Expected, journal = this, date = dateIn, legalEntity = to.legalEntity, trAmount = -income, cashFlow = to.cashFlow))
+    + (if (status == Complete) LCash(account = to.ledgerAccount, finAccount = to, journal = this, date = dateIn, legalEntity = to.legalEntity, trAmount = income, cashFlow = if (isLong) to.cashFlow else from.cashFlow))
+    + (if (from.legalEntity != to.legalEntity) [
+      LInterDebts(journal = this, legalEntity = from.legalEntity, currency = to.currency, counterparty = to.legalEntity.legalEntity, trAmount = income),
+      LInterDebts(journal = this, legalEntity = to.legalEntity, currency = to.currency, counterparty = from.legalEntity.legalEntity, trAmount = -income)
+    ]) + trading
+  }
+ 
+}
+
+enum CashTransferStatus {
+  case InProgress {
+    background = "#8bf"
+    icon = "spinner"
+  }
+  case Complete {
+    color = "white"
+    background = "#090"
+    icon = "check-circle"
+  }
+}

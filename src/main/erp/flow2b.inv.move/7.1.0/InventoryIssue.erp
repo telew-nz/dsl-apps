@@ -1,0 +1,19 @@
+report InventoryIssue {
+  field legalEntity: OurLegalEntity? 
+  field supplier: LegalEntity?
+  field receiver: LegalEntity?
+  field warehouseOperative: User? {
+    default = User.current.filter(is(WarehouseOperative))
+    from = User.all.filter(is(WarehouseOperative))
+  }
+  view list = IDelivery.all.filter(
+      hasInvIssues 
+   && isFor(warehouseOperative, WarehouseOperative) 
+   && legalEntity ==? this.legalEntity 
+   && deliverySupplier ==? this.supplier  
+   && deliveryReceiver ==? this.receiver  
+  ).sortBy(dispatchDate) 
+    >> nav(background = "#2e8e67"){
+    list(canAdd = false){}}
+}
+

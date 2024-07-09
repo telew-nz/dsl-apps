@@ -1,0 +1,20 @@
+extend role Accountant {
+  entity ExpenseType = readWrite
+  entity CashAccount = readWrite
+  entity BankAccount = readWrite
+  trait LegalStructure = readWrite
+}
+extend role Bookkeeper {
+  entity ExpenseType = readWrite
+  trait LegalStructure = readWrite
+  entity CashAccount = readOnly
+  entity BankAccount = readOnly
+  extend view dashboard = FinanceAccount.widget
+}
+extend role Director {
+  entity ExpenseType = readWrite
+  trait LegalStructure = readWrite
+  entity CashAccount = readWrite
+  entity BankAccount = readWrite
+  extend view dashboard = FinanceAccount.widget
+}

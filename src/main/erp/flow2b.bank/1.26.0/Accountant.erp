@@ -1,0 +1,7 @@
+extend role Accountant {
+  entity BankStatementUpload = readWrite
+  
+  extend view menu = extend("Finance") {
+    BankStatementUpload >> item(fastAdd)
+  }
+}

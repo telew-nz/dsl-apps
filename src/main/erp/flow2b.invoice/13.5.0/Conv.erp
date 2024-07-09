@@ -1,0 +1,13 @@
+back object Conversion extends IConversion {
+  func do(version: [Int?]?) = {
+    if (version < [13,5,0]) {
+      Payment.all.filter(manLinks.onlyOne?.is[IInvoice]).foreach {p =>
+        p.source = p.manLinks.onlyOne!.as[IInvoice]!
+        p.manLinks = []
+      }
+      InvoiceRevision.all.update(isInstant = !prev && invoice.calcInstant)
+      IInvoice.all.filter(payments.exists(_.deleted)).update(payments = payments.filter(!_.deleted))
+      recreateAllRegisters
+    } 
+  }     
+}    

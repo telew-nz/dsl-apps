@@ -1,0 +1,89 @@
+trait IBulkMsg extends Entity with HasN with NewEngine {
+  icon = "envelope"
+  singular = "Bulk Message"
+  plural = "Bulk Messages"
+  object field gen: Int?
+  
+  impl func nextN = increment(BulkMsg.gen)
+  impl func numPrefix = "BMSG"
+  impl func itemRoles = [Marketer]
+  
+  impl field title: String
+  field lists: [SubscrList] by messages
+  
+  ref field state: BulkMsgState = Prepation
+  field _subject: String?
+  compute subject: String = _subject.alt(lists.first.title)
+  field text: Text?
+  field deliveries: [BulkMsgDelivery]? inline by msg
+  override func issueTypes = super.issueTypes + ITUnsentBulkMessage
+  impl func canAttachReply: Bool = false
+  
+  func subject(contact: ActorContact): String = subject
+  func text(contact: ActorContact): Text? = text
+  
+  impl view form = nav{
+    grid {
+      x {state >> field (editMode = AlwaysRead) 
+         title >> field(stretch = 1, fontStyle = H3) 
+         number >> field(fontStyle = Label)}
+      lists
+      subject
+      text
+    }
+    button("Send to New Subscribers", icon = "paper-plane", visible = state == Sent) {
+      back {send}
+    }
+  }
+  impl view ref = x {state number >> field(fontStyle = Label) title}
+  impl view traitItem = ref
+  back func send: Void = {
+    if (state != Sending) {
+      state = Sending
+      save
+      BulkMsgSendJob(msg = this).enqueue
+    }
+  }
+  impl object view list = IBulkMsg.all >> nav{list{traitItem}}
+}
+
+entity BulkMsg extends IBulkMsg {
+  singular = "Bulk Message"
+  plural = "Bulk Messages"
+  override object view list = BulkMsg.all >> nav{list{traitItem}}
+}
+
+entity BulkMsgDelivery extends PseudoEntity {
+  field msg: IBulkMsg
+  field contact: ActorContact {
+    from = ActorContact.all.filter(canSend)
+  }
+  func subject = msg.subject(contact)
+  func text = msg.text(contact)
+  impl func mainEntity = msg
+  impl func title = "$msg $contact"
+}
+
+enum BulkMsgState(active: Bool) {
+  case Prepation(active = true) {background = "#ed9" icon = "play"}
+  case Sending(active = true) { background = "#8bf" icon = "spinner"}
+  case Sent(active = false) {color = "white" background = "#090" icon = "paper-plane"}
+  case Canceled(active = false) {background = "#999" icon = "times-circle"}
+}
+
+object ITUnsentBulkMessage extends IssueType[IBulkMsg] {
+  impl func title = "Bulk message to send"
+  impl func defaultLevel = ToDo
+  impl func hasIssue(item: IBulkMsg): Bool = {
+    item.state == Prepation
+  }
+  impl func fixes(item: IBulkMsg) = [
+    Fix(text = "Send the message", acts = if (item.text) [Act(label = "Send", color = "#090", icon = "paper-plane", do = back{
+      item.send
+    })]),
+    Fix(text = "Cancel the message", acts = [Act(label = "Cancel", color = "#c00", icon = "times-circle", do = {
+      item.state = Canceled
+      UI.save(item)
+    })])
+  ]    
+}

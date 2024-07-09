@@ -1,0 +1,60 @@
+inline trait Ledger extends Register {
+  func aview: Layout[Ledger]
+  func currency: Currency = legalEntity.getCurrency
+    
+  key field legalEntity: LegalEntity = journal.legalEntity
+  func account: LedgerAccount
+    
+  order field date: Date = journal.journalDate
+  order field cor: Int?
+  func isCorrection = cor == 1
+  func isClosing = cor == 2
+  field journal: Journal
+  field contraAccount: LedgerAccount?
+  field trAmount: Money[currency]?
+  
+  stored compute amount: Money[currency]? = {
+    if (isCorrection) trAmount - prev?.balance 
+    else if (isClosing) -prev?.balance 
+    else trAmount
+  }
+  stored compute baseAmount: Money[legalEntity.getCurrency]? <- amount.to[Money[legalEntity.getCurrency]](date)
+  stored compute balance: Money[currency]? = prev?.balance + amount
+  
+  register ledger: GeneralLedger
+  register incomeSummary: [Ledger]? = {
+    if (cor && createIncomeSummary) {
+      if (currency == legalEntity.getCurrency) {
+        [LIncomeSummary(journal = journal, trAmount = -amount, contraAccount = account)]
+      } else {
+        [LIncomeSummary(journal = journal, trAmount = -baseAmount, contraAccount = account),
+         CurrencyTrading.spotTrade(journal, -amount, -baseAmount)]
+      }
+    } else []
+  }
+  func createIncomeSummary = true
+  
+  func onSave = {
+    calcLedger
+  }
+  func calcLedger: Void = {
+    ledger = GeneralLedger(
+      legalEntity = legalEntity, journal = journal,
+      account = account, currency = currency,
+      date = date, amount = amount, baseAmount = baseAmount)
+  }
+  
+  compute debit: Money[currency]? = (if (amount > 0) amount else 0)
+  compute credit: Money[currency]? = (if (amount < 0) -amount else 0)  
+  compute debitBalance: Money[currency]? {
+    value = if (balance > 0) balance else 0
+    label = "Debit"
+  }
+  compute creditBalance: Money[currency]? {
+    value = if (balance < 0) -balance else 0
+    label = "Credit"
+  }
+  
+  func mlBalance(journal: MJournal): MLedger
+}
+

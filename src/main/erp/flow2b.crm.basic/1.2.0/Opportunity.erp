@@ -1,0 +1,34 @@
+entity Opportunity extends IOpportunity[OpportunityStage] {
+  impl func prefix = "O"
+  field owner: Person?
+  impl ref field stage: OpportunityStage = Lead
+  field description: Text? 
+  impl field estimatedAmount: Dec[2]?
+  impl field probability: Percent?
+  
+  impl view form = nav{grid(labels = Top) {
+    row{number  status}
+    row{stage owner}
+    followUpView
+    row{estimatedAmount probability }
+    row{orderedAmount paidAmount}
+    source
+    tickets
+    description
+    salesOrders
+    actorView
+    roles
+  }}
+
+  impl view traitItem = grid (fontStyle = rowStyle) {      
+    x{number >> field (fontStyle = Label) actor awaitingFollowUp status stage}
+  }
+   
+  view richRef = row{_, stage, estimatedAmount}
+}
+
+
+enum OpportunityStage {
+  case Lead {background = "#ed9"}
+  case Prospect {background = "#dea"}
+}

@@ -1,0 +1,184 @@
+extend entity WooCommerceIntegration  {
+  back func orderUpdated(body: Data): Future[String?] = {
+    let orderData = body.parseJson[OrderData]
+    let so <- orderData.proc(this)
+    so.id.toString
+  }
+}
+
+inline entity DownloadOrdersSchedule extends ScheduledJob {
+  impl field service: WooCommerceIntegration by ordersSchedule
+  impl func schedule = "0 30 0 * * ?" // Every day
+  impl func dependsOnRegisters = false
+  impl func do = {
+    service.downloadNewOrders()
+  }
+}
+
+back class DownloadOrdersJob extends SystemJob {
+  impl field service: WooCommerceIntegration
+  field from: Date?
+  impl func dependsOnRegisters = false
+  impl func do: Future[Any] = {
+    service.ordersDownloaded(now)
+    procPage(1)
+  }
+  func procPage(page: UInt): Future[Void] = {
+    let req0 = service.https("/orders").param("page", page).param("per_page", "10")
+    let req = {
+      if (let from) req0.param("after", from.timezone("UTC").format("yyyy-MM-dd'T'HH:mm:ss"))
+      else req0
+    }
+    let response <- req.get
+    let orders = response.body!.parseJson[[OrderData]?]
+    let madeOrders <- orders.filter(status != autoDraft)*.proc(service).allCompleted
+    if (orders.count == 10) {
+      procPage(page + 1)
+    }
+  }
+}
+
+back class OrderData extends ESalesOrder[Int] with WooData {
+  extFieldNaming = Underscore
+  field id: Int
+  impl field number: String
+  field status: WooOrderStatus {
+    extMap(_.extName, n => WooOrderStatus.all.find(_.extName == n)!)
+  }
+  field currency: String?
+  field dateCreatedGmt: UtcDate
+  field pricesIncludeTax: Bool
+  field customerId: Int?
+  field billing: WooAddress
+  field shipping: WooAddress
+  field paymentMethod: String?
+  field paymentMethodTitle: String?
+  field transactionId: String?
+  field datePaidGmt: UtcDate?
+  impl field customerNote: String?
+  field total: UMoney?
+  field dateCompletedGmt: UtcDate?
+  field lineItems: [OrderDataLine]
+  field shippingLines: [ShippingLine]?
+  field feeLines: [FeeLine]?
+  field couponLines: [CouponLine]?
+  
+  impl func extId = id
+  impl func customerExtId = customerId
+  impl func orderDate = dateCreatedGmt
+  impl func billingAddress = billing
+  impl func deliveryAddress = shipping
+  impl func payments = if (datePaidGmt && paymentMethod && total) [OrderPayment(order = this)]
+  impl func items = lineItems + shippingLines
+  impl func currencyCode: String? = currency
+  
+  func proc(service: WooCommerceIntegration): Future[SalesOrder] = {
+    let so <- make(service)
+    let response <- service.https("/orders/$id/notes").get
+    let notes = response.body!.parseJson[[OrderNote]?]
+    notes.filter(n => n.needToSave && n.id !in so.wooNoteIds).foreach {n =>
+      SaveNoteJob(service = service, note = n, so = so).enqueue
+    }
+    so
+  }
+}
+
+back class SaveNoteJob extends SystemJob {
+  impl field service: WooCommerceIntegration
+  field so: SalesOrder
+  field note: OrderNote
+  impl func dependsOnRegisters = false
+  impl func do: Future[Any] = {
+    guard (note.needToSave && note.id !in so.wooNoteIds) else return {}
+    
+    so.wooNoteIds += note.id
+    so.touch
+    so.saveMain
+    Activity.current!.comment(note.comment)
+  }
+}
+
+
+extend entity SalesOrder {
+  system field wooNoteIds: [Int]?
+}
+
+back class OrderNote extends WooData {
+  extFieldNaming = Underscore
+  field id: Int
+  field author: String?
+  field dateCreatedGmt: UtcDate
+  field note: Text
+  field customerNote: Bool
+  field addedByUser: Bool
+  
+  func comment: Text = if (let author) "$(author): $(note)" else note
+  
+  func needToSave = !note.startsWith("Order status changed from") && !note.startsWith("Stock levels reduced")
+}
+
+enum WooOrderStatus(extName: String) {
+  case pending(extName = "pending")
+  case processing(extName = "processing")
+  case onHold(extName = "on-hold")
+  case completed(extName = "completed")
+  case cancelled(extName = "cancelled")
+  case refunded(extName = "refunded")
+  case failed(extName = "failed")
+  case autoDraft(extName = "auto-draft")
+}
+
+back class OrderPayment(order: OrderData) extends EIncomingPayment[Int] {
+  impl func extId: Int = order.extId
+  impl func amount = order.total!
+  impl func paymentMethod = order.paymentMethod!
+  func transactionId = order.transactionId
+  impl func paymentDate = order.datePaidGmt!
+}
+
+back class OrderDataLine extends ESalesOrderProductItem[Int] {
+  extFieldNaming = Underscore
+  field id: Int
+  field wooProductId: Int? {extName = "product_id"}
+  impl func productId = wooProductId!
+  impl field variationId: Int?
+  field quantity: UQty
+  field subtotal: UMoney?
+  field taxClass: String?
+  field total: UMoney?
+  field totalTax: UMoney?
+
+  impl func extId = id
+  impl func amount = total
+  func gstAmount = totalTax
+  func discount = subtotal - total
+  impl func qty = quantity
+}
+back class ShippingLine extends ESalesOrderDeliveryItem[Int] {
+  extFieldNaming = Underscore
+  field id: Int
+  field methodTitle: String?
+  field methodId: String
+  field total: UMoney?
+  field totalTax: UMoney?
+  
+  impl func extId = id
+  impl func amount = total
+  func gstAmount = totalTax
+  impl func deliveryMethod = methodId
+}
+back class FeeLine {
+  extFieldNaming = Underscore
+  field id: Int
+  field name: String
+  field total: UMoney?
+  field totalTax: UMoney?
+}
+back class CouponLine {
+  extFieldNaming = Underscore
+  field id: Int
+  field code: String
+  field discount: UMoney?
+  field discountTax: UMoney?
+}
+

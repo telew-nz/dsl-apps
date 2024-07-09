@@ -1,0 +1,28 @@
+extend entity Ticket {
+  system field ticketPerson: Person?
+}
+
+entity ContactFormReceivedNotification extends NotifyTemplate[Ticket] {
+  impl func title = "Contact form received notification"
+  field service: ContactFormService by receivedNotification
+  impl func supported = [EMail]
+  impl func preferred = [EMail]
+  
+  field text: Text = 
+"Hi \$(person.firstName),
+
+Thank you for your message. We will respond soon.".paragraph
+
+  
+  impl func to(data: Ticket) = if (let p = data.ticketPerson) [p]
+  impl func text(data: Ticket, channel: CommChannel) = text.replace("\$(person.firstName)", data.ticketPerson!.firstName)
+}
+
+
+extend enum CommChannel {
+  case ContactForm(
+      findContacts = []
+      makeContact = throw "Cannot make contact for contact form"
+      defaultRecipients = []
+  ) {background = "#ed9" icon = "bell"}
+}

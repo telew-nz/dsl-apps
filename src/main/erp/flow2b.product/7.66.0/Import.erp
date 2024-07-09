@@ -1,0 +1,20 @@
+trait ProductImportSchema extends SheetImportSchema {
+  back func categories[T](data: [T]?, root: ProductCategory?, category: (item: T) => String?, level: (item: T) => UInt?): [(category: ProductCategory?, item: T)]? = {
+    let rootLevel = root?.level
+    data.accum(
+      root
+      acc = {(item, acc) =>
+        if (let n = category(item).trim) {
+          let l = rootLevel + 1 + level(item)
+          ProductCategory(
+            name = n, 
+            superCategory = acc?.up((acc?.level - l + 1).positive).or(root)
+          ).saveBy(title.flex)
+        } else {
+          acc
+        }
+      }
+      map = (category = acc, item = _)
+    ).result
+  }
+}

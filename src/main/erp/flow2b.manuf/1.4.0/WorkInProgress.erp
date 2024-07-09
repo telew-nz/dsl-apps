@@ -1,0 +1,28 @@
+acctemplate WorkInProgress(singleAccount = true) 
+account WorkInProgress(template = "WorkInProgress", number = 125, type = Asset) 
+
+extend register LWorkInProgress {
+  key field order: IProductionOrder? = journal.as[IProductionOrder]
+  field complete: Bool
+  register outputs: [LInventory]? = if (complete) {
+    let r = order?.receiver
+    let le = r.alt(legalEntity)
+    let contraLe = if (le != legalEntity) legalEntity
+    order?.method?.outputs.distribute(prev?.amount, by = costWeight).map{
+      LInventory(
+        journal = journal, date = this.date, product = item.outputProduct.product, gstRate = item.gstRate, 
+        legalEntity = le, contraLegalEntity = contraLe,
+        isDebit = true, trAmount = value, qty = item.baseQty*order!.qtyK)
+    }
+  }
+  event onSave = {
+    if (!complete) {
+      amount = -order?.lMaterials*.amount.sum
+      baseAmount = -order?.lMaterials*.baseAmount.sum
+    } else {
+      amount = -prev?.amount
+      baseAmount = -prev?.baseAmount
+    }
+    calcLedger
+  }
+}

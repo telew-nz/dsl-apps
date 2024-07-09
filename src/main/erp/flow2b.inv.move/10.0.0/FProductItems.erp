@@ -1,0 +1,60 @@
+trait IFProductItems extends InlineEntity {
+  func product: ISubProduct
+  func needProductItems: Bool
+  func unit: ProductUnit
+  func itemsQty: UQty[unit]?
+  func productItems: [ProductItem]?
+  
+  
+  front func printLabels(): Void = {
+    labelsView.print()
+  }
+  func labelsQty: UQty[unit]? = itemsQty
+  view labelsView = allProductItems >> list(frame = false){
+    form >> field(pageBreakAfter)
+  }
+  compute allProductItems: [ProdProdItem]? = allProductItems(productItems.drop(itemsQty - labelsQty), labelsQty)
+  func allProductItems(productItems: [ProductItem]?, qty: Qty?): [ProdProdItem]? = if (qty > 0) {
+    ProdProdItem(product = product, unit = unit, item = if (let p = productItems.first) p) + allProductItems(productItems.drop(1), qty - 1.as[Qty[qty.unit!]])
+  }
+}
+
+trait FProductItems extends IFProductItems {  
+  impl field productItems: [ProductItem]? {
+    label = "Serial Numbers"
+    singular = "Serial Number"
+    from = product.productItems
+    visible = productItems || product.trackItems
+    validate = if (product.trackItems == Always
+                   && productItems.count != itemsQty.withoutUnit
+                   && needProductItems) {
+      "Serial Numbers are required for all movements of $product"
+    }
+  }
+  view snView = productItems
+  
+}
+
+trait FProductItemsInline extends IFProductItems {
+  impl field productItems: [ProductItem]? inline {
+    label = "Serial Numbers"
+    singular = "Serial Number"
+    init = {
+      new.product = product.as[IProduct]!
+    }
+    visible = productItems || product.trackItems
+    validate = if (product.trackItems == Always
+                   && productItems.count != itemsQty.withoutUnit
+                   && needProductItems) {
+      "Serial Numbers are required for all movements of $product"
+    }
+  }
+  view snView = productItems >> list{
+    itemView
+  }
+}
+
+class ProdProdItem(product: ISubProduct, unit: ProductUnit, item: ProductItem?) {
+  impl func form = if (let i = item) i.labelView else product.labelView
+}
+

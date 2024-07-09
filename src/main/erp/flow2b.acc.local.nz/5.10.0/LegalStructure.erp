@@ -1,0 +1,56 @@
+trait NZLegalStructure extends InlineEntity {
+  field gstBasis: GstBasis?
+  field gstFilingPeriod: GstPeriod?
+} 
+ 
+class LegalInfoNZ extends LegalInfo {
+  background = "#012389"
+  color = "#d4092c"
+  singular = "NZ"
+  field nzbn: String? {label = "NZBN"}
+  field irdNumber: String? 
+  impl field gstNumber: String? 
+  impl func taxNumber = irdNumber
+  impl view form = grid(labels = Top){
+    name
+    nzbn
+    irdNumber
+    gstNumber
+  }
+  
+}
+
+extend trait LegalEntity {
+  extend view gstView = group{
+    legalInfo?.gstNumber
+    legalAddress >> field(frame = false, editMode = AlwaysRead, label = "Address")
+  }
+  extend view gstCustomerView = group{
+    legalAddress >> field(frame = false, editMode = AlwaysRead, label = "Address")
+  }
+}
+
+enum GstPeriod(duration: Duration) {
+  case m1(duration = 1_month) = "Monthly"
+  case m2(duration = 2_month) = "2-Monthly"
+  case m6(duration = 6_month) = "6-Monthly"
+}
+
+
+inline entity NZCompany extends NZLegalStructure with ICorporation {
+  singular = "Company"
+  plural = "Companies"
+}
+
+inline entity NZTrust extends NZLegalStructure with ICorporation {
+  singular = "Trust"
+  plural = "Trusts"
+}
+inline entity NZSoleTrader extends NZLegalStructure with ISoleTrader {
+  singular = "Sole Trader"
+  plural = "Sole Traders"
+}
+inline entity NZPartnership extends NZLegalStructure with IPartnership {
+  singular = "Partnership"
+  plural = "Partnership"
+}

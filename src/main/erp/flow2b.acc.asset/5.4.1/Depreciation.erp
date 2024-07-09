@@ -1,0 +1,12 @@
+interface Depreciation {
+  background = "#649023"
+}
+
+class StraightLine extends Depreciation {
+  singular = "Straight Line"
+  field rate: Percent
+}
+class DiminishingValue extends Depreciation {
+  singular = "Diminishing Value"
+  field rate: Percent
+}

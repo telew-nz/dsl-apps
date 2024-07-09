@@ -1,0 +1,50 @@
+entity WooCommerceIntegration extends ECommerceIntegration[Int] {
+  ref field url: Url
+  func title = url
+  stored compute endpoint = url.dropPrefixes(["http://", "https://"]).dropSuffix("/") + "/wp-json/wc/v2"
+  field consumerKey: String
+  field consumerSecret: Password
+  func https(path: String?): HttpRequest = {
+    HttpRequest(url = "$endpoint$path", ssl = true).param("consumer_key", consumerKey).param("consumer_secret", consumerSecret)  
+  }
+   
+  view form = nav{tabs{
+    grid(label = "Settings", labels = Top){
+      url
+      consumerKey
+      consumerSecret
+      settings
+      button("UPD") {
+        back{
+          this.updateAll()
+        }
+      }
+  	} 
+  }}   
+  object view list = WooCommerceIntegration.all >> nav{list{grid(labels = None){
+    x {url serviceState}
+  }}}
+   
+  func updateProductJobs(change: BatchChange[ProductUpdate[ICustomerSuperProduct]]): [SystemJob]? = {
+    [UpdateProductsJob(service = this, change = change)]
+  }
+  func updateVariationJobs(change: BatchChange[ProductUpdate[ICustomerComplexProduct]]): [SystemJob]? = {
+    change.groupBy(this, product.customerSuperProduct).toSeq.map(
+      UpdateVariationsJob(service = this, superProduct = _.#0, change = _.#1)
+    )
+  }
+  func updateCategoryJobs(change: BatchChange[ProductCategory]): [SystemJob]? = {
+    [UpdateCategoriesJob(service = this, change = change)] 
+  }
+  func updateBrandJobs(change: BatchChange[Brand]): [SystemJob]? = {
+    change.created.map(b => UpdateBrandJob(service = this, brand = b)) + if (let d = change.deleted) [DeleteBrandsJob(service = this, brands = d)]
+  }
+  func updateAttrJobs(change: BatchChange[ProductAttr]): [SystemJob]? = {
+    [UpdateAttrsJob(service = this, change = change)] 
+  }
+  func updateAttrTermJobs(change: BatchChange[ProductAttrTerm]): [SystemJob]? = {
+    change.groupBy[Int, ProductAttr](this, _.object).toSeq.map(
+      UpdateAttrTermsJob(service = this, attr = _.#0, change = _.#1)
+    )
+  }
+}

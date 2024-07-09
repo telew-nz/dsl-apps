@@ -1,0 +1,25 @@
+trait ProductAttr extends InlineEntity {
+  func attrName: String = "ProductAttr.name"
+}
+trait ProductAttrTerm  extends Entity {
+  object extends ProductAttr
+}
+
+trait ICustomerBaseProduct extends IBaseProduct 
+trait ICustomerSuperProduct extends ICustomerBaseProduct {
+  object func attrs: [ProductAttr]? = []
+  func customerProducts: [ICustomerProduct]?
+  back func attrOptions: [ProductAttrOptions]? = {
+    let m: [ProductAttr -> [ProductAttrTerm]]? = customerProducts*.attrTerms.groupBy(_.object)
+    object.attrs.map(attr => ProductAttrOptions(attr = attr, options = m.apply(attr)))
+  }
+}
+trait ICustomerProduct extends ICustomerBaseProduct {
+  func customerSuperProduct: ICustomerSuperProduct
+  func attrTerms: [ProductAttrTerm]?
+  view customerProductView = grid(labels = Top) {
+    extension
+  }
+}
+trait ICustomerComplexProduct extends ICustomerProduct
+class ProductAttrOptions(system field attr: ProductAttr, options: [ProductAttrTerm]?)

@@ -1,0 +1,27 @@
+extend access Accountant {
+  menu Accounting {
+    report BalanceSheet
+    report IncomeStatement
+    report CashFlow
+    report DebtReport
+    report TrialBalance
+    entity AccountingPeriod
+    report GstReturn
+    entity MJournal = "Manual Entries"
+    entity GeneralLedger
+  }
+}
+
+extend access Bookkeeper {
+  menu Accounting {
+    report BalanceSheet
+    report IncomeStatement
+    report CashFlow
+    report DebtReport
+    report TrialBalance
+    entity AccountingPeriod
+    report GstReturn
+    entity MJournal = "Manual Entries"
+    entity GeneralLedger
+  }
+}

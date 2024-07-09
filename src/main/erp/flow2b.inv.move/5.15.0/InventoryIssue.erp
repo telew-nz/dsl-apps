@@ -1,0 +1,10 @@
+report InventoryIssue {
+  field inventoryManager: Person? {
+    default = Person.current.filter(is(InventoryManager))
+    from = Person.all.filter(is(InventoryManager))
+  }
+  view list = IDelivery.all.filter(hasInvIssues && isFor(inventoryManager, InventoryManager)).sortBy(dispatchDate) 
+    >> nav(background = "#2e8e67"){
+    list(canAdd = false){}}
+}
+

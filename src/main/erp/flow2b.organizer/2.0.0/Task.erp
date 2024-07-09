@@ -1,0 +1,29 @@
+entity Task extends Todo {
+  field done: Bool
+  field title: String
+  field owner: Person? = current
+  field description: Text?
+  func active = !done
+  object view list = Task.all >> nav { list {
+    row {
+      done >> field(editMode = AlwaysEdit, label = "")
+      column{  
+        title
+        owner
+      }
+    }
+  }}
+  view form = nav{grid(labels = Top) {
+    column {
+      row {
+        done >> field(editMode = AlwaysEdit, label = "") 
+        title
+      }
+    }
+    owner
+    description
+  }}
+  func onSave: Void = {
+    owner?.join(this)
+  }
+}

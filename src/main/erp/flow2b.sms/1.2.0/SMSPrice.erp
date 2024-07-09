@@ -1,0 +1,32 @@
+class SMSPrice {
+  field countryCode: String
+  field carrier: String
+  field price: Money
+}
+
+report SMSCost {
+  field smsService: SMSService
+  field period: Period?
+
+  impl view list = 
+  
+  /*smsService.smsActivitiesCosts(period)*/
+  Activity.all.filter(
+    (period.isEmpty || period!.contains(dateTime)) &&
+    deliveries.find(d => d.channel==SMS && d.status==Sent)
+  )
+  .flatMap { act =>
+    let contacts = act.deliveries.filter(d => d.channel==SMS && d.status==Sent)*.contact*.as[IPhoneContact]
+    
+    contacts.map{ c =>
+      let cost = smsService.prices.find(_.countryCode == c.countryCode && _.carrier == c.carrier)?.price
+      
+    (activity = act, contact = c, cost = cost)
+    }
+  }
+  .groupBy(activity.user)
+  //.subtotal(cost = cost.sum)
+  >> nav(showHeader = false){
+    table(label="Costs by User"){user, items.map(activity.dateTime, contact, cost) >> table{dateTime, contact, cost} }
+  }
+}

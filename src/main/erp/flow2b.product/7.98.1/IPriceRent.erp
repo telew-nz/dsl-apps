@@ -74,3 +74,4 @@ interface IPriceRent extends IPrice {
     }
   }
 }
+

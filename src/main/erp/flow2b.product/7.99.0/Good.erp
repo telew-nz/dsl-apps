@@ -1,0 +1,75 @@
+basicProduct Good (skuPrefix = "GD")
+
+trait RuntimeAttributeExtension extends Entity {
+	field productType: AttributeType? {
+    	from = AttributeType.all.filter(_ != UnitAttributeType.type)
+        update = {
+        	customAttrs = productType?.attrs.map(ProductAttrSelection(attr = _))
+        }
+    }
+    field customAttrs: [ProductAttrSelection]?
+    field unitAttrs: [ProductAttrSelection]? = UnitAttributeType.type.attrs.map(ProductAttrSelection(attr = _))
+}
+
+entity AttributeType {
+	
+    impl field title: String {
+    	label = "Type name"
+    }
+    field description: String?
+    ref field attrs: [IProductAttr]?
+    
+    impl view form = nav { grid {
+    	title
+        description
+        attrs
+    } }
+    
+}
+
+object UnitAttributeType {
+
+	field type: AttributeType = AttributeType(title = "Unit", description = "Attributes applied to all products", attrs = [])
+
+}
+
+extend role BusAdmin {
+
+	extend view menu = menu("Types") {
+    	AttributeType >> item("Attribute Types")
+    }
+
+}
+
+extend entity Good extends RuntimeAttributeExtension {
+
+	singular = "Product"
+    plural = "Products"
+	
+	extend func attrTerms(): [IProductAttrTerm]? = (customAttrs + unitAttrs).filter(_.attrTerm).map(_.attrTerm!)
+    extend view mainView = grid {
+    	productType
+        customAttrs >> list(canAdd = false)
+        unitAttrs >> list(canAdd = false)
+    }
+
+}
+
+class ProductAttrSelection {
+	const field attr: IProductAttr {
+    	label = "Attribute"
+    }
+    field attrTerm: IProductAttrTerm? {
+    	canAdd = false
+    	label = "Term"
+    	from = attr.attrTerms
+    }
+    
+    impl view form = x {
+    	attr
+        attrTerm
+        button("+ Add more terms", visible = ui.edit) {
+        	attr.form.open
+        }
+    }
+}

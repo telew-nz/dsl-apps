@@ -1,0 +1,60 @@
+class SendSMSJob extends SystemJob {
+  impl field service: SMSService
+  
+  field destinationNumber: String
+  field message: String
+  
+  impl func do = {
+	service.send(destinationNumber, message)
+  }  
+}
+
+class ActivitySendSMSJob extends SystemJob {
+  impl field service: SMSService 
+  field activity: Activity inline
+  impl func dependsOnRegisters = false
+  
+  impl func do = {
+    let deliveries = activity.deliveries.filter(channel == SMS)
+    let contacts: [IPhoneContact] = deliveries*.contact*.as[IPhoneContact]!
+    let e = activity.mainEntity
+
+    let verifiedPhones: [Phone]? <- contacts.oneByOne { c =>
+      if (let p = c.phoneE164) {
+      	Future(p)
+      } else {
+        let vp <- PhoneNumberValidationJob(
+          service = this.service,
+          phoneContact = c,
+          countryCode = service.countryCodeForValidation
+        ).validate()
+        if (let p = vp) {
+          p
+        } else {
+          activity.comment("Can't send sms to $c. Phone number ${c.phone} can't be validated with country code '$service.countryCodeForValidation'.")
+          null[Phone]
+        }
+      }
+    }.map(_.mapOpt(_))
+
+    deliveries.foreach(_.status = Sending)
+    let msg = activity.comment // ??? should we add "<author>:" or some another information?
+    
+    let _ <- verifiedPhones.oneByOne { p =>
+      let ok <- service.send(p, msg)
+      
+      if(let d = deliveries.find(channel == SMS && contact?.as[IPhoneContact]?.phoneE164 == p)) {
+        if (ok) {
+          d.status = Sent
+        } else {
+          d.status = Failed
+        }
+      }
+      
+      e.touch
+      activity.touch
+      activity.entities.first?.touch
+      activity.save
+    }
+  }
+}

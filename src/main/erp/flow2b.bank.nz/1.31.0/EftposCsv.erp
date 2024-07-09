@@ -1,0 +1,53 @@
+class EftposCsvData extends BankStatementItem {
+  field name: String?
+  field retailerId: Int?
+  field laneNumber: Int?
+  field sDate: String
+  field sTime: String
+  impl func date: Date = Date("$(sDate[.. ' ')) $sTime", "yyyy-MM-dd HH:mm:ss")
+  field type: String
+  field cardNumber: String?  
+  impl field stmAmount: Dec[2]?
+  field response: String?
+  
+  impl func data(account: FinAccount): BankData = {
+    BankData(
+      type = type,
+      cardNumber = cardNumber
+      bankComment = (response[ .. )).trim
+    )
+  }
+}
+
+extend enum BankStatementType {
+  case EftposCsv(
+    canProcess = file.is("csv") && data.toString.lines(CSV).first.alt("")
+      .startsWith("Trading_Name,Retailer_Id,Lane_Number,TransDate,Time,Message_Type_Desc,Masked_PAN,Transaction_Amount,Response_Code")
+    process = {
+      let date = Date((file.name("Transactions " .. "."))!, "yyyyMMdd") - 1_day
+      ProcessResult(
+        directions = [Incoming]
+        account = CardAccount.all.result.get.onlyOne
+        items = {
+          let items = data.toString.lines(CSV).drop(1)
+            .mapOpt(splitTo[EftposCsvData](CSV))
+          items
+            .filter(i =>
+                 i.type.flex.contains("Purchase") 
+              && i.response.flex.contains("APPROVED")
+              && !items.exists{j => 
+                    j.type.flex.contains("Reversal") 
+                 && j.cardNumber == i.cardNumber 
+                 && j.stmAmount == -i.stmAmount
+                 && j.date > i.date
+                 && (j.date - i.date) <= 20_minute
+              }
+            )
+        },
+        start = date.start(day)
+        end = date.end(day)
+      )   
+    }, 
+    knowOurAccount = CardAccount.all.result.get.onlyOne
+  )
+}

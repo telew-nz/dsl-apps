@@ -1,0 +1,13 @@
+interface ProductAttr[T] {
+  func name: String
+  func toString = name
+}
+
+trait ICustomerBaseProduct extends IBaseProduct 
+trait ICustomerSuperProduct extends ICustomerBaseProduct {
+  object func attrs: [ProductAttr]? = []
+}
+trait ICustomerProduct extends ICustomerBaseProduct {
+  func attrValues: [Any]?
+  func attrValue[T](attr: ProductAttr[T]): T?
+}

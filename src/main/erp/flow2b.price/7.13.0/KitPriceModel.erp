@@ -92,3 +92,4 @@ class KitItemPrice {
   }
   field qty: UQty
 }
+

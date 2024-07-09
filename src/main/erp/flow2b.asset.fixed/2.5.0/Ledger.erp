@@ -1,0 +1,47 @@
+analytic FixedAsset(dataType = "IFixedAsset")
+acctemplate FixedAssets(singleAccount = true) {
+  key field fixedAsset: IFixedAsset
+}
+
+acctemplate AccumulatedDepreciation(singleAccount = true) {
+  key field fixedAsset: IFixedAsset
+}
+
+account FixedAssets(template = "FixedAssets", number = 160, type = Asset) 
+account AccumulatedDepreciation(template = "FixedAssets", number = 165, type = Asset) 
+account DepreciationExpense(template = "Basic", number = 630, type = Expense)
+account AssetDisposals(template = "Basic", number = 640, type = Expense)
+
+extend register LInventory {
+  field fixedAsset: IFixedAsset?
+  extend func createContraLedger(): Void = {
+    if (contraAccount?.template == FixedAssets) {
+      contraLedger = LFixedAssets(this, contraAccount = Inventory, trAmount = -amount, fixedAsset = fixedAsset!)
+    } 
+  }
+}
+
+extend register LFixedAssets {
+  field isCreation: Bool
+   
+  register depreciation: LAccumulatedDepreciation? = {
+    if (isCreation) LAccumulatedDepreciation(this, initCost = amount, trAmount = 0) 
+    else null
+  }
+}
+
+extend register LAccumulatedDepreciation {
+  field initCost: Money[currency]?
+  stored compute cost: Money[currency]? = initCost.alt(prev?.initCost)
+  func createIncomeSummary = false
+  register disposeAsset: LFixedAssets? = if (isClosing) LFixedAssets(this, trAmount = -cost) else null
+  register disposeRest: Ledger? = {
+    if (isClosing) {
+      if (let rest = cost - balance) {
+        if (contraAccount == Inventory) LInventory(this, product = fixedAsset.product, qty = 1, trAmount = rest)
+        else if (contraAccount == AssetDisposals) LBasic(this, account = AssetDisposals, trAmount = rest)
+        else null
+      } else null
+    } else null
+  }
+}

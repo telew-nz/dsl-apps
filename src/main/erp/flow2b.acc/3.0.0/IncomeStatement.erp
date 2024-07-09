@@ -1,0 +1,41 @@
+report IncomeStatement {
+  field legalEntity: LegalEntity? = (LegalEntity.ours.onlyOne) {from = LegalEntity.ours}
+  field from: Date = Date.now[Date[millisecond]].start(year)
+  field to: Date = Date.now[Date[millisecond]].end(year)
+  func baseCurrency = legalEntity?.getCurrency.alt(Currency.our)  
+  view list = GeneralLedger.between(from, to)*.items
+    .filter(
+          legalEntity ==? this.legalEntity
+      && (account.type.isIncome && account != CurrencyTrading))
+    .groupBy(account)
+    .aggFuture{
+        let amount <- (map(baseAmount.to[Money[baseCurrency]](date)).allCompleted)
+        (-amount.sum)
+     }
+    .sortBy(account.number) 
+    .union{
+      let start: Money[baseCurrency]? <- LCurrencyTrading.at(this.from)
+        .map(balance.to[Money[baseCurrency]](this.from))
+        .agg{sum.as[Money[baseCurrency]]
+        }.result
+      let end : Money[baseCurrency]? <- (LCurrencyTrading.at(this.to)
+        .map(balance.to[Money[LegalEntity.ours.first!.getCurrency]](this.to))
+        .agg{sum.as[Money[baseCurrency]]
+        }.result)
+      [(account = LedgerAccount.CurrencyTrading, amount = start - end)]
+    }
+    .groupBy(account.type).subtotal(amount.sum)
+    .total(netIncome = amount.sum)
+  >> nav{
+      total {
+        row {label("Net Income"), netIncome >> field(showPlus = true)}
+        subtotal {
+          row {type, amount >> field(showPlus = true)}
+          table(action = try? Reflection.object[AnalitIncomeStatement]("IS$(account.template)")
+             .new(legalEntity = legalEntity, from = this.from, to = this.to, account = account)
+            .list.open) {
+          account >> field(width = 0.5, background = ""), amount >> field(width = 0.3, showPlus = true)
+        }
+      }
+  }}
+}

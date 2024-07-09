@@ -1,0 +1,62 @@
+extend trait CashMovement {
+  const field uploads: [BankStatementUpload]? by payments {label = "Bank Upload"}  
+  const field rules: [IReconRule]? by ruleMovements  
+}
+
+extend report CashMovement.Report {
+  field rules: [IReconRule]? {auto}
+}
+
+
+extend trait Payment extends BankStatementItem {
+  back object func allUnrecon: QueryN[Payment] = {
+    Payment.all.filter(!debtCounterparty && bankData.uploaded && !reconAmount && !source && !reasons && !manLinks)
+  }
+}
+
+extend entity IncomingPayment {
+  impl func data(account: FinAccount): BankData = bankData
+  extend view form = rules
+  extend view form = uploads
+}
+
+extend entity OutgoingPayment { 
+  impl func data(account: FinAccount): BankData = bankData
+  extend view form = rules
+  extend view form = uploads
+}
+
+extend entity CashTransfer {
+  extend view form = rules
+  extend view form = uploads
+}
+
+
+class ActorPaymentReprocessJob extends SystemJob {
+  impl func service = ReconService
+  field actor: LegalEntity
+  impl back func do = {
+    Payment.allUnrecon
+      .foreach {p =>
+         if (IReconRule.checkIfCounterparty(actor, p)) {
+           p.debtCounterparty = actor
+           p.save
+         }
+      }
+  }
+}
+
+class PaymentMethodReprocessJob extends SystemJob {
+  impl func service = ReconService
+  field method: PMBankAccount
+  impl back func do = {
+    Payment.allUnrecon
+      .foreach {p =>
+         if (let a = p.bankData.thierAccount.trim where a.length > 3 && method.number =%= a) {
+           p.debtCounterparty = method.legalEntity
+           p.paymentMethod = method
+           p.save
+         }
+      }
+  }
+}

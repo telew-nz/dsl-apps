@@ -1,0 +1,60 @@
+trait IBaseProduct {
+  func isValid: Bool = true
+  func obsolete: Bool = false
+  func isTangible: Bool
+    
+  func subProducts: [IProduct]?
+  func superProduct: ISuperProduct
+  
+  func description: Text?
+  func unit: ProductUnit = Item
+  func altUnits: [ProductAltUnit]? = []
+  func units: [ProductUnit] = (unit + altUnits*.unit).toSet
+  func items: [IProductItem]? 
+}
+
+trait ISuperProduct extends IBaseProduct {
+  plural = "Products"
+  singular = "Product"
+  width = 0.45
+  
+  object field gen: Int?
+  const field n: Int = increment(ISuperProduct.gen)
+  func superProduct: ISuperProduct = this
+  func description: Text? = ""
+  func sku: String = n
+    
+  field categories: [ProductCategory]? by products {
+    available(All).for(All)
+  }
+    
+  func forSale: Bool = true
+  func items: [IProductItem]? = subProducts*.items
+  func gstRate: GstRate? = null
+  func specialGstRate: Percent[2]? = 0
+  ref compute getGstRate: Percent[2]?? = {
+    if (gstRate == Special) specialGstRate
+    else if (gstRate) gstRate!.rate 
+    else if (let cat = categories.find(gstRate)) cat.getGstRate
+    else null
+  }
+  //func getGstRate(vendor: LegalEntity): Percent[2]? = {
+  //  if (let r = getGstRate) r else vendor.defaultGstRate(this)
+  //}
+}
+
+
+trait IProduct extends IBaseProduct {
+  plural = "Products"
+  singular = "Product"
+  width = 0.45
+    
+  func subProducts: [IProduct]? = [this]
+  func description: Text? = superProduct.description
+  func items: [IProductItem]? = []
+}
+
+trait IBasicProduct extends IProduct with ISuperProduct {
+  func description: Text? = ""
+  func items: [IProductItem]? = []
+}

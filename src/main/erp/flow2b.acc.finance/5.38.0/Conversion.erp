@@ -1,0 +1,46 @@
+back object Conversion extends IConversion {
+  func convert(version: [Int?]): Future[Any] = {
+    if (version < [5,21,0]) {
+      FinAccount.all.foreach(recalcField(_, _.searchNum))
+    } 
+    if (version < [5,22,1]) {
+      recalcRegister(LMoneyDebt)
+    }
+    if (version < [5,24,0]) {
+      recalcRegister(LMoneyDebt)
+    }
+    if (version < [5,26,0]) {
+      LegalEntity.all
+        .filter(field[Address?](legalInfo, "address"))
+        .foreach(addLocation(Legal, field[Address?](legalInfo, "address")!))
+    }
+    if (version < [5,30,0]) {
+      renameEntity(CptAccTerms, "CustomerAccountTerms")
+      if (let le = OurLegalEntity.all.first.result.get) {
+        Customer.all
+          .filter(field[Money?](_, "flow2b.acc.finance.allowance"))
+          .foreach{c =>
+            CptAcc(legalEntity = le, currency = c.getCurrency, cpt = c.legalEntity, 
+                   terms = field(c, "flow2b.acc.finance.accountTerms"), debitAllowance = field(c, "flow2b.acc.finance.allowance")).save
+          }
+        Vendor.all
+          .filter(field[Money?](_, "flow2b.acc.finance.allowance"))
+          .foreach{c =>
+            CptAcc(legalEntity = le, currency = c.getCurrency, cpt = c.legalEntity, 
+                   terms = field(c, "flow2b.acc.finance.accountTerms"), creditAllowance = field(c, "flow2b.acc.finance.allowance")).save
+          }
+      }
+    }
+    if (version < [5,34,0]) {
+      renameField(LegalEntity, altNames, "flow2b.acc.finance.altNames")
+      renameField(Company, legalInfo, "flow2b.acc.finance.legalInfo")
+      renameField(Person, soleTrader, "flow2b.acc.finance.soleTrader")
+      renameField(Person, idDocs, "flow2b.acc.finance.idDocs")
+      Person.all.filter(idDocs).update(
+        idDocs = field[[ConvEntity]?](_, "idDocs").map {d =>
+          PersonIdDoc(docType = d.field("docType"), number = d.field("number"), expiryDate = d.field("expiryDate"))
+        }
+      )
+    }
+  }    
+}     

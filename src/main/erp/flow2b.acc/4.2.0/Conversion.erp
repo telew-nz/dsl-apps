@@ -1,0 +1,7 @@
+back object Conversion extends IConversion {
+  func do(version: [Int?]?) = {
+    if (version < [4,0,0]) {
+      AccountingPeriod.all.update(legalEntity = conv(_).field[LegalEntity]("legalEntity").our!)
+    }
+  }
+} 

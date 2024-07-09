@@ -1,0 +1,111 @@
+extend trait IPriceModel {
+  field priceLevels: PriceLevels inline = PriceLevels()
+}
+
+extend trait IStaticPriceSales {
+  back func baseSalesPrice(currency: Currency, inclGst: Bool): Future[SalesPrice]
+  back impl func salesPrice(currency: Currency, inclGst: Bool, level: PriceLevel?): Future[SalesPrice] = {
+    let sp <- baseSalesPrice(currency, inclGst)
+    if (let discount = model.priceLevels.discount(product, level)) {
+      sp*(1.0000 - discount).positive
+    } else {
+      sp
+    }
+  }
+}
+
+inline entity PriceLevels {
+  field defaultDiscounts: PriceLevelDiscounts = PriceLevelDiscounts()
+  field categories: [PriceLevelCategory]? inline by priceLevels
+  
+  impl view form = grid (label = "Price Levels", visible = PriceLevel.all) {
+    defaultDiscounts
+    categories >> table(label = "Category Discounts") {
+      header{
+        label("Category", width = 0.3) 
+        extension("th")
+      }
+      body{row{
+        category
+        discounts.rowView
+      }}
+    }
+  }
+  func discount(product: IBaseProduct, level: PriceLevel?): Percent? = if (let level) {
+    let proCats = product.superProduct.allCategories*.tree
+    if (
+      let f = categories
+        .filter(category in proCats)
+        .groupBy(category.level).agg(discount = discounts*.apply(level).min).toSeq
+        .sortBy(_.level.desc)
+        .first
+    ) {
+      f.discount
+    } else {
+      defaultDiscounts(level)
+    }
+  }
+}
+
+class PriceLevelDiscounts {
+  func apply(level: PriceLevel): Percent? = level.discount(this)
+  
+  impl view form = grid(labels = Right) {
+  }
+  view rowView = group{}
+}
+
+inline entity PriceLevelCategory {
+  system field priceLevels: PriceLevels
+  field category: IProductCategory
+  field discounts: PriceLevelDiscounts
+}
+
+enum PriceLevel(discount: PriceLevelDiscounts => Percent?, price: PriceListProduct => UMoney?, setPrice: (PriceListProduct, UMoney?) => Void) {
+}
+
+extend trait ICustomer {
+  func priceLevel: PriceLevel? = null
+}
+extend entity Customer {
+  ref impl field priceLevel: PriceLevel? {visible = PriceLevel.all views = []}
+  extend view stateView = priceLevel
+}
+
+generator priceLevel {
+  impl func generate = 
+'
+extend enum PriceLevel {
+  case $name(discount = $name, price = _$name, setPrice = (p: PriceListProduct, v: UMoney?) => p._$name = v)
+}
+extend class PriceLevelDiscounts {
+  field $name: Percent[2]?
+  extend view rowView = $name
+}
+extend trait PriceListProduct {
+  field _$name: UMoney[currency]? {views = []}
+  compute $(name)Std: UMoney[currency]? {
+    availableFor = Inline
+    views = []
+    value = back{salesPrice(currency, model.pricesIncludingGst, $name).get.current}
+  }
+  compute $name: UMoney[currency]? = _$name.or($(name)Std)
+  compute $(name)Margin: Percent[2]? {
+    views = []
+    value = {
+      margin($name)
+    }
+    update = {_$name =? priceWithMargin(new)}
+  }
+  extend view rowView = $name
+  extend view row2View = $(name)Margin
+}
+extend entity PriceLevels {
+  extend view form = extend("th") {label("$(name.fromCamelCase.capitalize)", width = 0.15, align = Right)}
+}
+extend entity PriceList {
+  extend view form = extend("th") {label("$(name.fromCamelCase.capitalize)", width = 0.2, align = Right)}
+}
+  
+'
+}

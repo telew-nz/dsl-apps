@@ -1,0 +1,29 @@
+back object Conversion extends IConversion {
+  func do(version: [Int?]?) = {
+    if (version < [2,0,0]) {
+      all("flow2b.location.Location").foreach {s =>
+        let actor = s.field[Actor]("actor")
+        let title: String = {
+          if (let t = s.field[String?]("name")) t
+          else if (let t = s.field[Address?]("address")) t
+          else "Untitled"
+        }
+        let location: ILocation? = if (s.field[Bool]("mutual")) {
+          let r = s.convertTo(PickUpPoint) 
+          r.title = s.field("name")
+          r
+        } else if (actor.our) {
+          let r = s.convertTo(Store)
+          r.title = s.field("name")
+          r
+        }
+        let contact: StreetAddressContact = if (let location) {
+          StreetAddressContact(addressee = location)
+        } else {
+          s.convertTo(StreetAddressContact)
+        }
+        contact.streetAddress = s.field[Address?]("address").alt(title)
+      }
+    }
+  }
+} 

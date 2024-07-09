@@ -1,0 +1,11 @@
+role FinanceManager {
+  menu Finance {
+    entity CashMovement = "Cash Movements" 
+    trait IInvoice
+    entity Loan
+    trait FinanceAccount = "Accounts"
+  }
+  view dashboard = row {
+    FinanceAccount.widget
+  }
+}

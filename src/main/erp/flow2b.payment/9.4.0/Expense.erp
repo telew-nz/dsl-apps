@@ -1,0 +1,29 @@
+inline entity PaymentExpense {
+  field payment: OutgoingPayment
+  field expense: IExpenseType {
+    update = {
+      this.gstRate = expense.gstRate(payment.payee)
+    }
+  }
+  field amount: Money[payment.currency] =? payment.unreconciledAmount
+  field gstRate: Percent[2]?? 
+  compute gstEditor: Percent[2]? {
+    label = "GST"
+    value = gstRate.alt(0).as[Percent[2]]
+    update = {
+      gstRate = new
+    }
+  }
+  func expenseLedger: Future[LExpenses] = {
+    let a =  if (let rate = gstRate) amount - amount*rate else amount
+    let baseAmount <- a.to[Money[payment.legalEntity.getCurrency]](payment.date)
+    LExpenses(account = GeneralExpenses, journal = payment, trAmount = baseAmount, expenseType = expense)
+  }
+  func gstLedger: LTax? = if (let rate = gstRate) {
+    LTax(account = TaxesPayable, tax = Gst, currency = payment.currency, 
+         journal = payment, origin = payment, rate = gstRate,
+         isInstantPayment = true,
+         trAmount = amount*rate, 
+         taxedAmount = amount - amount*rate)
+  }
+}

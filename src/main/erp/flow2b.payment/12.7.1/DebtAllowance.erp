@@ -1,0 +1,35 @@
+extend entity Customer {
+  field debtAllowance: Money[this.getCurrency]? {views = []}
+  extend view form = extend {
+    debtAllowance
+    legalEntity.debtReport(money = true) >> field(label = "Money Debt")
+    legalEntity.debtReport(money = false) >> field(label = "Delivery Debt")
+  }
+  func calcChargeType: ChargeType = if (debtAllowance) Account else Cash
+  ref compute chargeType: ChargeType {
+    value = calcChargeType
+    views = [] 
+  }
+}
+
+extend entity Vendor {
+  field debtAllowance: Money[this.getCurrency]? {views = []}
+  extend view form = extend {
+    debtAllowance
+    legalEntity.debtReport(money = true) >> field(label = "Money Debt")
+    legalEntity.debtReport(money = false) >> field(label = "Delivery Debt")
+  }
+  func calcChargeType: ChargeType = if (debtAllowance) Account else Cash
+  ref compute chargeType: ChargeType {
+    value = calcChargeType
+    views = [] 
+  }
+}
+ 
+ extend entity SalesOrder {
+  ref compute customerType: CustomerType {
+    value = if (customer?.debtAllowance) Charge else Cash
+    views = []
+  }
+  extend view statusesView = customerType
+}

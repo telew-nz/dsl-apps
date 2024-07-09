@@ -1,0 +1,11 @@
+back object Conversion extends IConversion {
+  func convert(version: [Int?]): Future[Any] = {
+    if (version < [12,19,0]) {
+       CashMovement.all.foreach(m => recalcField(m, uploadState))
+    }
+    if (version < [12,19,2]) {
+      recreateAllRegisters
+    }
+  }  
+} 
+ 

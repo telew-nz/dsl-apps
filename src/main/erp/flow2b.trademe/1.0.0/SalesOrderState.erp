@@ -1,0 +1,29 @@
+class PushSalesOrderState extends SystemJob {
+  impl field service: ITrademeIntegration
+  field so: SalesOrder
+  
+  impl func do = {
+    let ds = so.deliveryState
+    let stat = if (so.paymentState == Paid) {
+      if (so.dlvIs(Complete)) "SaleCompleted" 
+      else if (so.dlvIs(InTransit)) "GoodsShipped"
+      else "PaymentReceived"
+    }
+    let result <- if (let stat) {
+      service.https("MyTradeMe/Status/$(service.extId(so))/$stat.json").post
+    } else {
+      service.https("MyTradeMe/Status/$(service.extId(so)).json").delete
+    }
+    let r = result.body!.parseJson[PushSalesOrderResponse]
+    if (!r.success) {
+      throw r.description
+    }
+  }
+}
+
+class PushSalesOrderResponse {
+  extFieldNaming = UpperCamelCase
+  field success: Bool
+  field description: String?
+  field status: String?
+}

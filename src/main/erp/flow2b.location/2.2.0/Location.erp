@@ -1,0 +1,18 @@
+entity Location extends IActorLocation {
+  field address: Address
+  
+  view form = nav{grid(labels = None){
+    actor
+    address
+    contacts
+  }}
+  
+  object func add(actor: Actor, address: Address): IActorLocation? = {
+     if (!address.isEmpty) {
+       let s = address.title
+       actor.locations.find(a => a.address.title == s)
+        .alt(Location(actor = actor, address = address))
+     }
+  }
+}
+

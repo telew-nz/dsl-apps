@@ -1,0 +1,35 @@
+class MailHttpData {
+  field headers: [String -> Any]?
+  field subject: String?
+  field from: [MailRecipient]?
+  field to: [MailRecipient]?
+  field cc: [MailRecipient]?
+  
+  field parts: [MailPart]?
+  field attachments: [MailAttachment]?
+}
+class MailData {
+  field headers: [String -> Any]?
+  field subject: String?
+  field from: [MailRecipient]?
+  field to: [MailRecipient]?
+  field cc: [MailRecipient]?
+  field parts: [MailPart]?
+}
+class MailPart {
+  extFieldNaming = Underscore
+  field headers: [String -> Any]?
+  field contentType: String?
+  field content: Text?
+}
+class MailRecipient {
+  field name: String?
+  field email: Email?
+}
+class MailAttachment {
+  extFieldNaming = Underscore
+  field filename: String
+  field contentType: String
+  field content: Text?
+}
+                   

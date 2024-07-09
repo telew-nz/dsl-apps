@@ -1,0 +1,51 @@
+back class UploadTagsJob extends SystemJob {
+  field service: WooCommerceIntegration
+  field change: BatchChange[IProductTag] 
+  func do: Future[Any] = {
+    let u = BatchTagUpdate(
+      create = change.created.map(TagData.create(service, _)),
+      update = change.updated.map(TagData.create(service, _)),
+      delete = change.deleted*.extId(service)
+    )
+    let response <- service.https("/products/tags/batch").post(u.json)
+    let r = response.body!.parseJson[BatchCategoryResponse]
+    change.updateExtIds(service, r.create.map(id))
+    r.check(this, u, process = false)  
+  }
+}
+
+back class DownloadTagsJob extends SystemJob {
+  field service: WooCommerceIntegration
+  func do: Future[Any] = {
+    let response <- service.https("/products/tags").get
+    response.body!.parseJson[[TagData]?]*.make(service)
+  }
+}
+ 
+ 
+back class BatchTagUpdate {
+  field create: [TagData]?
+  field update: [TagData]?
+  field delete: [Int]?
+}
+
+back class BatchTagResponse extends WooResponse[TagData] {
+  field create: [TagData]?
+  field update: [TagData]?
+  field delete: [TagData]?
+  func all = create + update + delete
+}
+back class TagData extends WooData with EProductTag[Int] {
+  extFieldNaming = Underscore
+  field id: Int?
+  field name: String
+  field description: Text?
+  
+  func extId = id!
+  func title = name
+  
+  object func create(service: WooCommerceIntegration, u: IProductTag): TagData = {
+    TagData(
+      id = service.extId(u), name = u.name, description = u.description)
+  }
+}

@@ -1,0 +1,18 @@
+extend class BankData {
+  back func ourContraAccount: FinAccount? = if (let a = thierAccount) {
+    BankAccount.all.find(number == a).result.get?.as[FinAccount]
+      .or(CardAccount.all.find(number == a).result.get)
+  }
+  back func paymentMethod: PMBankAccount? = if (let a = thierAccount) {
+    PMBankAccount.all.find(number == a).result.get
+  }
+  back func counterparty: LegalEntity? = {
+    LegalEntity.filterByName(thierName).onlyOne
+      .or(origins*.debtCounterparty.distinct.onlyOne)
+      .or(LegalEntity.findNames(fullMemo).onlyOne)
+  }
+  
+  back func origins: [HasDebtCounterparty]? = {
+    Entity.findReferences(fullMemo)*.as[HasDebtCounterparty]
+  }
+}

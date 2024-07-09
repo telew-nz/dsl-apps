@@ -1,0 +1,26 @@
+role Salesperson {
+  view dashboard = row{}
+}
+role SalesManager {
+  view dashboard = row{}
+}
+
+role Buyer {
+  view dashboard = row{}
+}
+
+role Vendor {
+  view dashboard = row{}
+}
+  
+role Customer {
+  view dashboard = row{}
+  entity Company {
+    read = isTheir
+    write = isTheir
+  }
+  entity Person {
+    read = isTheir
+    write = isTheir
+  }
+}

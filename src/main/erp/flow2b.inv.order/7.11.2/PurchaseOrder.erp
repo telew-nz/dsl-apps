@@ -1,0 +1,133 @@
+entity PurchaseOrder extends Order {
+  background = "#a73e6c"
+  func orderCustomer = customer
+  func orderVendor = vendor
+  func counterparty = vendor?.legalEntity
+  func activeRoles = {
+    let s = state
+    if (s == Quote || s == Processing) [BusAdmin]
+  }
+  field deliveries: [IPurchaseDelivery]? inline by purchaseOrders {
+    default = [PurchaseDelivery(primary = true, purchaseOrders = [this])]
+    visible = preEntered
+    from = IPurchaseDelivery.all.filter(i => i.legalEntity == legalEntity) 
+    update = {
+      setDefaultDelivery()
+    }
+  }
+  field invoices: [PurchaseInvoice]? inline by orders {
+    default = [PurchaseInvoice(primary = true, orders = [this])]
+    from = PurchaseInvoice.all.filter(i => i.vendor == vendor && i.customer == customer)
+    visible = preEntered
+    update = {
+      setDefaultInvoice()
+    }
+    singular = "Invoice"
+  }
+  ref field vendor: Vendor? by purchaseOrders {
+    update = {
+      this.currency =? try? vendor?.legalEntity?.currency.alt(customer.getCurrency)
+      deliveries.foreach(_.supplier = null)
+      items*.orderDeliveryItem*.updateGst()
+    }
+  }
+  ref field customer: OurLegalEntity {
+    default =? onlyOne
+    update = {
+      items*.orderDeliveryItem*.updateGst()
+    }
+  }
+  field allItems: [IPurchaseItem]? inline by order 
+  compute items: [IPurchaseItem]? {
+    value = allItems.filter(active || wasCanceled)
+    update = {
+      allItems = new + allItems.filter(!active && !wasCanceled)
+    }
+    init = {
+      new.order = _
+    }
+    visible = preEntered
+  }
+  compute preEntered = try? customer
+  ref compute number: String = "PO" + n.format(3, 0)
+  func entityNumbers: [String]? = [number] + referenceNumber.toSeq
+  func title = if (let r = referenceNumber) "$number ($r) $vendor" else "$number $vendor"
+  func legalEntity: OurLegalEntity = customer
+  func hasGoods: Bool = items*.as[OrderProductItem].exists(product.isTangible)
+  
+  
+  //Views
+  view form = nav{tabs {
+      posView
+      grid(labels = Top, width = 1.2, label = "Deliveries"){
+        deliveries >> list{nav{
+          inline{deliveryHeader}
+          generalLedgerButton
+        }}
+        extension("deliveries")
+      }
+      grid(labels = Top, width = 1.2, label = "Invoices"){
+	    invoices >> list{nav{
+          inline{invoiceHeader}
+          invoiceButtons
+        }}
+        extension("invoices")
+      }
+      grid(labels = Top, width = 1.2, label = "More"){ 
+	    extension
+      }
+      extension("tabs")
+    }
+    //button("Update Prices") {updatePrices()}
+  }
+  
+  view statusesView = x {
+    state
+    invoiceIssueState
+    paymentState 
+    paymentOverdueState
+    deliveryState
+    deliveryOverdueState
+    dropShipState
+  }
+  
+  compute pd {
+    value = deliveries.onlyOne?.as[PurchaseDelivery]
+    update = {}
+  }
+  compute pi {
+    value = invoices.onlyOne?.as[PurchaseInvoice]
+    update = {}
+  }
+  
+  view posView = grid (labels = Top, label = "Main", width = 1.2) {
+    row {number >> field(noTab) referenceNumber >> field(noTab) customer }
+    row {total >> field(canEditUnit = true) date >> field(noTab) space}
+    statusesView 
+    row { pd!.destination >> field(visible = pd, label = "Store") pd!.dispatchDate >> field(noTab, visible = pd) pd!.deliveryDate >> field(noTab, visible = pd && pd!.pickUpLocation)}
+    extension("delivery")
+    row {vendor pd!.pickUpLocation >> field(visible = pd) space} 
+    extension
+    items >> list(mode = EditSelect) {
+      form 
+    }
+    pi!.posView 
+  } 
+  
+  report Report {
+    field superProduct: ISuperProduct?
+    field product: IProduct?
+    field vendor: LegalEntity? {auto = true}
+    field inventoryOnly: Bool
+    
+    view list = PurchaseOrder.all.filter(
+      (!inventoryOnly || hasGoods)
+      && ((!this.product && !this.superProduct) || items*.as[OrderProductItem].exists(product ==? this.product && product.superProduct ==? this.superProduct))
+    ) >> nav{list{grid(labels = None) {
+      row{number, date.as[Date[day]]!, vendor, total}
+      statusesView
+    }}}
+  }
+  
+  view ref = x{title statusesView}
+}

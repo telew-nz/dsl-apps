@@ -1,0 +1,53 @@
+trait IBaseProduct {
+  func isValid: Bool = true
+  func obsolete: Bool = false
+    
+  func superProduct: ISuperProduct
+  
+  func unit: ProductUnit
+  func altUnits: [ProductAltUnit]? = []
+  func units: [ProductUnit] = (unit + altUnits*.unit).toSet
+}
+
+trait ISuperProduct extends IBaseProduct {
+  plural = "Products"
+  singular = "Product"
+  width = 0.45
+  
+  object field gen: Int?
+  const field n: Int = increment(ISuperProduct.gen)
+  func subProducts: [IProduct]?
+  func superProduct: ISuperProduct = this
+  func isTangible: Bool
+  func isService: Bool
+  func description: Text? = ""
+  func sku: String = n
+    
+  field categories: [ProductCategory]? by products
+}
+
+trait IProduct extends IBaseProduct {
+  plural = "Products"
+  singular = "Product"
+  width = 0.45
+    
+  func isTangible: Bool
+  func isService: Bool
+}
+
+trait IGood extends IProduct {
+  func isTangible = true
+  func isService = false
+}
+
+trait IIntangibleGood extends IProduct {
+  func unit: ProductUnit = Item
+  func isTangible = false
+  func isService = false
+}
+
+trait IService extends IProduct {
+  func unit: ProductUnit = Item
+  func isTangible = false
+  func isService = true
+}

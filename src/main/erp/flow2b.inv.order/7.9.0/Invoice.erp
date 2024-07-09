@@ -1,0 +1,24 @@
+trait Invoice extends IInvoice {
+  background = "#d68400"
+  ref field date: Date = if (order.created) order.date else Date.now
+  ref compute currency: Currency {
+    value = orders.first.currency
+    update = {
+      orders.foreach{o =>
+        o.currency = new
+      }
+    }
+  }
+  field manualNumber: String?
+  
+  func order: Order = orders.first
+  func orders: [Order]
+  func items: [OrderItem]?
+
+  func journalDate: Date = date
+  func references = orders*.referenceNumber
+  
+  func instantLedgers(journal: Journal, date: Date): Future[[Ledger]?] = {
+    order.deliveries!.first.ledgers(journal, date)
+  }
+}

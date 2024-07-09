@@ -1,0 +1,90 @@
+report DebtRecon {
+  singular = "Debt Reconciliation"
+  field legalEntity: OurLegalEntity =? onlyOne 
+  field counterparty: LegalEntity {
+    update = {
+      cptAcc = new.cptAccs.first
+      currency = new.getCurrency
+    }
+  }
+  field currency: Currency = (try? counterparty.getCurrency).alt(our)
+  field cptAcc: CptAcc? {
+    label = "Counterparty Account"
+    from = counterparty.cptAccs
+  }
+  impl view list = 
+    LMoneyDebt.all
+      .filter{d => 
+           d.counterparty == this.counterparty
+        && d.legalEntity == this.legalEntity
+        && d.currency == this.currency
+        && d.amountDue
+      }
+      .map{d =>
+        let ps = d.origin.as[IOrderRevision]?.paymentState
+        (d.date, d.origin, d.sortNum, d.amountDue, d.balanceDue, d.dueDate, 
+         paymentState = if (ps == Account) PaymentState.Unpaid else ps, 
+         d.origin.reconState,
+         d.origin.as[Invoice]?.overdueState,
+         debtOriginAmounts = d.origin.debtOriginAmounts.filter(_.origin)
+        )
+      }
+      .sortBy(sortNum.desc) 
+      .groupBy(period = {
+         if (let terms = try? cptAcc?.terms!) terms.period(date) 
+         else Period(start = date.start(month), end = date.end(month))
+      })
+      .subtotal(balanceDue = map(i => i.balanceDue).first)
+    >> nav{
+    subtotal {
+      row {
+        x(span = 2){
+          period.start.date + 1_day
+          label("—")
+          period.end.date
+        }
+        space space
+        balanceDue 
+      }
+      table(label = "Transactions") {
+        header{
+          label("Date", width = 0.27)  
+          label("Document", width = 0.4)  
+          label("Due Date", width = 0.18)  
+          label("Amount", align = Right, width = 0.2) 
+          label("Balance", align = Right, width = 0.2)
+        }
+        body {
+          row{
+            date >> field(rowSpan = 4)
+            origin >> field(title = noCpTitle) 
+            dueDate?.date
+            amountDue >> field(label = "Amount Due", rowSpan = 4)
+            balanceDue >> field(label = "Balance", showEmpty, rowSpan = 4)
+          }
+          row {
+            paymentState >> field(visible = paymentState != Paid)
+            overdueState >> field(visible = overdueState == PaymentOverdue)
+          }
+          row {
+            reconState >> field(visible = !origin.is[IOrderRevision] && reconState != Recon)
+            space
+          }
+          row {
+            panel(collapsed = true, span = 3, align = Left, label = "Reconcilation", frame = false, visible = debtOriginAmounts) {
+              debtOriginAmounts >> table {
+                date >> field(width = 0.27) 
+                origin >> field(title = noCpTitle, width = 0.31) 
+                x (margin = None, width = 0.2, align = Right, label = "Amount") {
+                  amount
+                  x (visible = origin && origin!.debtAmount != amount, flow = false) {
+                    label("of", fontStyle = Label, stretch = 1) origin!.debtAmount
+                  }
+                } 
+              }
+            }
+          }
+        }
+      }}
+    }
+}

@@ -1,0 +1,22 @@
+extend trait Brand extends HasExtId {
+  event onSave = {
+    if (dataUpdated || deleted) {
+      ECommerceIntegration.all.map {service =>
+        if (service.userEnabled) service.updateBrandJobs(BatchChange.create(service, [this]))*.run
+      }.result
+    }
+  }
+}
+
+extend trait ECommerceIntegration {
+  back func updateAllBrands(): Void = { 
+    BatchChange.hierarchy(
+        this, 
+        if (brands) brands else Brand.all.result.get, 
+        _.superBrand
+      )
+      .filter(!_.isEmpty)
+      .flatMap(updateBrandJobs(_))
+      *.run()
+  }
+}

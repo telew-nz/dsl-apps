@@ -1,0 +1,13 @@
+extend role StoreOperative {
+  extend view menu = menu("Inventory") {
+    ISuperProduct >> item(fastSearch)
+    IProdMoveIn
+    IProdMoveOut
+    StockCorrection >> item(fastAdd)
+    StockReport
+    ProdMovement
+    ProdAvailability
+    extension("Inventory")
+  }
+ 
+}

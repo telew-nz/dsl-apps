@@ -1,0 +1,85 @@
+class SalesPrice {
+  field currency: Currency = our
+  field regular: Money[currency]? {
+    update = {
+       if (!old || current == old!) current = new
+    }
+  }
+  field current: Money[currency]?
+  func isEmpty: Bool = !regular && !current
+  
+  func mul(qty: Qty?): SalesPrice = {
+    SalesPrice(currency = currency, regular = regular*qty, current = current*qty)
+  }
+  func add(o: SalesPrice): SalesPrice = {
+    SalesPrice(currency = currency, regular = regular + o.regular, current = current + o.current)
+  }
+  func round(rounding: Rounding): SalesPrice = {
+    SalesPrice(currency = currency, regular = rounding.apply(regular), current = rounding.apply(current))
+  }
+  object func sum(sps: [SalesPrice]?): SalesPrice = {
+    if (let sps) {
+      var r = sps.first
+      sps.drop(1).foreach{s => r = r + s}
+      r
+    } else empty
+  }
+  func convertGst(gstRate: UPercent?, priceInclGst: Bool, expectedInclGst: Bool): SalesPrice = {
+    if (priceInclGst == expectedInclGst) this
+    else SalesPrice(
+      currency = currency, 
+      regular = object.convertGst(gstRate, regular, priceInclGst, expectedInclGst),
+      current = object.convertGst(gstRate, current, priceInclGst, expectedInclGst) 
+    )
+  }
+  
+  object func convertGst(gstRate: UPercent?, price: Money?, priceInclGst: Bool, expectedInclGst: Bool): Money? = {
+    if (priceInclGst == expectedInclGst) price 
+    else if (expectedInclGst) price*(gstRate.withoutUnit + 1.0000)
+    else price/(gstRate.withoutUnit + 1.0000)
+  }
+  object func empty: SalesPrice = SalesPrice(regular = 0, current = 0)
+  view form = x {
+    regular >> field(fontStyle = if (current == regular) Normal else Strikeout)
+    current >> field(visible = current != regular || ui.edit)
+  }
+}
+
+class RentAmount {
+  field dayAmount: Money?
+  field nightAmount: Money?
+  field bond: Money?
+  compute amount = dayAmount + nightAmount
+  
+  func convertGst(gstRate: UPercent?, priceInclGst: Bool, expectedInclGst: Bool): RentAmount = {
+    if (priceInclGst == expectedInclGst) this
+    else RentAmount(
+      dayAmount = SalesPrice.convertGst(gstRate, dayAmount, priceInclGst, expectedInclGst),
+      nightAmount = SalesPrice.convertGst(gstRate, nightAmount, priceInclGst, expectedInclGst),
+      bond = bond
+    )
+  }
+}
+
+interface Rounding {
+  func apply(number: Number?): Number?
+}
+
+class Floor extends Rounding {
+  field increment: Number = 1.00
+  field delta: Number? = -0.01
+  func apply(number: Number?): Number? = number.roundInc(floor, increment) + delta
+  view form = grid{row{increment delta}}
+}
+class Round extends Rounding {
+  field increment: Number = 1.00
+  field delta: Number? = -0.01
+  func apply(number: Number?): Number? = number.roundInc(round, increment) + delta
+  view form = grid{row{increment delta}}
+}
+class Ceiling extends Rounding {
+  field increment: Number = 1.00
+  field delta: Number? = -0.01
+  func apply(number: Number?): Number? = number.roundInc(ceil, increment) + delta
+  view form = grid{row{increment delta}}
+}

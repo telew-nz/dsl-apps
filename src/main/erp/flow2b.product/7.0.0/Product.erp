@@ -1,0 +1,44 @@
+trait IProduct extends ISubProduct {
+  plural = "Products"
+  singular = "Product"
+  width = 0.45
+  
+  event onSave = {}
+  func products: [IProduct : Qty] = [this -> 1.as[Qty[unit]]!]
+  func productQtys(qty: Qty): [ProductQty] = {
+    [ProductQty(product = this, qty = toBase(qty))]
+  }
+  func tangibleProductQtys(qty: Qty): [ProductQty]? = if (isTangible) [ProductQty(product = this, qty = toBase(qty))]
+  //func mapProducts[R](qty: Qty, f: (product: IProduct, qty: Qty) => R): [R] = {
+  //  let r: R = f(this, toBase(qty))
+  //  [r]
+  //}
+  view productNavView = x{}
+}
+
+trait IComplexProduct extends IProduct {
+  func parent: IBaseProduct? = getParent
+  func getParent: IBaseProduct
+  func superProduct: ISuperProduct = getParent.superProduct
+  
+  field manualSku: String?
+  ref compute sku: String {
+    value = manualSku.alt(superProduct.sku + "." + skuN)
+    update = {
+      manualSku = new
+    }
+  }
+  const field skuN: Int? = increment(getParent.skuGen)
+  event onSave = {}
+  
+  func isValid: Bool = superProduct.isValid
+  func isTangible: Bool = superProduct.isTangible
+  func weightInGrams: Number? = superProduct.weightInGrams
+  func description: Text? = superProduct.description
+  func gstRate(vendor: IVendor?): UPercent[2]?? = superProduct.gstRate(vendor)
+  func obsolete: Bool = superProduct.obsolete
+  func unit: ProductUnit = superProduct.unit
+  func units = superProduct.units
+  func alwaysAvailable: Bool = superProduct.alwaysAvailable 
+  func collectPhotos: [Image]? = if (let p = photos) p else superProduct.collectPhotos.first(1)
+}

@@ -1,0 +1,39 @@
+class ActorPaymentReprocessJob extends SystemJob {
+  impl func service = ReconService
+  field actor: LegalEntity
+  impl back func do = {
+    Payment.all.filter(!debtCounterparty && bankData.uploaded && !reconAmount && !source && !reasons && !manLinks)
+      .foreach {p =>
+         if (IReconRule.isCounterparty(actor, p)) {
+           p.debtCounterparty = actor
+           p.save
+         }
+      }
+  }
+}
+
+class PaymentMethodReprocessJob extends SystemJob {
+  impl func service = ReconService
+  field method: PMBankAccount
+  impl back func do = {
+    Payment.all.filter(!debtCounterparty && bankData.uploaded && !reconAmount && !source && !reasons && !manLinks)
+      .foreach {p =>
+         if (let a = p.bankData.thierAccount.trim where a.length > 3 && method.number =%= a) {
+           p.debtCounterparty = method.legalEntity
+           p.paymentMethod = method
+           p.save
+         }
+      }
+  }
+}
+
+extend trait Payment extends BankStatementItem {
+}
+
+extend entity IncomingPayment {
+  impl func data(account: FinAccount): BankData = bankData
+}
+
+extend entity OutgoingPayment { 
+  impl func data(account: FinAccount): BankData = bankData
+}

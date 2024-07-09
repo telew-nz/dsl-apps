@@ -1,0 +1,407 @@
+extend enum DashboardIssue {
+  case InvoiceNotIssued(role = Accountant, priority = default)
+  case InvoiceModified(role = Accountant, priority = default)
+}  
+ 
+trait IOrder extends IOrderRevision with DashboardItem with PaymentSource {
+  background = "#d68400"
+  plural = "Invoices"
+  singular = "Invoice"
+   
+  func allOrigins: [DebtOrigin]? = allRevisions
+  system field revisionDate: Date?
+
+  func onlyOneInvoice: IOrderRevision? = if (let invoices) invoices.onlyOne else this
+  back func onlyOneOrigin = onlyOneInvoice?.debtOriginAmounts.onlyOne
+  func fullReconState: ReconState = {
+    if (canceled) if (unpaidAmount < 0) PartRecon else Canceled
+    else {
+      if (!unpaidAmount) {
+        if (allRevisions.exists(r => r.calcDebtAllowance)) Account
+        else Recon
+      } else if (allRevisions.exists(r => r.calcReconAmount) || payments.exists(r => !r.id)) PartRecon
+      else Unrecon
+    } 
+  }
+  func paid: Bool = !unpaidAmount
+  func paidAmount: Money[currency]? = receivedAmount - refundedAmount
+  func isEmpty = !total && !prev
+  compute receivedAmount: Money[currency]? {
+    availableFor = Inline
+    value = back {
+      allRevisions.filter(isPurchase && debtAmount < 0 || !isPurchase && debtAmount > 0)*.debtOriginAmounts.filter(origin.is[Payment])*.amount.sum.abs 
+    }
+  }
+  compute refundedAmount: Money[currency]? {
+    availableFor = Inline
+    value = back {
+      allRevisions.filter(isPurchase && debtAmount > 0 || !isPurchase && debtAmount < 0)*.debtOriginAmounts.filter(origin.is[Payment])*.amount.sum.abs
+    }
+  }
+  ref compute unpaidAmount: Money[currency]? {
+    value = {
+      if (!isInstant) {
+        let r = allRevisions*.unreconAmount.sum + payments*.unreconAmount.sum
+        if (isPurchase) -r else r
+      }
+    }
+  }
+  func canDispatch = getTerms.canDispatch(state)
+  
+  compute revUnpaidAmount: Money[currency]? {
+    value = {
+      if (!isInstant) {
+        let r = invoices*.unreconAmount.sum + payments*.unreconAmount.sum
+        (if (isPurchase) -r else r).as[Money[currency]]
+      }
+    }
+  }
+  
+  ref compute paymentState: PaymentState {
+    value = if (isEmpty) Unpaid else fullReconState.paymentState
+    visible = paymentState == Account
+  }
+  func journalDate = if (let d = invoices.last?.date) {
+    if (let rd = revisionDate) if (rd > d) rd else d + 1_minute
+    else d + 1_minute
+  } else date
+  func issues = {
+    let ist = issueState
+    (
+      if (ist == InvoiceNotIssued && shouldBeIssued) [DashboardIssue.InvoiceNotIssued]
+      else if (ist == InvoiceModified) [DashboardIssue.InvoiceModified]
+    ).toSet
+  }
+  func fixes(issue: DashboardIssue) = {
+    if (issue == InvoiceNotIssued) {
+      [Fix(text = "Issue invoice", acts = [Act(label = "Issue", do = this.issue())])]
+    } else if (issue == InvoiceModified) {
+      [
+        Fix(text = "Issue credit/debit note", acts = [Act(label = "Issue", do = this.issue())]),
+        Fix(text = "In the case when it was accidently issued, delete the original invoice and issue again", acts = [Act(label = "Reissue", do = Query(this).foreach{
+          this.reissue()
+        })]),
+        Fix(text = "Rollback modifications", acts = [Act(label = "Rollback", do = Query(this).foreach{
+          rollbackInvoice()
+        })])
+      ]
+    }
+  }
+  
+  func buildDebtTable(revisions: [IOrderRevision]): [OrderDebtRow]? = {
+    (
+      revisions.flatMap{i =>
+         i.debtOriginAmounts.map(doc = origin, date = origin?.journalDate.alt(i.date), amount)
+      }.groupBy(doc).agg(date = first.date.as[Date[minute]]!, dueDate = null[Date], amount.sum).toSeq
+      + 
+      revisions.map(
+        doc = _.as[DebtOrigin], date.as[Date[minute]]!, dueDate, amount = debtAmount
+      )
+    ).sortBy(date, amount.desc).accum(balance = amount.sum)
+     .map(OrderDebtRow(doc = doc, amount = if (isPurchase) -amount else amount, balance = if (isPurchase) -balance else balance, dueDate = dueDate))
+  }
+  compute debtTable = buildDebtTable(allRevisions)
+  
+  func cashFlow: CashFlow
+  func isInstant = invoices.onlyOne?.isInstant
+  back func calcInstant: Bool
+  
+  stored compute _state: OrderState {
+    label = "State"
+  }
+  ref compute state: OrderState {
+    value = {
+      if (manCanceled) OrderState.Canceled 
+      else calcState
+    }
+    update = {
+      updateState(new)
+    }
+    from = updatableStates
+  }
+  compute calcState: OrderState = if (front) getTerms.orderState(this) else {
+    (try? _state).alt(Quote)
+  }
+  system stored compute maxDispatchDate: Date?
+  
+  func updatableStates: [OrderState] = {
+    let s = calcState
+    if (s == Canceled) [OrderState.Canceled]
+    else if (s == Quote) {
+      if (getTerms.toDispatchState == Accepted) {
+        deliveryStates + OrderState.Quote + OrderState.Canceled + OrderState.Accepted
+      } else if (getTerms.waitForAcceptance) {
+        [OrderState.Quote, OrderState.Canceled, OrderState.Accepted]
+      } else {
+        [OrderState.Quote, OrderState.Canceled]
+      }
+    } else {
+      let tds = getTerms.toDispatchState
+      if (s == Accepted && tds != Accepted) {
+        [OrderState.Quote, OrderState.Canceled, OrderState.Accepted]
+      } else {
+        var dd = deliveryStates
+        if (tds == Accepted) dd += OrderState.Quote
+        dd + tds + OrderState.Canceled
+      }
+    }
+  }
+  func orderStateDelivery: OrderState? = {
+    if (delivered) Delivered
+    else if (dispatched) Dispatched 
+  }
+  func deliveryStates: [OrderState] = {
+    [OrderState.Dispatched, OrderState.Delivered]
+  }
+  func updateState(newState: OrderState): Void = {
+    manCanceled = newState == Canceled
+    let deliveryStatus: DeliveryStatus = {
+      if (let d = newState.delivery) d
+      else if (newState == OrderState.Canceled) Canceled
+      else if (newState == OrderState.Complete) Delivered
+      else Planned
+    }
+    deliveries.foreach{d => d.status = deliveryStatus}
+    if (getTerms.waitForAcceptance && newState != Canceled) {
+      if (newState == Quote) {
+        accepted = null
+      } else  if (newState != Quote && !accepted) {
+        accepted = Date.now
+      }
+    }
+  }
+  
+  func canceled: Bool = state == Canceled
+  func active = state.active
+  func complete = state == Complete
+  func deliveryComplete = delivered
+  field manCanceled: Bool {label = "Manually Canceled"}
+  field accepted: Date?
+  
+  func deliveryCounterparty: LegalEntity?
+  func references: [String]?
+  func isPurchase: Bool
+//  func cashFlow: CashFlowCategory
+  func prev: Invoice? = invoices.last
+  field invoices: [Invoice]? inline by order
+  func allRevisions: [IOrderRevision] = invoices + this
+  
+  func order: IOrder = this
+  back func isInstantPaid: Bool
+  func orderVendor: IVendor?
+  func orderCustomer: ICustomer?
+  func payer: ICustomer?
+  func payee: IVendor?
+  func deliveryDate: Date? = if (delivered) items*.itemDelivery*.deliveryDate.max
+  func dispatchDate: Date? = if (dispatched) items*.itemDelivery*.dispatchDate.max
+  func allItems: [IOrderItem]?
+  func deliveries: [IOrderDelivery]
+  func delivered: Bool = deliveries.all(_.deliveryStatus == Delivered)
+  func dispatched: Bool = deliveries.all(_.deliveryStatus.started)
+
+  func revisionAt(date: Date): IOrderRevision = {
+    invoices.filter(r => r.date <= date).sortBy(_.date.desc).first?.as[IOrderRevision].alt(this)
+  }
+
+  func shouldBeIssued: Bool = reconAmount || (dispatched && totalDue)
+  ref compute issueState: InvoiceIssueState = {
+    if (!invoices) InvoiceNotIssued
+    else if (totalDue != prev?.totalDue || allItems.exists(invoiceNotIssued)) InvoiceModified
+    else InvoiceIssued
+  }  
+  func rollbackInvoice(): IOrder = {
+    if (let l = invoices.last) {
+      items.filter(invoiceNotIssued).foreach {i =>
+        i.rollbacked = true
+        i.delete
+      }
+      l.items.foreach {i =>
+        i.active = true
+        i.save
+      }
+    }
+    this
+  } 
+  
+  field terms: IOrderTerms? {
+    default = {
+      if (isPurchase) {
+        orderVendor?.as[Vendor]?.orderTerms
+          .or(Workspace.current.purchaseOrderTerms)
+      } else {
+        orderCustomer?.as[Customer]?.orderTerms
+          .or(Workspace.current.salesOrderTerms)
+      }
+    }
+  }
+  func getTerms: IIOrderTerms = {
+    if (let ot = terms) ot.as[IIOrderTerms]! else DefaultOrderTerms
+  }
+  
+  back func instantLedgers(journal: Journal, date: Date): Future[[Ledger]?] = {
+    let lgs <- deliveryInstantLedgers(journal, date)
+    allRevisions*.gstLedgers(journal, date) + lgs
+  }
+  back func deliveryInstantLedgers(journal: Journal, date: Date): Future[[Ledger]?]
+  
+  compute due: Due = if (front) getTerms.due(this) else _due.alt(Due())
+  system stored compute _due: Due? 
+  func cpDebtAllowance: DebtAllowance?
+  compute dueDate: Date? = {
+    if (debtAllowance) cpDebtAllowance?.dueDate(now).or(due.date)
+    else due.date
+  }
+  compute totalDue: Money[currency]? = due.amount.as[Money[currency]]
+ 
+  back func updateDue(): Void = {
+    _due = getTerms.due(this)
+    
+    let oldState = (try? _state).alt(Quote)
+    _state = getTerms.orderState(this)
+    if (oldState != _state) {
+      if (oldState == Quote && (_state != Quote && _state != Canceled)) {
+        maxDispatchDate = getTerms.dispatchDate(this)
+        deliveries*.items*.as[InlineEntity]*.updateRegisters
+      } else if (_state == Quote || _state == Canceled) {
+        maxDispatchDate = null
+        deliveries*.items*.as[InlineEntity]*.updateRegisters
+      }
+    }
+    save
+  }
+  back func processInvoice(): Void = {
+    if (!deleted) {
+      if (let rs = invoices) {
+        items.foreach {item =>
+          if (item.invoices.filter(id) && item.needsRevision && !item.canceled) {
+            if (issueState != InvoiceModified) revisionDate = Date.now
+            let newItem = item.copy(invoices = [], prev = null)
+            newItem.prev = item.rollback
+            item.setActive(false)
+          }
+        }
+        if (hasNewPayment && issueState != InvoiceIssued) {
+          createInvoice(null).save
+        }
+      } else if (hasNewPayment && issueState != InvoiceIssued) {
+        createInvoice(null).save
+      }
+      allItems.filter(!consider && !invoices && canBeDeleted)*.delete
+    }
+  }
+  
+  event onSave = {
+    if (isInstant) {
+      updateDue()
+      if (!prev) processInvoice()
+    } else {
+      updateDue()
+      if (!prev) processInvoice()
+    
+      if (registerUpdated) {
+        updateLedgers()
+      }
+    }
+  }
+  
+  func hasNewPayment = manLinks.exists(created) || payments.exists(created)
+  front func uiCurrentInvoice: Future[Invoice] = {
+    if (issueState != InvoiceIssued) {
+      let _ <- UI.save(this)
+      back {
+        createInvoice(null)
+      }
+    } else {
+      invoices.last!
+    }
+  }
+  
+  back func createInvoice(date: Date?): Invoice = {
+    Invoice(
+      prev = invoices.last, 
+      dueDate = dueDate, totalDue = _due?.amount,
+      order = this, items = if (!canceled) this.items, currency = this.currency, 
+      date = if (let date) date else if (invoices) Date.now else fwdLinks*.date.min.alt(Date.now).max(this.date)
+    ).save
+  }
+  compute instantPayment: Payment? = if (isInstant) payments.onlyOne!
+  //func debtLedger: LDebt
+  view invoicesView = y(label = "Invoices", visible = id) {
+    invoices >> list (editMode = AlwaysRead) {
+      grid (labels = None, margin = Around) {
+        x(margin = None, visible = totalDue == total && (!prev || prev?.totalDue == prev?.total)) {
+          _ >> field(title = "$name $number")  
+          diffTotal >> field(showPlus = true, visible = prev) 
+          total 
+          
+          label("due", fontStyle = Label, visible = dueDate)
+          dueDate >> field(width = 0.6)
+        }
+        x(margin = None, visible = totalDue != total || (prev && prev?.totalDue != prev?.total)) {
+          _ >> field(title = "$name $number") 
+          totalDuePercent
+          diffTotalDue
+          label("of", fontStyle = Label, visible = totalDue)
+          diffTotal >> field(showPlus = true, visible = prev) 
+          total 
+          label("due", fontStyle = Label, visible = dueDate)
+          dueDate?.date 
+        }
+        debtOriginsView >> field(margin = None)
+        instantPayment >> field (title = fullTitle, margin = None)
+    }}
+    add ("Issue", visible = issueState != InvoiceIssued && id) {issue()}
+  }
+  front func issue(): Future[Void] = {
+    let revision <- uiCurrentInvoice
+    revision.form.open()
+  }
+  
+  back func reissue(): Void = {
+    let date = invoices.last!.date
+    invoices.last!.delete
+    allItems.filter(!active && !invoices && canBeDeleted)*.delete
+    createInvoice(date).save
+  }
+  
+  view invoiceButtons = group {
+    button("Issue", visible = issueState != InvoiceIssued && id) {issue()}
+    generalLedgerButton
+  }
+  
+  front func addPayment(account: FinAccount?): Payment? = {
+    let p = if (isPurchase) {
+      if (let a = unpaidAmount) {
+        if (a < 0) IncomingPayment(amount = -a, source = this)
+        else if (a > 0) OutgoingPayment(amount = a, source = this)
+      }
+    } else {
+      if (let a = unpaidAmount) {
+        if (a < 0) OutgoingPayment(amount = -a, source = this)
+        else if (a > 0) IncomingPayment(amount = a, source = this)
+      }
+    }
+    if (let p) p.account =? account
+    p
+  }
+  
+  view addPaymentView = x (visible = ui.edit && fullReconState.isIssue) {
+    add("Cash", visible = CashAccount.default) {addPayment(CashAccount.default)}
+    add("Card", visible = CardAccount.default) {addPayment(CardAccount.default)}
+    add("Bank") {addPayment(BankAccount.default)}
+  }
+  
+  view acceptView = x (visible = state == Quote && getTerms.waitForAcceptance && id) {
+    read {
+      button("Accept", color = "green") {
+        IOrder.load(id!).update(_.accepted = Date.now).result
+      }
+      button("Reject", color = "red") {
+        IOrder.load(id!).update(_.manCanceled = true).result
+      }
+    }
+  }
+}
+
+class OrderDebtRow(doc: DebtOrigin?, amount: Money?, balance: Money?, dueDate: Date?)
+  

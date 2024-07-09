@@ -1,0 +1,92 @@
+entity PurchaseOrder extends Order with IPurchaseOrder {
+  background = "#a73e6c"
+  field deliveries: [IPurchaseDelivery]? inline by purchaseOrders {
+    default = [PurchaseDelivery(primary = true, purchaseOrders = [this])]
+    visible = preEntered
+    isValid = deliveries || !real
+    from = IPurchaseDelivery.all.filter(this.vendor == vendor) 
+    update = {
+      setDefaultDelivery()
+    }
+  }
+  field invoices: [PurchaseInvoice]? inline by orders {
+    default = [PurchaseInvoice(primary = true, orders = [this])]
+    from = PurchaseInvoice.all.filter(order.vendor == this.vendor)
+    visible = preEntered
+    isValid = invoices || !real
+    update = {
+      setDefaultInvoice()
+    }
+  }
+  ref field vendor: LegalEntity by purchaseOrders {
+    update = {
+      this.currency = vendor.currency.alt(customer.getCurrency)
+      if (deliveries) deliveries!.first.supplier = vendor
+    }
+  }
+  ref field customer: LegalEntity {
+    default =? LegalEntity.ours.onlyOne
+    from = LegalEntity.ours
+  }
+  field items: [IPurchaseItem]? inline by order {visible = preEntered}
+  
+  compute preEntered = (try? customer) && (try? vendor)
+  ref compute number: String {
+    value = manualNumber.alt("PO" + n)
+    update = {manualNumber = new}
+  }
+  func title = "$number $vendor"
+  func legalEntity: LegalEntity = customer
+  func hasGoods: Bool = items*.as[OrderProductItem].exists(product.isTangible)
+  
+  
+  //Views
+  view form = nav{tabs {
+      grid(labels = Top, width = 1.2, label = "Main"){
+        row{number total >> field(canEditUnit = true) date}
+        statusesView
+        row{vendor customer space}
+        extension
+        formExt
+        
+        items >> list{form}
+      }
+      grid(labels = Top, width = 1.2, label = "Deliveries"){
+        deliveries >> list{nav{inline{deliveryHeader.removeField(purchaseOrders)}}}
+        extension("deliveries")
+      }
+      grid(labels = Top, width = 1.2, label = "Invoices"){
+	    invoices >> list{nav{inline{invoiceHeader}}}
+        extension("invoices")
+      }
+      extension("tabs")
+    }
+    button("Update Prices") {updatePrices()}
+  }
+  
+  view statusesView = x {
+    state
+    paymentState >> field(visible = state == Processing) 
+    paymentOverdueState
+    deliveryState >> field(visible = state == Processing)
+    deliveryOverdueState
+    dropShipState
+  }
+  
+  report Report {
+    field superProduct: ISuperProduct?
+    field product: IProduct?
+    field vendor: LegalEntity? {auto = true}
+    field inventoryOnly: Bool
+    
+    view list = PurchaseOrder.all.filter(
+      (!inventoryOnly || hasGoods)
+      && ((!this.product && !this.superProduct) || items*.as[OrderProductItem].exists(product ==? this.product && product.superProduct ==? this.superProduct))
+    ) >> nav{list{grid(labels = None) {
+      row{number, date.as[Date[day]]!, vendor, total}
+      statusesView
+    }}}
+  }
+  
+  view ref = x{title statusesView}
+}

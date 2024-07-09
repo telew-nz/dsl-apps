@@ -1,0 +1,64 @@
+entity Kit extends IBasicSubProduct {
+  func isTangible = true
+  
+  field title: String
+  field description: Text?
+  field obsolete: Bool
+  field alwaysAvailable: Bool
+  field items: [KitItem] inline by kit
+  view form = nav{
+    tabs {
+      grid (labels = Top, label = "Main") {
+        photos >> field(height = 10, label = "")
+        title >> field(label = "")
+        sku
+        brands
+        categories
+        row {obsolete  alwaysAvailable >> field (label = "Always Available for Sale")}
+        items >> table {
+          product >> field(width = 0.7)
+          qty >> field(width = 0.3)
+        }
+        baseMainView
+        extension("main")
+        description
+      }
+      grid (labels = Top, label = "Related") {
+        kits
+        accessories >> list(frame = false)
+        principals >> list(frame = false)
+        extension("rel")
+      }
+      extension("tabs")
+      grid (labels = Top, label = "Other") {
+        extension
+      }
+    }
+    extension("nav")
+  }
+
+  func products: [IProduct : Qty] = items.flatMap{i =>
+    i.product.products.mapValues{ 
+      _*i.qty
+    }.toSeq
+  }.toMap!
+  
+}
+
+inline entity KitItem {
+  field kit: Kit by items
+  field product: ISubProduct by includedInKitItems {
+    available(Ref).with(unit, altUnits)
+    update = {
+      this.unit = new.unit
+      this.qty = this.qty.as[Qty[this.unit]]!
+    }
+  }
+  field unit: ProductUnit {
+    from = product.units
+  }
+  field qty: Qty[unit] {
+    default = 1
+    canEditUnit = true
+  }
+}

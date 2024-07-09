@@ -1,0 +1,182 @@
+back object BankImporter {
+  func import(request: ImportRequest): Future[[CashMovement]?] = if (let items = request.items) {
+    let minDate = request.start.alt(Date.max).min(items*.date.min)
+    let maxDate = request.end.alt(Date.min).max(items*.date.max)
+    var movements: [CashMovement]? = CashMovement.all.filter(minDate - 4_day <= _.date && _.date <= maxDate + 4_day)
+    var accounts: [FinAccount]? = []
+    var updated = false
+    let ret = items.mapOpt {p =>
+      if (let account = {
+        if (let a = p.accountNumber) FinAccount.withNumber(a)
+        else request.account
+      }) {
+        if (!accounts.contains(account)) {
+          accounts = accounts + account
+        }
+        
+        let data = p.data(account)
+        data.uploadState = Uploaded
+        data.date = p.date
+        guard(let amount = data.amount) else return null
+        
+        let tr = if (let old = movements
+            .filter(i => (if (amount < 0) i.srcAccount else i.dstAccount) == account)
+            .mapOpt{payment =>
+              let rank = data.same(account, payment)
+              if (rank >= 1.5) (rank, payment)
+            }
+            .sortBy(rank.desc)
+            .first?.payment) 
+        {
+          movements = movements - old
+          if (if (amount < 0) old.srcBankData!.uploaded else old.dstBankData!.uploaded) {
+            null[Payement]
+          } else {
+            updated = true
+            if (amount < 0) {
+              old.srcBankData = data
+              old.srcAmount = amount
+              old.dateOut = p.date
+            } else {
+              old.dstBankData = data
+              old.dstAmount = amount
+              old.dateIn = p.date
+            }
+            old.save
+          }
+        } else {
+          updated = true
+          let paymentMethod = account.paymentMethod(data)
+          let cp = paymentMethod?.legalEntity.or(account.counterparty(data))
+          let currency = data.currency.alt(account.currency)
+            
+          let crtd = {
+            if (amount > 0) {
+              IncomingPayment(
+                date = p.date
+                account = account
+                bankData = data
+                amount = (if (data.currency) data.amountInCurrency! else amount).as[UMoney[currency]]!
+                currency = currency
+                accountAmount = if (data.currency) amount.positive.as[UMoney[account.currency]]!
+                payee = account.legalEntity, payer = cp, paymentMethod = paymentMethod
+              ).save
+            } else {
+              OutgoingPayment(
+                date = p.date
+                account = account
+                bankData = data
+                amount = (if (data.currency) -data.amountInCurrency! else -amount).as[UMoney[currency]]!
+                currency = currency
+                accountAmount = if (data.currency) amount.negative.as[UMoney[account.currency]]!
+                payer = account.legalEntity, payee = cp, paymentMethod = paymentMethod
+              ).save
+            }
+          }
+          movements -= crtd
+          crtd
+        }
+        
+        guard (let tr = tr?.as[Payment]) else return tr
+        
+        if (let ntr = IReconRule.process(movements, tr)) {
+          movements -= ntr
+          ntr
+        } else {
+          if (data.itemType == BankFee) {
+            if (let op = tr?.as[OutgoingPayment]) {
+              op.reasons = [
+                OPBankFees(amount = op.amount)
+              ]
+            }
+          } else if (data.itemType == Interest) {
+            if (let ip = tr?.as[IncomingPayment]) {
+              ip.reasons = [
+                IncomingInterest(amount = ip.amount, withholdingTax = data.withholdingTax)
+              ]
+            } else if (let op = tr?.as[OutgoingPayment]) {
+              op.reasons = [
+                OutgoingInterest(amount = op.amount)
+              ]
+            }
+          } else if (data.itemType == Tax) {
+            if (let ip = tr?.as[IncomingPayment], let tax = data.tax) {
+              ip.reasons = [
+                TaxReturn(amount = ip.amount, tax = tax)
+              ]
+            } else if (let op = tr?.as[OutgoingPayment], let tax = data.tax) {
+              op.reasons = [
+                TaxPayment(amount = op.amount, tax = tax)
+              ]
+            }
+          }
+          if (!tr.reasons let fee = data.fee) {
+            if (tr.currency != tr.account.currency) {
+              if (let ip = tr.as[IncomingPayment]) {
+                ip.accountAmount = (ip.accountAmount - fee).positive!
+              } else {
+                tr.accountAmount = (tr.accountAmount + fee).positive!
+              }
+            } else if (let fee = fee.positive) {
+              if (let ip = tr.as[IncomingPayment]) {
+                IPBankFees(payment = ip, amount = fee)
+              } else if (let op = tr.as[OutgoingPayment]) { 
+                OPBankFees(payment = op, amount = fee)
+              }
+            } else {
+              let fee = fee.negative!
+              if (let ip = tr.as[IncomingPayment]) {
+                IPReturn(payment = ip, reasons = [OPBankFees(amount = fee)])
+              } else if (let op = tr.as[OutgoingPayment]) { 
+                OPReturn(payment = op, reasons = [IPBankFees(amount = fee)])
+              }
+            }
+          } 
+          tr
+        }
+      } else if (p.accountNumber) {
+        throw "Account '$(p.accountNumber)' not found"
+      } else {
+        throw "Please enter an account into the account field"
+      }
+    }
+
+    movements.filter(minDate <= _.date && _.date < maxDate).foreach{m =>
+      if (request.directions.contains(PaymentDirection.Outgoing) && m.srcAccount.in(accounts)) {
+        updated = true
+        //if (m.srcBankData!.uploadState == Uploaded) {
+        //  throw "The uploaded payment $m is missing in the statement"
+        //} else {
+          m.srcBankData!.uploadState = Missing
+          m.touch
+          m.save
+        //}
+      }
+      if (request.directions.contains(PaymentDirection.Incoming) && m.dstAccount.in(accounts)) {
+        updated = true
+        //if (m.dstBankData!.uploadState == Uploaded) {
+        //  throw "The uploaded payment $m is missing in the statement"
+        //} else {
+          m.dstBankData!.uploadState = Missing
+          m.touch
+          m.save
+        //}
+      }
+    }
+    if (!updated) Activity.current!.comment = "No new data found"
+    
+    accounts.foreach{ account =>
+      if (let rp = request.period) {
+        if (request.directions.contains(Incoming)) {
+           account.uploadedIncoming = if (let p = account.uploadedIncoming) Period(start = rp.start.min(p.start), end = rp.end.max(p.end)) else rp
+        }
+        if (request.directions.contains(Outgoing)) {
+           account.uploadedOutgoing = if (let p = account.uploadedOutgoing) Period(start = rp.start.min(p.start), end = rp.end.max(p.end)) else rp
+        }
+      }
+    }    
+        
+    ret
+  }
+
+}

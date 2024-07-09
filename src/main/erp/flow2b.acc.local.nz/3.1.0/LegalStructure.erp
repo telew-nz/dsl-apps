@@ -1,0 +1,22 @@
+inline trait NZLegalStructure {
+  field irdNumber: String?
+  field gstNumber: String?
+}
+ 
+inline entity NZCompany extends NZLegalStructure with ICorporation {
+  singular = "NZ Company"
+  plural = "NZ Companies"
+}
+
+inline entity NZTrust extends NZLegalStructure with ICorporation {
+  singular = "NZ Trust"
+  plural = "NZ Trusts"
+}
+inline entity NZSoleTrader extends NZLegalStructure with ISoleTrader {
+  singular = "NZ Sole Trader"
+  plural = "NZ Sole Traders"
+}
+inline entity NZPartnership extends NZLegalStructure with IPartnership {
+  singular = "NZ Partnership"
+  plural = "NZ Partnership"
+}

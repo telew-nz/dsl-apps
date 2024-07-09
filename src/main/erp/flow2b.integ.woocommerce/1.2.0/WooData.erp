@@ -1,0 +1,70 @@
+back interface WooData {
+  field error: ErrorData?
+}
+back interface WooResponse[T extends WooData] {
+  func create: [T]?
+  func update: [T]?
+  func delete: [T]? 
+  func check(request: AnyRef): Void = {
+     if (let err = all*.error) throw err.join(", ") + "\n$(request.json)"
+  }
+  func all: [T]? = create + update + delete
+}
+back class WooImage{
+  extFieldNaming = Underscore
+  field id: Int?
+  field src: Url?
+  field position: Int? {extRequired}
+  field file: Image? {transient}
+  object func create(service: WooCommerceIntegration, file: Image, pos: Int?): WooImage = {
+    if (let iid = service.extId(file)) WooImage(id = iid, position = pos)
+    else WooImage(src = file.url!, position = pos, file = file)
+  }
+}
+back class WooProductCategory {
+  field id: Int
+}
+back class WooProductAttr {
+  field id: Int?
+  field name: String
+  field position: Int? {extRequired}
+  field visible: Bool
+  field variation: Bool
+  field options: [String]?
+}
+back class WooProductAttrValue {
+  field id: Int?
+  field name: String
+  field option: String?
+}
+back class WooMetaData {
+  field key: String
+  field value: String?
+}
+
+back class ErrorData {
+  field code: String
+  field message: String
+  func toString = "$code: $message"
+}
+
+back class WooAddress extends EAddress[Int] {
+  extFieldNaming = Underscore
+  field firstName: String?
+  field lastName: String?
+  field company: String?
+  field address_1: String?
+  field address_2: String?
+  field city: String?
+  field state: String?
+  field postcode: String?
+  field country: String?
+  field email: String?
+  field phone: String?
+  
+  func personFullName = "$firstName $lastName".trim
+  func companyName = company
+  func addressString = [address_1, address_2, city, state, postcode, country].filter(!isEmpty).join(" ")!
+  func phones = phone.toSeq
+  func emails = email.toSeq
+}

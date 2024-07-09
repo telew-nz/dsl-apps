@@ -1,0 +1,5 @@
+access Dispatcher {
+  menu Dispatch {
+    entity IOutgoingDelivery = "Outgoing Deliveries"
+  }
+}

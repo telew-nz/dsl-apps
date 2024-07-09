@@ -1,0 +1,27 @@
+extend enum CommChannel {
+  case EMail(
+    findContacts = {
+      IEmailContact.all.filter(c => c.email =%= address).result.get
+    }
+    makeContact = {
+      IEmailContact.all.find(c => c.email =%= address).result.get
+        .or{
+          if (let website = address("@" .. ]) {
+            if (let addressee = WebsiteContact.all.find(domain =%= website).result.get?.addressee) {
+              if (!name || !name.contains(" ") || name == addressee.title || !addressee.is[Company] || type == "Role") {
+                addressee.addEmail(address!)
+              } else {
+                addressee.as[Company]!.addPerson(name.replace(addressee.title, "").replace("()", "").trim)!.addEmail(address!)
+              }
+            } else if (let companyName = company) {
+              let company = Company.all.find(c => c.title =%= companyName).result.get.alt(Company(title = companyName))
+              company.addWebsite(website.lower)
+              company.addPerson(name.replace(company, "").replace("()", "").trim)!.addEmail(address!)
+            }
+          }
+        } 
+        .alt(RawEmailContact(addresseeName = name, email = address!))
+    }
+    defaultRecipients = IUser.current.as[MailService]!.defaultRecipients
+  ) {background = "#fff" icon = "envelope" }
+}

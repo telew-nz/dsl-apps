@@ -1,0 +1,15 @@
+enum RentDurationUnit(duration: Duration, scale: Int?, symbol: String, mainUnit: RentDurationUnit?) extends Unit {
+  case Day(duration = 10_hour, scale = 0, symbol = "day")
+  case HalfDay(duration = 5_hour, scale = 0, symbol = "½day")
+  case Minimum(duration = 2_hour, scale = 0, symbol = "minimum")
+  case Week(duration = 60_hour, scale = 0, symbol = "week", mainUnit = Day)
+  object func default: RentDurationUnit = RentDurationUnit.all.first!
+  
+  func position: UnitPosition = SuffixWithSpace
+}
+
+object Night extends Unit {
+  func position: UnitPosition = SuffixWithSpace
+  func symbol: String = "night"
+  func scale: Int? = 0
+}

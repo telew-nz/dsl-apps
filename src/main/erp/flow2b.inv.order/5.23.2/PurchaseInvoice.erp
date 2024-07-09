@@ -1,0 +1,74 @@
+entity PurchaseInvoice extends Invoice with DebtCredit {
+  background = "#d68400"
+    
+  field primary: Bool
+  const ref field n: Int? = if (primary) order.n else increment(Order.gen)
+  field orders: [PurchaseOrder] by invoices
+  field items: [IPurchaseItem]? inline by invoice {deleteCascade = false}
+
+  ref compute number: String {
+    value = manualNumber.alt(if (primary) "PI" + orders.first.nakedN else "PI" + n)
+    update = {manualNumber = new}
+  }
+  func isPurchase: Bool = true
+  func cashFlowCategory: CashFlowCategory = Purchases
+  func startingBalance: Money[currency]? = total
+  compute vendor = counterparty
+  ref compute counterparty: LegalEntity = order.vendor
+  func paidAmount = creditRepaid
+  func cancelable = true    
+  compute customer = legalEntity
+  ref compute legalEntity = order.customer
+  func title = "$number $(try? counterparty?.title)"
+    
+  func setoffs: [Setoff]? = debits
+  func cancel(): Void = cancelationDate = Date.now
+  func creditOriginLedger(setoff: Setoff): Future[Ledger] = {
+    LDebt(account = AccountsPayable, origin = this, journal = setoff.journal, date = setoff.date, 
+          trAmount = setoff.amount, counterparty = vendor, currency = currency)
+  }
+  register payableLedger = LDebt(account = AccountsPayable, origin = this, journal = this, trAmount = -total, counterparty = vendor, currency = currency)
+  register prepaidLedgers: [LDebt]? <- items
+    .groupBy(delivery).agg(orderTotal.sum).toSeq
+    .filter(orderTotal)
+    .map{
+      let am <- orderTotal.to[Money[currency]](date)
+      LDebt(account = PrepaidExpenses, origin = _.delivery?.as[Journal].alt(this), journal = this, 
+            trAmount = am, counterparty = customer, currency = currency)
+    }
+    .allCompleted
+  register payableCancelLedger: LDebt? = if (let d = cancelationDate) payableLedger.copy(date = d, trAmount = -payableLedger.trAmount) else null
+  register prepaidCancelLedger: [LDebt]? = if (let d = cancelationDate) prepaidLedgers.map(_.copy(date = d, trAmount = -_.trAmount)) else null  
+  
+  func onSave = {
+    if (primary) n = order.n 
+    else if (!n) n = increment(Order.gen)
+    orders*.touch
+    debits*.debit*.touch
+  }
+  
+  view invoiceHeader = grid(width = 1.2){
+    statusesView
+    row {total  date paymentTerms}
+    row {gstAmount dueDate  space}
+    row {totalWithoutGst cancelationDate  space}
+    debits >> field(label = "Payments", singular = "Payment")
+  }
+  view form = nav{grid(width = 1.2, labels = Top) {
+    row{number vendor customer}
+    invoiceHeader
+    orders
+    items >> list(editMode = AlwaysRead){form}  
+  }
+    generalLedgerButton
+  } 
+  object view list = PurchaseInvoice.all >> nav{list{grid(labels = None) {
+    row{number, date.as[Date[day]]!, vendor, total}
+    statusesView
+  }}}
+  view statusesView = x {
+    creditPaymentState
+    creditUnpaid + " unpaid" >> field(visible = creditState == PartiallyReconciled)
+  }
+  view ref = x{title statusesView}
+}

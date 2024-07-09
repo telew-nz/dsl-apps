@@ -1,0 +1,12 @@
+role FixedAssetAccountant {
+  entity FixedAsset = readWrite
+  entity AssetCreation = readWrite
+    
+  menu FixedAssets {
+    entity FixedAsset = "Assets"
+    trait BaseAssetOperation = "Operations"
+    report AssetMovement
+    report AssetProductMovement = "Product Movements"
+  }
+}
+ 

@@ -1,0 +1,31 @@
+trait ProductAttr extends InlineEntity {
+  func attrName: String = "ProductAttr.name"
+  func attrSlug: String? = ""
+}
+trait ProductAttrTerm extends Entity with NewEngine {
+  object extends ProductAttr
+}
+
+class ProductAttrOptions(system field attr: ProductAttr, options: [ProductAttrTerm]?) 
+
+
+productAttr ColorItem(fieldName = "color", plural = "Colors") {
+  ref field color: String?
+}
+extend entity ColorItem extends ProductAttrTerm {
+  impl view form = nav {grid {
+    title
+    x (label = "Color code") {
+      "----" >> field(background = color, color = color, stretch = 0)
+      color >> field (stretch = 1)
+    }
+    desc
+  }}
+  impl view ref = x(flow = false) {"----" >> field(background = color, color = color, stretch = 0) title >> field (stretch = 1) }
+}
+
+productAttr Size 
+
+productAttr ProdCondition (fieldName = "condition", singular = "Product Condition", plural = "Product Conditions") {
+  field isNew: Bool
+}

@@ -1,0 +1,4 @@
+report Balance {
+  plural = "Balance"
+  view list = GeneralLedger.current
+}

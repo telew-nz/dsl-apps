@@ -1,0 +1,26 @@
+/*extend trait CashMovement {
+  extend report Report {
+    extend view list = extend("nav") {
+	  button("Statement Uploads") {BankStatementUpload.Report().list.open}
+      add("Upload") {BankStatementUpload().form.open}
+    }
+  }
+}*/
+
+extend trait CashMovement {
+  const field uploads: [BankStatementUpload]? by payments {label = "Bank Upload"}  
+}
+
+extend entity IncomingPayment {
+  extend view form = uploads
+}
+extend entity OutgoingPayment {
+  extend view form = uploads
+}
+extend entity CashTransfer {
+  //extend view stateView = uploadState
+  extend view form = row { 
+    outgoingBankData.uploadState incomingBankData.uploadState
+  }
+  extend view form = uploads
+}

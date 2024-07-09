@@ -1,0 +1,61 @@
+back class UploadVariationsJob extends SystemJob {
+  field service: WooCommerceIntegration
+  field superProduct: ICustomerSuperProduct
+  field change: BatchChange[ProductUpdate[ICustomerComplexProduct]] 
+  func do: Future[Any] = {
+    let u = BatchVariationUpdate(
+      create = change.created.map(VariationData.create(service, _)),
+      update = change.updated.map(VariationData.create(service, _)),
+      delete = change.deleted*.product*.extId(service)
+    )
+    let response <- service.https("/products/$(superProduct.extId(service))/variations/batch").post(u.json)
+    let r = response.body!.parseJson[BatchVariationResponse]
+    change.updateExtIds(service, r.create.map(id))
+    u.create*.image.zip(r.create*.image, left.file?.updateExtId(service, right.id))
+    u.update*.image.zip(r.update*.image, left.file?.updateExtId(service, right.id))
+    r.check(u)
+  }
+}
+
+extend trait ICustomerProduct {
+  back func wooAttrValues(service: WooCommerceIntegration): [WooProductAttrValue]? = attrTerms.map{v =>
+    let attrId = v.object.extId(service)!
+    WooProductAttrValue(id = attrId, name = v.object.attrName, option = v.title)
+  }
+}
+ 
+back class BatchVariationUpdate {
+  field create: [VariationData]?
+  field update: [VariationData]?
+  field delete: [Int]?
+}
+
+back class BatchVariationResponse extends WooResponse[VariationData] {
+  field create: [VariationData]?
+  field update: [VariationData]?
+  field delete: [VariationData]?
+}
+back class VariationData extends WooData {
+  extFieldNaming = Underscore
+  field id: Int?
+  field sku: String
+  field regularPrice: String? 
+  field salePrice: String? 
+  field stockQuantity: Int?
+  field manageStock: Bool
+  field image: WooImage? {extRequired}
+  field attributes: [WooProductAttrValue]? {extRequired}
+ 
+  object func create(service: WooCommerceIntegration, u: ProductUpdate[ICustomerComplexProduct]): VariationData = {
+    let p = u.product
+    VariationData(
+      id = service.extId(u.product), sku = p.sku,
+      regularPrice = u.price.regular, salePrice = u.price.current, 
+      stockQuantity = u.stock, manageStock = true, 
+      image = p.variationPhotos.first.map{f => 
+        WooImage.create(service, f, 0)
+      },
+      attributes = p.wooAttrValues(service)
+    )
+  }
+}

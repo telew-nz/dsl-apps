@@ -1,0 +1,73 @@
+entity OutgoingPayment extends Payment with IOutgoingPayment {
+  background = "#d68400"
+  func legalEntity = payer
+  func sourceAccount: FinanceAccount? = account
+  func destinationAccount: FinanceAccount? = null
+ 
+  func startingBalance: Money[currency]? = expenses*.amount.sum - amount
+  compute unreconciledAmount: Money[currency]? = -balance
+    
+  func title = "$number $payee"
+  func number: String = "OP" + n 
+  
+  func counterparty: LegalEntity = payee
+  ref field payer: LegalEntity {
+    available(Ref).with(accounts)
+    default =? (try? origin!.legalEntity).or(LegalEntity.ours.onlyOne)
+    from = LegalEntity.ours
+    update = {
+      this.account =? new.accounts.onlyOne
+    }
+  }
+  list field expenses: [PaymentExpense]? inline by payment
+  ref field payee: LegalEntity =? try? origin!.counterparty!
+  func isTheir = payee.isTheir
+  func isIncoming: Bool = false
+  func onSave = {
+    credits*.credit*.touch
+  }  
+  list compute recRefs: [Entity]? = expenses*.expense + credits*.credit + debits*.debit
+  func origins: [Setoff]? = credits
+  func returns: [Setoff]? = debits
+  object view list = OutgoingPayment.all >> nav{list{grid(labels = None, width = 1.2){
+    row{number, date.as[Date[day]]!, payee, account, space, recRefs >> list(frame = false){_ >> field(title = title)} }
+    row{stateView >> field(width = 0.6), -amount >> field(width = 0.2), space(width = 0.4)}
+  }}}
+  func mainLedgers: Future[[Ledger]?] = {
+    if (let exs = expenses) {
+	  let es <- exs*.expenseLedger.allCompleted
+      cashLedgers([CashFlowAmount(category = GeneralExpenses, amount = exs*.amount.sum)]) + es + exs*.gstLedger
+    } else cashLedgers([])
+  }
+  func isPurchase = true
+
+  view form = nav{grid{
+      number
+      date
+      stateView >> field(label = "State")
+      unreconciledAmount
+      payer
+      payee
+      account
+      
+      amount >> field(canEditUnit = true)
+      accountAmount
+      expenses >> list {grid {
+        row{expense amount gstEditor}
+      }}
+      credits >> field(label = "Origins" singular = "Origin")
+      debits >> field(label = "Returns" singular = "Return")
+      bankData
+       
+    }
+    button("Convert to Transfer", visible = !origin) {
+      let from = account
+      let outcome = amount
+      let r = convertTo(CashTransfer)
+      r.from = from
+      r.outcome = outcome
+    }   
+    generalLedgerButton
+  }
+  view stateView = x{reconcileState}
+}

@@ -1,0 +1,12 @@
+entity PickUpPoint extends IMutualLocation with ScheduleAssignee {
+  override field title: String
+  impl func locationAddress: Address? = address
+  field address: Address?
+  
+  impl view form = nav{grid(labels = Top){
+    title >> field(label = "", fontStyle = H1)
+    address
+    schedule
+    contacts
+  }}
+}

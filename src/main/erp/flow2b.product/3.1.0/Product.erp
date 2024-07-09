@@ -1,0 +1,81 @@
+trait IBaseProduct {
+  func isValid: Bool = true
+  func obsolete: Bool = false
+  func isTangible: Bool
+  func sku: String
+  func alwaysAvailable: Bool = !isTangible 
+    
+  func subProducts: [IProduct]?
+  func superProduct: ISuperProduct
+  
+  func description: Text?
+  func unit: ProductUnit = Item
+  func altUnits: [ProductAltUnit]? = []
+  func units: [ProductUnit] = (unit + altUnits*.unit).toSet
+  func items: [IProductItem]?
+  func gstRate(vendor: Actor): Percent[2]??
+  func hasGst(vendor: Actor): Bool = gstRate(vendor)
+}
+
+trait ISuperProduct extends IBaseProduct {
+  plural = "Products"
+  singular = "Product"
+  width = 0.45
+  
+  object field gen: Int?
+  const field n: Int = increment(ISuperProduct.gen)
+  func superProduct: ISuperProduct = this
+  func description: Text? = ""
+  field manualSku: String?
+  ref compute sku: String {
+    value = manualSku.alt(n.toString)
+    update = {
+      manualSku = new
+    }
+  }
+  
+  field categories: [ProductCategory]? by products {
+    available(All).for(All)
+  }
+    
+  func forSale: Bool = true
+  func items: [IProductItem]? = subProducts*.items
+    
+  field gstRate: GstRate? = null
+  field specialGstRate: Percent[2]? {
+    visible = gstRate == Special
+  }
+  ref compute getGstRate: Percent[2]?? = {
+    if (gstRate == Special) specialGstRate
+    else if (gstRate) gstRate!.rate 
+  }
+  func gstRate(vendor: Actor): Percent[2]?? = if (vendor.hasGst) {
+    getGstRate.or(vendor.defaultGstRate.rate)
+  }
+  report Report {
+    view list = ISuperProduct.all >> nav{list{}}
+  }
+}
+
+
+trait IProduct extends IBaseProduct {
+  plural = "Products"
+  singular = "Product"
+  width = 0.45
+    
+  func subProducts: [IProduct]? = [this]
+  func description: Text? = superProduct.description
+  func items: [IProductItem]? = []
+  func gstRate(vendor: Actor): Percent[2]?? = superProduct.gstRate(vendor)
+  func sku: String = superProduct.sku
+}
+
+trait IBasicProduct extends IProduct with ISuperProduct {
+  func alwaysAvailable: Bool = !isTangible 
+  func description: Text? = ""
+  func items: [IProductItem]? = []
+
+  func gstRate(vendor: Actor): Percent[2]?? = if (vendor.hasGst) {
+    getGstRate.or(vendor.defaultGstRate.rate)
+  }
+}

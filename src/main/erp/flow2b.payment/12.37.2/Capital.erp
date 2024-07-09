@@ -1,0 +1,51 @@
+inline entity AdditionalCapital extends IPReason {
+  icon = "hand-holding-usd"
+  field currentAccount: CurrentAccount? {
+    from = payment.legalEntity.accounts*.as[CurrentAccount]
+  } 
+  impl field amount: UMoney[payment.currency] =? payment.unreconAmount.abs
+  impl func cashFlows = [CashFlowAmount(cashFlow = Capital, amount = amount)] 
+  
+  impl func ledgers: Future[[Ledger]?] = {
+    if (let curAcc = currentAccount) {
+      let am <- amount.to[Money[curAcc.currency]](payment.date)
+      [LCash(account = CurrentAccounts, finAccount = curAcc, journal = payment, 
+             trAmount = -am, cashFlow = Capital)]
+    } else {
+      let baseAmount <- amount.to[Money[payment.legalEntity.getCurrency]](payment.date)
+      [LCounterparty(account = Capital, counterparty = payment.payer, 
+                     journal = payment, trAmount = -baseAmount)]
+    }
+  }
+  
+  impl view form = grid {
+    h3("Additional Capital")
+    row{currentAccount >> field(width = 0.666) amount >> field(align = Right)}
+  }
+}
+
+inline entity Withdrawal extends OPReason {
+  icon = "hand-holding-usd"
+  
+  field currentAccount: CurrentAccount? {
+    from = payment.legalEntity.accounts*.as[CurrentAccount]
+  } 
+  impl field amount: UMoney[payment.currency] =? payment.unreconAmount.abs
+  impl func cashFlows = [CashFlowAmount(cashFlow = Capital, amount = amount)] 
+  
+  impl func ledgers: Future[[Ledger]?] = {
+    if (let curAcc = currentAccount) {
+      let am <- amount.to[Money[curAcc.currency]](payment.date)
+      [LCash(account = CurrentAccounts, finAccount = curAcc, journal = payment, 
+             trAmount = am, cashFlow = Capital)]
+    } else {
+      let baseAmount <- amount.to[Money[payment.legalEntity.getCurrency]](payment.date)
+      [LCounterparty(account = Withdrawals, counterparty = payment.payee, journal = payment, trAmount = baseAmount)]
+    }
+  }
+  
+  impl view form = grid {
+    h3("Withdrawal")
+    row{currentAccount >> field(width = 0.666) amount >> field(align = Right)}
+  }
+}

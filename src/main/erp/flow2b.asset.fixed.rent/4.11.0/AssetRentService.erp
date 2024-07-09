@@ -1,0 +1,55 @@
+entity AssetRentService extends IBasicProduct {
+  background = "#649023"
+  func title = "Rent $product"
+  func isTangible = false
+  ref field product: ISubProduct by rentService {
+    from = ISubProduct.all.filter(isTangible && unit == Item)
+  }
+  func unit: ProductUnit = ProductUnit.Item
+  field serviceDescription: Text? {
+    label = "Description"
+  }
+  func description: Text? = serviceDescription.or(product.description)
+  
+  compute allAssets {
+    value = product.subProducts*.as[IProduct]*.assets
+    label = "Assets"
+  }
+  
+  view form = nav{
+    grid (labels = Top) {
+      product
+      categories 
+      serviceDescription
+      pricesView >> field(label = "Prices")
+      allAssets
+    }
+    button("Asset Product Movements") {
+      AssetProductMovement(product = product).list.open
+    }
+    salesOrdersButton
+  }
+  func subProducts = [this]
+  
+  object view list = AssetRentService.all >> nav{list{grid(labels = None) {
+    row{title >> field(width = 0.8) salesPrice >> field(width = 0.2)}
+  }}}
+  view traitItem = grid(labels = None) {
+    row {title >> field(width = 0.8) salesPrice >> field(width = 0.2)}
+  }
+}
+
+extend trait IFixedProductAsset {
+  compute rentService: AssetRentService? = product.rentService
+ 
+  //func onSave = {
+  //  if (!rentService) {
+  //    AssetRentService(product = product.superProduct).save
+  //  }
+  //}
+}
+
+extend entity FixedAsset {
+  extend view form = rentService
+}
+ 

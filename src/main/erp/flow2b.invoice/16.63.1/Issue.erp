@@ -1,0 +1,121 @@
+object ITInvoiceNotIssued extends IssueType[IOrder] {
+  impl func title = "Invoice not issued" 
+  impl func hasIssue(item: IOrder) = item.issueState == InvoiceNotIssued && !item.canceled && item.shouldBeIssued
+  impl func fixes(item: IOrder) = {
+    [Fix(text = "Issue $(item.issueWhat)", acts = [Act(label = "Issue $(item.issueWhat)", do = item.issue())])]
+  }
+}
+object ITInvoiceModified extends IssueType[IOrder] {
+  impl func title = "Invoice modified" 
+  impl func hasIssue(item: IOrder) = item.issueState == InvoiceModified
+  impl func fixes(item: IOrder) = [
+    Fix(text = "Issue $(item.issueWhat)", acts = [Act(label = "Issue $(item.issueWhat)", do = item.issue(), icon = "receipt" )]),
+    Fix(text = "In the case when it was accidentally issued, delete the original invoice and issue again"),
+    Fix(text = "Rollback modifications", acts = [Act(label = "Rollback", color = "#c00", icon = "undo", do = Query(item).foreach{
+      rollbackInvoice()
+    })])
+  ]
+}
+
+object ITSOPaymentOverdue extends IssueType[ISalesOrder] {
+  field after: Duration[day]? {
+    label = "Show issue after due date"
+    default = 2_day
+  }
+  impl func title = "Invoice Overdue" 
+  impl func hasIssue(item: ISalesOrder): Bool = {
+    item.procState != AwaitingReply && item.invoices.exists(hasOverdueIssue)
+  }
+  impl func defaultLevel = Warning
+  impl func fixes(item: ISalesOrder) = {
+    (if (
+      !item.issues.contains(ITMessageDelivery) && 
+      !item.issues.contains(ITNotifyOnHold) && 
+      OverdueInvoice.mode != Inactive
+      let ois = item.invoices.filter(oi =>
+        oi.hasOverdueIssue && 
+        !item.overdueActivities.contains(oi)
+      )
+    ) [
+      Fix(text = "Send notification to the customer", acts = ois.map{i =>
+        Act(label = if (ois.onlyOne) "Overdue Notification" else "$(i.name) $(i.number) Overdue", icon = "paper-plane", do = back{
+          OverdueInvoice.sendManual(i)
+        } )
+      })
+    ]) +
+    item.waitForReplyFixes("Contact the customer, wait for a reply and follow up if unpaid")
+  }
+}
+
+object ITPOToPay extends IssueType[IPurchaseOrder] {
+  field before: Duration[day]? {
+    label = "Show issue before due date"
+    default = 2_day
+  }
+  impl func title = "Purchase Order to Pay" 
+  impl func defaultLevel = Warning
+  impl func hasIssue(item: IPurchaseOrder): Bool = item.invoices.exists(hasOverdueIssue)
+  impl func fixes(item: IPurchaseOrder) = [Fix(text = "Pay to the vendor")]
+}
+
+object ITOrderToRefund extends IssueType[ISalesOrder] {
+  impl func title = "Sales Order to Refund" 
+  impl func hasIssue(item: ISalesOrder) = item.unpaidAmount < 0
+  impl func fixes(item: ISalesOrder) = [
+    Fix(text = "Refund $(item.unpaidAmount.abs) to $(item.payer)")
+  ]
+  impl func defaultLevel = Warning
+  impl func roles(item: ISalesOrder) = [BusAdmin]
+}
+
+extend object ITUnreconPayment {
+  extend func fixes(item: Payment) = {
+    let da = -item.debtAmount
+    let fxs <- super.fixes(item)
+    if (let ip = item.as[IncomingPayment], let payer = ip.payer) {
+      let orders <- ISalesOrder.all
+        .filter(so => so.payer?.legalEntity == payer && so.invoiceTotal > so.invoices.last?.totalDue)
+        .result
+      
+      if (let orders) {
+        Fix(text = "Issue invoice", acts = orders.map {so => 
+          Act(ref = so, label = "Issue Invoice", do = {
+            let so: ISalesOrder = so
+            let n <- back {
+              so.issueInvoice(
+                so.invoiceTotal.min(so.invoices.last?.totalDue + da),
+                so.dueDate.alt(Date.now).max(Date.now)
+              )
+            }
+            n.form.open
+          })
+        }) + fxs
+      } else {
+        fxs
+      }
+    } else {
+      fxs
+    }
+  }
+}
+ 
+
+extend entity Invoice extends DeferredJob {
+  impl func service = NotifyService
+  impl func jobDate = if (let dueDate){
+    if (dueDate > now) dueDate 
+    else if (!isPurchase) {
+      let d = dueDate + ITSOPaymentOverdue.after
+      if (d > now) d
+    }
+  }
+  func hasOverdueIssue = invoiceToPay && dueDate && 
+    if (isPurchase) dueDate! - ITPOToPay.before <= Date.now else dueDate! + ITSOPaymentOverdue.after <= Date.now
+  impl func do = {
+    touch.save
+    order.updateDashboard
+    if (hasOverdueIssue) {
+      OverdueInvoice.send(this)
+    }
+  }
+}

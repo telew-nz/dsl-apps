@@ -1,0 +1,28 @@
+extend trait IProduct {
+  compute stocks: [StockRegister]? = {
+    if (isTangible) StockRegister.current.filter(good == this) 
+    else []
+  }
+  compute movements: [StockRegister]? = {
+    if (isTangible) StockRegister.all.filter(good == this).sortBy(sort.desc, date.desc)
+    else []
+  }
+  func stock(legalEntity: LegalEntity, store: Store): StockRegister? = {
+    if (isTangible) stocks.find(i => i.legalEntity == legalEntity && i.store == store)
+    else null
+  }
+  list compute stock: Stock = Stock.sum(unit, stocks)
+  
+  view movementsButton = button("Movements" visible = isTangible) { GoodsMovement(good = this).list.open}
+  view stocksView = stocks >> list (mode = Static, visible = isTangible) {
+    grid(labels = None, width = 1) {
+      row{store >> field(width = 0.2) legalEntity  >> field(width = 0.2) stock.shortView  >> field(width = 0.6)}
+    }
+  }
+  
+  func onStockUpdated(register: StockRegister): Void = {
+    touch
+    superProduct.touch
+  }
+}
+

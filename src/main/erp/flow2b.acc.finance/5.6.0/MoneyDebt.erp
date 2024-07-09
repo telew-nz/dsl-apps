@@ -1,0 +1,116 @@
+acctemplate MoneyDebt(type = singleAccount) {
+  key field currency: Currency
+  key field counterparty: LegalEntity
+}
+
+class OriginQueueItem {
+  field origin: DebtOrigin
+  field queueDate: Date
+  field dueDate: Date?
+  field amount: Money 
+}
+
+extend register LMoneyDebt extends LDebt {
+  field dueDate: Date?
+  stored compute queue: [OriginQueueItem]?
+  stored compute usedDebt: [DebtOrigin: Money]?
+  
+  func debtItems: [DebtItem]? = queue.map(i =>
+    DebtItem(origin = i.origin, dueDate = i.dueDate, amount = i.amount.as[Money[currency]]!)
+  )
+  back func addOrigin(amount: Money): Void = {
+    queue = (queue + OriginQueueItem(origin = origin, amount = amount, queueDate = dueDate.alt(date), dueDate = dueDate)).sortBy(queueDate)
+  }
+  
+  func origin: DebtOrigin = journal.as[DebtOrigin]!
+  
+  const system field backLinks: [DebtOrigin]? by fwdLinks
+  stored compute backLinkAmounts: [Money]?
+  func backLinkAmount(origin: DebtOrigin): Money? = if (let i = backLinks.indexOf(origin)) {
+    backLinkAmounts.apply(i)
+  }
+  
+  event onSave = {
+    backLinks = []
+    backLinkAmounts = []
+   
+    queue = prev?.queue
+    usedDebt = prev?.usedDebt
+    if (let amount = amount - usedDebt(origin)) {
+      enqueOrigin(amount = amount)
+    }
+    usedDebt = usedDebt - origin
+    journal.touch
+  }
+  
+  private back func hasSameDateOrigin(origin: DebtOrigin): Bool = {
+    if (prev?.date == date) {
+      prev!.journal == origin || prev!.hasSameDateOrigin(origin)
+    } else false
+  }
+  
+  private back func dequeue(amount: Money): OriginQueueItem? = {
+    if (let manLinks = origin.allManLinks*.allOrigins) {
+      var r: OriginQueueItem? = null
+      let queue1 = queue.filter{i => 
+        if (r) true
+        else if (manLinks.contains(i.origin)) {
+          r = i
+          false
+        } else true
+      }
+      if (r) {
+        queue = queue1
+        r
+      } else {
+        if (let r = manLinks
+          .mapOpt{l =>
+            if (l.debtCounterparty == this.counterparty && l.legalEntity == this.legalEntity) {
+              if (let am = l.debtAmount - usedDebt(l)) {
+                if ((l.journalDate > this.date || (l.journalDate == this.date && !hasSameDateOrigin(l))) && (am > 0) != (amount > 0)) {
+                  OriginQueueItem(origin = l, queueDate = l.journalDate, amount = if (am < 0) -(-am).min(amount) else am.min(-amount))
+                }
+              }
+            }
+          }.first
+        ) {
+          usedDebt = usedDebt.updated(r.origin, _ + r.amount)
+          r
+        } else {
+          r = queue.first
+          queue = queue.drop(1)
+          r
+        }
+      }
+    } else {
+      let r = queue.first
+      queue = queue.drop(1)
+      r
+    }
+  }
+  back func enqueOrigin(amount: Money?): Void = {
+    if (let a = amount) {
+      if (let f = dequeue(a)) {
+        if ((f.amount > 0) == (a > 0)) {
+          queue = f + queue
+          addOrigin(a)
+        } else {
+          let isFinal = f.amount.abs > a.abs
+          if (account.money) {
+            if (let o = f.origin?.as[DebtOrigin]) {
+              backLinks = backLinks + o
+              backLinkAmounts = backLinkAmounts + (if (isFinal) -a else f.amount)
+            }
+          }
+          if (isFinal) { 
+            queue = OriginQueueItem(f, amount = (f.amount + a)!) + queue
+          } else {
+            enqueOrigin(f.amount + a)
+          }
+        }
+      } else {
+        addOrigin(a)
+      }
+    } 
+  }
+}

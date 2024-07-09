@@ -1,0 +1,63 @@
+entity IncomeTaxReturn extends TaxReturn with Journal {
+  func title = "IR $(year.unformattedString) $legalEntity"
+  ref compute year = period.end.year
+  field date: Date {
+    default = now
+    label = "Return date"
+  }
+  func journalDate = date
+  field period: Period = Period(start = Date.now.start(of = DateUnit.year) - 9_month, end = Date.now.start(of = DateUnit.year) + 3_month)
+  ref field legalEntity: OurLegalEntity =? OurLegalEntity.onlyOne
+  
+  field ir4: IR4Y18 {visible = id}
+  field ir10Income: IR10Y14Income {visible = id}
+  field ir10Balance: IR10Y14Balance {visible = id}
+  view form = nav{
+    tabs {
+      grid(labels = Top, label = "Settings"){
+        date
+        period
+        legalEntity
+      }
+      ir4 >> field(label = "IR4")
+      ir10Income >> field (label = "IR10: Income Statement")
+      ir10Balance >> field (label = "IR10: Balance Sheet")
+    }
+    button("Recalculate", visible = id) {
+      back {
+        this.recalc()
+      }
+    } 
+    generalLedgerButton
+  }
+  
+  event onSave = {
+    let _ <- if (created) {
+      recalc()
+    }
+    ledgers = 
+      if (let tax = ir4.tax) {
+        [LTax(tax = IncomeTax, journal = this, currency = NZD, amount = -tax)]
+      } +
+      if (let tax = ir4.f32b + ir4.provTaxBalance) {
+        [LTax(tax = ProvisionalTax, journal = this, currency = NZD, amount = -tax)]
+      } +
+      if (let tax = ir4.tax + ir4.f32b + ir4.provTaxBalance) {
+        [LBasic(account = IncomeTaxExpense, journal = this, amount = tax)]
+      }
+      
+  }
+  
+  register ledgers: [Ledger]?
+  
+  back func recalc(): Future[Void] = {
+    this.touch()
+    date = now
+    this.ir4 = IR4Y18()
+    ir10Income = IR10Y14Income()
+    ir10Balance = IR10Y14Balance()
+    let _ <- ir4.calc(this)
+    let _ <- ir10Income.calc(this)
+    ir10Balance.calc(this)
+  }
+}

@@ -1,0 +1,67 @@
+trait IBaseIncomingDelivery extends IDelivery  {
+  func deliverySrc: IStore? = null
+  func stockTypeSrc: StockType? = null
+  func incomingLegalEntity = legalEntity
+  func itemOrder = ("Date", deliveryDate)
+}
+
+trait IIncomingDelivery extends IDeliveryPath with IBaseIncomingDelivery {
+  singular = "Incoming Delivery"
+  plural = "Incoming Deliveries"
+  func pathDst = deliveryDst
+  report Report {
+    field activeOnly = true
+    field storeOperative: User? {
+      default = User.current.filter(is(StoreOperative))
+      from = User.all.filter(is(StoreOperative))
+    }
+    view list = IIncomingDelivery.all.filter(isFor(storeOperative, StoreOperative) && (!activeOnly || deliveryStatus.active)) >> nav{list(canAdd = false){}}
+  }
+  func dispatchDateLabel = if (this.hasInTransit) "Pickup Date" else deliveryDateLabel
+  func pathCanBeExecuted = !freightCompany
+  func activeRoles = if (!isBeforeInit) {
+    if (deliveryStatus == Planned || deliveryStatus == InTransit) [StoreOperative]
+  }
+}
+
+interface IIIncomingDeliveryItem extends IIDeliveryPItem {
+  func inDelivery: IBaseIncomingDelivery? = itemDelivery?.as[IBaseIncomingDelivery]
+  
+  func isReserved = true
+  func makeInStocks = if (let d = inDelivery) {
+    if (d.deliveryStatus != Canceled && active) {
+      product.tangibleProductQtys(baseQty).mapOpt(inStock(_.product, _.qty))
+    }
+  }
+  func makeInStockItems = if (let d = inDelivery) if(d.deliveryStatus != Canceled && active) {
+    productItems.map (
+      ProdItemReg(
+        item = _, sort = if (d.deliveryStatus == Delivered) 0 else (if (isReserved) 1 else 2), date = d.deliveryDate,
+        newLegalEntity = d.incomingLegalEntity, newStore = d.deliveryDst, 
+        newStockType = stockTypeDst,
+        doc = d, docItem = stockItem, qty = 1, priorityDate = d.priorityDate)
+    )
+  }
+    
+  func inStock(product: IProduct, baseQty: UQty): ProdReg? = {
+    if (let d = inDelivery) {
+      ProdReg(
+        legalEntity = d.deliveryReceiver!.our!, store = d.deliveryDst!, 
+        stockType = stockTypeDst!, product = product, 
+        docItem = stockItem, priorityDate = d.priorityDate,
+        sort = if (d.deliveryStatus != Delivered) 1 else 0, 
+        date = d.deliveryDate, doc = d, qty = baseQty
+      )
+    }
+  }  
+}
+trait IIncomingDeliveryItem extends IDeliveryPItem with IIIncomingDeliveryItem {
+  var product: ISubProduct 
+  
+  register inStocks: [ProdReg]? {
+    value = makeInStocks
+  }
+  register inStockItems: [ProdItemReg]? {
+    value = makeInStockItems
+  }
+}

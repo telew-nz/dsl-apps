@@ -1,0 +1,104 @@
+back object Conversion extends IConversion {
+  func do(version: [Int?]?) = {
+    if (version < [6,0,0]) {
+      renameEntity(ProductItem, "flow2b.asset.fixed.FixedAsset")
+      fixBackRefs(ProductItem, product)
+      ProductItem.all*.product.foreach{
+        if (let g = _.as[Good]) {
+          g.trackItems = Sometimes
+          g.save
+        }
+      }       
+      renameField(Maintenance, productItem, "asset")
+      Maintenance.all.update(start = field[Period](_, "period").start, end = field[Period](_, "period").end)
+      
+      renameEntity(Transfer, "flow2b.asset.fixed.AssetRegistration")
+      renameEntity(TransferItem, "flow2b.asset.fixed.AssetsPoolProduct")
+
+      Transfer.all.filter(!try? destination).foreach{t =>
+        let c = conv(t)
+        t.dispatchDate = c.field("date")
+        t.deliveryDate = c.field("date")
+        t.status = Delivered
+        t.destinationStockType = Asset
+        t.currency = default
+        t.destination = t.source
+        let pi = c.field[ConvEntity]("asset")
+        t.legalEntity = pi.field("legalEntity")
+        if (pi.dslTypeName == "flow2b.asset.fixed.AssetsPool") {
+          if (pi.field[ConvEntity?]("startup")) {
+            Ledger.all.filter(journal == t)*.delete
+            t.delete
+          } else {
+            pi.field[[TransferItem]]("items").foreach {ti =>
+              ti.delivery = t
+              ti.unit = ProductUnit.Item
+              ti.save
+            }
+            t.save
+          }
+        } else {
+          if (pi.field[ConvEntity?]("startupProduct")) {
+            Ledger.all.filter(journal == t)*.delete
+            t.delete
+          } else {
+            TransferItem(
+              delivery = t
+              product = pi.as[ProductItem]!.product,
+              productItems = [pi.as[ProductItem]!],
+              unit = Item
+              qty = 1
+            )
+            t.save
+          }
+        }
+      }
+      renameEntity(Transfer, "flow2b.asset.fixed.AssetDisposal")
+      Transfer.all.filter(!try? source).foreach{t =>
+        let c = conv(t)
+        t.dispatchDate = c.field("date")
+        t.deliveryDate = c.field("date")
+        t.status = Delivered
+        t.sourceStockType = Asset
+        t.currency = default
+        t.source = t.destination
+        let pi = c.field[ProductItem]("asset")
+        t.legalEntity = field(pi, "legalEntity")
+        TransferItem(
+          delivery = t
+          product = pi.product,
+          productItems = [pi],
+          unit = Item
+          qty = 1
+        )
+        t.save
+      }
+
+      renameEntity(Stocktake, "flow2b.asset.fixed.AssetsStartup")
+      renameEntity(StocktakeItem, "flow2b.asset.fixed.AssetsStartupProduct")
+      Stocktake.all.filter(!items).foreach {t =>
+        let c = conv(t)
+        if (let items = c.field[[StocktakeItem]?]("products")) {
+          recalcField(t, n)
+          t.items = items
+          items.foreach {i =>
+            let ci = conv(i)
+            i.product = ci.field("good")
+            i.unit = Item
+            i.productItems = ci.field("assets")
+            i.qty = i.productItems.count
+            if (!i.qty) {
+              i.delete
+            } else {
+              i.stocktake = t
+              i.save
+            }
+          }
+          t.stockType = Asset
+          if (t.items) t.save else t.delete
+        }
+      }
+      recreateAllRegisters
+    }
+  } 
+} 

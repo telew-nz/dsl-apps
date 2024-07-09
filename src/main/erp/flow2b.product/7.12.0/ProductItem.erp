@@ -1,0 +1,18 @@
+entity ProductItem {
+  ref field product: IProduct by productItems
+  
+  func title = "$product $num"
+  ref field num: String {label = "Serial Number"}
+  view form = nav {
+    grid {
+      product
+      num
+      extension
+    }
+    extension("nav")
+  } 
+  
+  view itemView = grid{
+    num
+  }
+}

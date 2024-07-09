@@ -1,0 +1,41 @@
+entity Service extends IBasicProduct {
+  func isTangible = false
+  field title: String
+  field obsolete: Bool
+  field description: Text?
+  func skuPrefix = "SRV"
+  ref field unit: ProductUnit = Item
+  func weightSize: IWeightSize? = null
+  
+  view form = nav{
+    tabs {
+      grid (labels = Top, label = "Main") {
+        photos >> field(height = 10, label = "")
+        title >> field(label = "")
+        row {sku refNum space}
+        unit
+        brands
+        categories
+        obsolete 
+        baseMainView
+        extension("main")
+        description
+      }
+      grid (labels = Top, label = "Related") {
+        kits
+        accessories >> list(frame = false)
+        principals >> list(frame = false)
+        extension("rel")
+      }
+      extension("tabs")
+      grid (labels = Top, label = "Other") {
+        altUnits
+        customerProductView
+        extension
+      }
+      
+    }
+    productNavView
+    extension("nav")
+  }
+}

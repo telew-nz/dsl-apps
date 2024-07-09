@@ -1,0 +1,42 @@
+inline trait IInvoiceItem {
+  func currency: Currency
+  func gstAmount: Money[currency]?
+  func invoiceQty: Qty? = 0
+  func orderAmount: Money[currency]? = invoiceAmount
+  func invoiceAmount: Money[currency]?
+  func gstRate: GstRateValue? 
+  func delivery: IDelivery?
+  func rowView: Layout[IInvoiceItem]
+  /*view revisionsView = revisions >> table{
+    header{label("Product", width = 0.55) 
+           label("Quantity", align = Right, width = 0.2) 
+           label("Price", align = Right, width = 0.2) 
+           label("Amount", align = Right, width = 0.25)}
+    body{row{rowView}}
+  }*/
+  func onSave = {
+    if (deleted && origin(revisions).filter(!deleted)) {
+      rollback
+      active = false
+    }
+  }
+  
+  func rowView(revision: InvoiceRevision): Layout[IInvoiceItem] = {
+    if (!revision.isNote) rowView
+    else if (!active && !revisions.contains(revision)) rowView.deletedLayout
+    else if (revisions.first == revision) {
+      if (let p = this.prev) rowView.modifiedLayout(p)
+      else rowView.createdLayout
+    } else rowView
+  }
+
+  func deliveryGroup: OrderDeliveryGroup = if (let d = delivery) ODGDelivery(delivery = d) else ODGEmpty
+  system field prev: IInvoiceItem? by next
+  system field next: IInvoiceItem? by prev
+  system field revisions: [InvoiceRevision]? by items
+  field active: Bool = true
+  func prev(revision: InvoiceRevision): this? = if (revision == revisions.first) prev else null
+  
+  func needsRevision: Bool
+  compute itemRevisions: [this]? = (prev?.itemRevisions + prev)*.as[this]
+}

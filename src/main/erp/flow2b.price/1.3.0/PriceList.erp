@@ -1,0 +1,28 @@
+entity PriceList extends PriceModel {
+  func title = "PL $vendor $date"
+  ref field date: Date[day] = now
+  ref field products: [ProductPrice]? inline by priceList {
+    available(All)
+  }
+  func contains(superProduct: ISuperProduct): Bool = products.exists(product == superProduct)
+  func superProductSalesPrice(superProduct: ISuperProduct): Future[Money?] = {
+    products.find(product == superProduct)?.price
+  }
+  view form = nav{grid{
+    date
+    vendor
+    products >> table {
+      product >> field(width = 0.7) price >> field(width = 0.3)
+    }
+  }}
+}
+  
+inline entity ProductPrice {
+  func currency = priceList.vendor.getCurrency
+  system field priceList: PriceList inline by products
+  field product: ISuperProduct
+  field price: Money[currency]
+    
+  func onSave = product.touch
+}
+

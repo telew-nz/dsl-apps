@@ -1,0 +1,32 @@
+report AssetsAvailability {
+  plural = "Assets Availability"
+  field category: ProductCategory?
+  field product: ISuperProduct?
+  field start: Date = Date.now
+  field end: Date = Date.now + 1_month
+  field unavailableOnly = false
+  view list = FAProdReg.at((true, Date.min))
+    .filter(
+         (!this.category || this.category.in(product.superProduct.categories))
+      && product.superProduct ==? this.product
+    )
+    .map(
+       product, legalEntity, store, availability = availableQtyPeriods(Date.now)
+    ).filter(
+      availability.count > 1 && (!unavailableOnly || availability.exists(!qty && period.start < this.end && period.end > this.start))
+    )
+  >> nav(background = "#649023"){table{
+      y(width = 0.3, label = "Product", margin = None){
+        y(stretch = 1){
+          product
+          legalEntity >> field(visible = !LegalEntity.ours.onlyOne)
+          store >> field(visible = !Store.ours.onlyOne)
+        }
+        graphLegend(syncGroup = "a") {}
+      }
+      availability >> graph(width = 1.0, label = "", height = 6, mode = StepLine, syncGroup = "a", legend = false) {
+        period.start >> x(start = this.start, end = this.end)
+        qty >> y(start = 0)
+      }
+    }}
+}

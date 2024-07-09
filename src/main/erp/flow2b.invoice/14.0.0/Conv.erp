@@ -1,0 +1,12 @@
+back object Conversion extends IConversion {
+  func do(version: [Int?]?) = {
+    if (version < [14,0,0]) {
+      renameEntity(Invoice, "InvoiceRevision")
+      renameField(IOrderItem, invoices, "revisions")
+      IOrderRevision.all.foreach{i => 
+         recalcField(i, totalNoGst)
+         recalcField(i, gstAmount)
+      }
+    } 
+  }     
+}    

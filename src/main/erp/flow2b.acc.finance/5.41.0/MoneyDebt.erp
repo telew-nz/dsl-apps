@@ -1,0 +1,158 @@
+acctemplate MoneyDebt(type = singleAccount) {
+  impl key field currency: Currency
+  key field counterparty: LegalEntity
+}
+
+class OriginQueueItem {
+  field origin: DebtOrigin
+  field queueDate: Date
+  field dueDate: Date?
+  field amount: Money 
+}
+
+extend register LMoneyDebt extends LDebt {
+  field dueDate: Date?
+  field amountDue: Money[currency]? = trAmount
+  stored compute queue: [OriginQueueItem]?
+  stored compute usedDebt: [DebtOrigin: Money]?
+  stored compute balanceDue: Money[currency]? = prev?.balanceDue + amountDue
+  
+  impl func debtItems: [DebtItem]? = queue.map(i =>
+    DebtItem(origin = i.origin, dueDate = i.dueDate, amount = i.amount.as[Money[currency]])
+  )
+  back func addOrigin(isDue: Bool, amount: Money): Void = {
+    queue = (queue + OriginQueueItem(
+      origin = if (isDue) origin else origin.mainOrigin, 
+      amount = amount, 
+      queueDate = if (isDue) dueDate.alt(date) else date + 100_year, 
+      dueDate = if (isDue) dueDate else null)
+    ).sortBy(queueDate)
+  }
+  
+  impl func origin: DebtOrigin = journal.as[DebtOrigin]!
+  
+  const system field backLinks: [DebtOrigin]? by fwdLinks
+  stored compute backLinkAmounts: [Money]?
+  func backLinkAmount(origin: DebtOrigin): Money? = if (let i = backLinks.indexOf(origin)) {
+    backLinkAmounts.apply(i)
+  }
+  
+  impl event onSave = {
+    backLinks = []
+    backLinkAmounts = []
+   
+    origin.debtAllowance = 0
+    queue = prev?.queue
+    usedDebt = prev?.usedDebt
+    if (let amount = amountDue - usedDebt(origin)) {
+      enqueOrigin(isDue = true, amount = amount)
+    }
+    if (let amount = trAmount - amountDue) {
+      enqueOrigin(isDue = false, amount = amount)
+    }
+    usedDebt = usedDebt - origin
+    journal.touch
+    if (!next) {
+      let q = queue
+      let accs = counterparty.cptAccs(legalEntity, currency)
+      procAllowance(
+        if (counterparty.getCurrency == currency) {
+          if (balance < 0 ) accs*.creditAllowance.sum
+          else if (balance > 0) -accs*.debitAllowance.sum
+        }
+      )
+      queue = q
+    }
+  }
+  
+  private back func hasSameDateOrigin(origin: DebtOrigin): Bool = {
+    if (prev?.date == date) {
+      prev!.journal == origin || prev!.hasSameDateOrigin(origin)
+    } else false
+  }
+  
+  private back func dequeue(isDue: Bool, amount: Money): OriginQueueItem? = {
+    let mo = origin.mainOrigin
+    if (let manLinks = origin.allManLinks*.allOrigins) {
+      var r: OriginQueueItem? = null
+      let queue1 = queue.filter{i => 
+        if (r) true
+        else if ((if (isDue) i.origin.mainOrigin else i.origin) == mo || manLinks.contains(i.origin)) {
+          r = i
+          false
+        } else true
+      }
+      if (r) {
+        queue = queue1
+        r
+      } else {
+        if (let r = manLinks
+          .mapOpt{l =>
+            if (l.debtCounterparty == this.counterparty && l.legalEntity == this.legalEntity) {
+              if (let am = l.debtAmount - usedDebt(l)) {
+                if ((l.journalDate > this.date || (l.journalDate == this.date && !hasSameDateOrigin(l))) && (am > 0) != (amount > 0)) {
+                  OriginQueueItem(origin = l, queueDate = l.journalDate, amount = if (am < 0) -(-am).min(amount) else am.min(-amount))
+                }
+              }
+            }
+          }.first
+        ) {
+          usedDebt = usedDebt.updated(r.origin, _ + r.amount)
+          r
+        } else {
+          r = queue.first
+          queue = queue.drop(1)
+          r
+        }
+      }
+    } else {
+      if (let r = queue.find{i => (if (isDue) i.origin.mainOrigin else i.origin) == mo}) {
+        queue = queue.filter{i => i != r}
+        r
+      } else {
+        let r = queue.first
+        queue = queue.drop(1)
+        r
+      }
+    }
+  }
+  back func enqueOrigin(isDue: Bool, amount: Money?): Void = {
+    if (let a = amount) {
+      if (let f = dequeue(isDue, a)) {
+        if ((f.amount > 0) == (a > 0)) {
+          queue = f + queue
+          addOrigin(isDue, a)
+        } else {
+          let isFinal = f.amount.abs > a.abs
+          if (isDue) {
+            backLinks = backLinks + f.origin
+            f.origin.debtAllowance = 0
+            backLinkAmounts = backLinkAmounts + (if (isFinal) -a else f.amount)
+          }
+          if (isFinal) { 
+            queue = (f.copy(amount = (f.amount + a)!) + queue).sortBy(queueDate)
+          } else {
+            enqueOrigin(isDue, f.amount + a)
+          }
+        }
+      } else {
+        addOrigin(isDue, a)
+      }
+    } 
+  }
+  back func procAllowance(amount: Money?): Void = {
+    if (let a = amount) {
+      if (let f = dequeue(isDue = false, a)) {
+        if ((f.amount > 0) != (a > 0)) {
+          f.origin.save
+          if (f.amount.abs >= a.abs) {
+            f.origin.debtAllowance = a
+          } else {
+            f.origin.debtAllowance = -f.amount
+            procAllowance(f.amount + a)
+          }
+        }
+      }
+    }
+  }
+}

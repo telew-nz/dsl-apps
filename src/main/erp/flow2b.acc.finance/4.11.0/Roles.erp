@@ -1,0 +1,6 @@
+extend role Accountant {
+  entity ExpenseType = readWrite
+  entity CashAccount = readWrite
+  entity BankAccount = readWrite
+  trait LegalStructure = readWrite
+}

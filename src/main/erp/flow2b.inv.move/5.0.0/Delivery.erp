@@ -1,0 +1,56 @@
+trait IDelivery {
+  func deliverySupplier: LegalEntity
+  func deliveryReceiver: LegalEntity
+  func deliveryStatus: DeliveryStatus = status
+  func deliverySource: Store?
+  
+  ref field dispatchDate: Date = (now) {
+    update = {
+      if (new > deliveryDate) deliveryDate = new
+    }
+  }
+  ref field deliveryDate: Date = (now) {
+    isValid = deliveryDate >= dispatchDate
+  }
+  ref field status: DeliveryStatus = (Planned) {
+    update = {
+      if (new == InTransit) {
+        dispatchDate = now
+        if (dispatchDate > deliveryDate) deliveryDate = dispatchDate
+      } else if (new == Delivered) deliveryDate = now
+    }
+  }
+  ref compute overdueState: OverdueState = {
+    if (status == Delivered) Delivered
+    else if (status == Planned && Date.now > dispatchDate) Overdue
+    else if (status == InTransit && Date.now > deliveryDate) Overdue
+    else NoOverdue
+  } {visible = overdueState == Overdue}
+}
+
+enum DeliveryStatus {
+  case Planned {
+    background = "#ed9"
+  }
+  case InTransit {
+    background = "#dea"
+  }
+  case Delivered {
+    color = "white"
+    background = "#090"
+  }
+  case Canceled {
+    background = "#ddd"
+  }
+}
+
+inline trait IDeliveryItem {
+  func itemDelivery: IDelivery?
+  var product: IProduct 
+  func unit: ProductUnit
+  func qty: Qty[unit]
+  
+  //Compute
+  compute baseQty: Qty[product.unit] = product.toBase(qty)
+}
+

@@ -1,0 +1,110 @@
+back class BatchChange[E extends IHasExtId] {
+  field created: [E]?
+  field updated: [E]?
+  field deleted: [E]?
+
+  func all = created + updated + deleted
+  func isEmpty = !created && !updated && !deleted
+  func count = created.count + updated.count + deleted.count
+  
+  func sliding(size: Int): [BatchChange[E]]? = {
+    if (!isEmpty) {
+      let f = first(size)
+      if (f.count < size) [f]
+      else {
+        f + drop(size).sliding(size)
+      }
+    }
+  }
+  func first(size: Int): BatchChange[E] = {
+    if (size >= count) this
+    else {
+      var n: Int? = size
+      let c = if (let n) created.first(n)
+      n = n - c.count
+      let u = if (let n) updated.first(n)
+      n = n - u.count
+      let d = if (let n) deleted.first(n)
+      n = n - d.count
+      BatchChange[E](created = c, updated = u, deleted = d)
+    }
+  }
+  func drop(size: Int): BatchChange[E] = {
+    if (size >= count) BatchChange[E]()
+    else {
+      var n: Int? = size
+      let c = if (let n) created.drop(n)
+      n = (n - created.count).max(0)
+      let u = if (let n) updated.drop(n)
+      n = (n - updated.count).max(0)
+      let d = if (let n) deleted.drop(n)
+      n = (n - deleted.count).max(0)
+      BatchChange(created = c, updated = u, deleted = d)
+    }
+  }
+  func updateExtIds[ID](service: ExtIdSource[ID], createdIds: [ID?]?): Void = {
+    if (created.count != createdIds.count) throw "Was create $(created.count) items but got $(createdIds.count) ids"
+    created.zip(createdIds, left.updateExtId(service, right))
+    deleted*.deleteExtId(service)
+  }
+  func updateExtUrls[ID](service: ExtIdSource[ID], createdUrls: [Url?]?, updatedUrls: [Url?]?): Void = {
+    if (created.count != createdUrls.count) throw "$(created.count) items was created but got $(createdUrls.count) urls"
+    if (updated.count != updatedUrls.count) throw "$(updated.count) items was updated but got $(updatedUrls.count) urls"
+    created.zip(createdUrls, left.updateExtUrl(service, right))
+    updated.zip(updatedUrls, left.updateExtUrl(service, right))
+    deleted*.deleteExtUrl(service)
+  }
+   
+  object func create[I extends IHasExtId, A](service: ExtIdSource[A], items: [I]?): BatchChange[I] = {
+    let items1 = items.map(i => (item = i, extId = i.extId(service)) )
+    BatchChange[I](
+      created = items1.filter(!extId && !item.deleted)*.item,
+      updated = items1.filter(extId && !item.deleted)*.item,
+      deleted = items1.filter(extId && item.deleted)*.item
+    )
+  } 
+  
+  object func createAndFilter[I extends IHasExtId, A](service: ExtIdSource[A], items: [I]?, filter: (item: I, extId: A?) => Bool): BatchChange[I] = {
+    let items1 = items.map(i => (item = i, extId = i.extId(service)) )
+    BatchChange[I](
+      created = items1.filter(!extId && !item.deleted && filter(item, extId))*.item,
+      updated = items1.filter(extId && !item.deleted && filter(item, extId))*.item,
+      deleted = items1.filter(extId && item.deleted && filter(item, extId))*.item
+    )
+  } 
+  
+  private object func nextBatches[I extends IHasExtId, A](procItems: [I]?, items: [ItemParentExtId[I, A]]?): [BatchChange[I]] = {
+    let newGenItems = items.filter(!parent || parent.in(procItems))
+    let ch = BatchChange[I](
+      created = newGenItems.filter(!extId && !item.deleted)*.item,
+      updated = newGenItems.filter(extId && !item.deleted)*.item,
+      deleted = items.filter(extId && item.deleted)*.item
+    )
+    if (let nextGenItems = items.filter(parent && !parent.in(procItems) && !item.deleted)) {
+      ch + nextBatches[I, A](procItems + newGenItems*.item, nextGenItems)
+    } else {
+      [ch]
+    }
+  }
+  object func hierarchy[I extends IHasExtId, A](service: ExtIdSource[A], items: [I]?, parent: I => I?): [BatchChange[I]] = {
+    nextBatches[I, A]([], items.map(i => ItemParentExtId[I, A](item = i, extId = i.extId(service), parent = parent(i))))
+  } 
+  
+  func groupBy[ID, K](service: ExtIdSource[ID], f: E => K): [K -> BatchChange[E]]? = {
+    all.groupBy(f(_)).mapValues(
+        BatchChange.create[E, ID](service, _)
+    )
+  }
+  func toString = 
+"{
+  created = $created, 
+  updated = $updated, 
+  deleted = $deleted 
+}"
+}
+
+back class ItemParentExtId[I extends IHasExtId, A] {
+  field item: I
+  field parent: I?
+  field extId: A?
+}

@@ -1,0 +1,39 @@
+trait Debt extends Journal {
+  background = "#d68400"
+  
+  func date: Date {canSort}
+  func currency: Currency
+   
+  func startingBalance: Money[currency]?
+  ref compute balance = startingBalance + balanceChange
+  compute balanceChange = creditAmount - debitAmount
+  func origin: Debt? = debitOrigin.or(creditOrigin)
+  func cashFlowCategory: CashFlowCategory
+  func journalPriority: Int? = 0
+  func counterparty: LegalEntity
+  func definesDate: Bool = false
+  func canceled: Bool = false
+  func originLedger(setoff: Setoff, amount: Money): Future[Ledger] = {
+    Unreconciled.ledger(setoff.journal, setoff.date, amount)
+  }
+  
+  field debits: [Setoff]? inline by credit
+  func debitOrigin: Debt? = debits.first?.debit
+  compute debitAmount: Money[currency]? = debits*.amount.sum  
+  ref stored compute reconcileState: ReconcileState = {
+    if (canceled) Canceled
+    else if (!debits && !credits) {if (!startingBalance) Reconciled else Unreconciled}
+    else if (!balance) Reconciled
+    else if ((startingBalance >= 0) == (balance > 0)) PartiallyReconciled
+    else OverReconciled
+  } 
+  compute paymentState: PaymentState = reconcileState.paymentState
+  //func debitDebtAmount = 0
+
+  func creditOrigin: Debt? = credits.first?.credit
+  field credits: [Setoff]? inline by debit
+  
+  compute creditAmount: Money[currency]? = credits*.amount.sum
+  
+  //func creditDebtAmount = 0
+}

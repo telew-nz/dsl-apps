@@ -1,0 +1,88 @@
+trait IContinuousPriceModel extends IPriceModel {
+  func overnightCharge: Qty[RentDurationUnit]?
+  func currency: Currency
+  func pricesIncludingGst: Bool
+  func durations: [RentDuration]
+  ref compute rentDurationUnits: [RentDurationUnit]? = durations*.rentUnit.toSet
+  
+  func rentDuration(delivery: RentDeliveryDesc, assetReturn: RentDeliveryDesc, unit: RentDurationUnit?): Qty[RentDurationUnit]? = {
+    toRentDuration(assetReturn.schedule.workingTime(Period(start = delivery.dispatchDate, end = assetReturn.deliveryDate)), unit)
+  }
+  func toRentDuration(dd: Duration?, unit: RentDurationUnit?): Qty[RentDurationUnit]?  = {
+    let u = durations.find(d => d.rentUnit == unit) 
+      .or(durations.sortBy(duration.desc).find(_.duration <= dd && _.maxDuration ?>= dd))
+      .or(durations.sortBy(duration).find(_.duration >= dd))
+      .alt(durations.first)
+    let r = (dd.to[Duration[u.duration.unit!]].as[Qty[8]]/u.duration).roundInc(ceil, u.increment).as[Qty[u.rentUnit]]
+    let rdur = u.duration*r
+    if (rdur != dd) {
+      toRentDuration(rdur, unit)
+    } else {
+      r
+    }
+  }
+  
+  func rentReturnDate(delivery: RentDeliveryDesc, returnSchedule: ISchedule, qty: Qty[RentDurationUnit]?): Date = {
+    let d = toDuration(qty)
+    returnSchedule.addWorkingTime(delivery.dispatchDate, d)
+      .alt(delivery.dispatchDate + d)
+  }
+  
+  func nightsCount(deliveryDate: Date, returnDate: Date): Qty[Night]? = {
+    if (hasNight) {
+      (returnDate.date - deliveryDate.date).days.as[Qty[Night]]
+    }
+  }
+  
+  func toDuration(qty: Qty[RentDurationUnit]?): Duration? = {
+    if (qty) duration(qty.unit!.as[RentDurationUnit]!)*qty
+  }
+  func duration(unit: RentDurationUnit): Duration? = {
+    durations.find(u => u.rentUnit == unit)?.duration
+  }
+}
+
+class RentDuration {
+  field rentUnit: RentDurationUnit = default
+  field unit: DateUnit = day
+  field duration: Duration[unit] {
+    canEditUnit
+    default = 1
+  }
+  field increment: Number = 1
+  field maxDuration: Duration[unit]? 
+  view form = grid(labels = Top) {
+    row {rentUnit >> field(compact = true, label = "") duration >> field(align = Right) increment >> field(align = Right) maxDuration >> field(align = Right)}
+  }
+}
+
+interface IContinuousProductPrice extends IPrice {
+  func model: IContinuousPriceModel
+  func currency = model.currency
+  func overnightCharge: Money[currency]? = if (let oc = model.overnightCharge) durationPrice(oc)
+  func prices: [DurationPrice]?
+  func gstRate: UPercent[2]?
+  
+  protected func durationPrice(duration: Qty[RentDurationUnit]?): Money[currency]? = {
+    if (let dur = model.toDuration(duration)) {
+      let ps = prices
+        .map(price, duration = model.toDuration(_.duration))
+        .sortBy(_.duration.desc)
+      if (let pp = ps.find(dur >= _.duration).or(ps.last), let duration = pp.duration) {
+        pp.price*dur/duration
+      }
+    }
+  }
+  func rentSalesAmount(currency: Currency, customer: ICustomer?, itemsQty: Qty, duration: Qty[RentDurationUnit]?, nightsCount: Qty[Night]?, inclGst: Bool): Future[RentAmount] = {
+    let am = durationPrice(duration)
+    let a <- (am*itemsQty).to[Money[currency]](now)
+    let nm = overnightCharge*nightsCount*itemsQty
+    let n <- nm.to[Money[currency]](now)
+    RentAmount(dayAmount = a, nightAmount = n)
+  }
+  func salesPrice(currency: Currency, inclGst: Bool): Future[SalesPrice] = {
+    let p <- prices.find(unit.isFirst)?.price.to[Money[currency]](now)
+    SalesPrice(regular = p, current = p)
+      .convertGst(gstRate, model.pricesIncludingGst, inclGst)
+  }
+}

@@ -1,0 +1,34 @@
+trait AssetReturn extends IDeliveryPath {
+  field manualNumber: String?
+  func number: String
+  func order: Order = orders.first
+  func orders: [Order]
+  field allItems: [RentDeliveryItem]? inline by assetReturn {deleteCascade = false}
+  compute items: [RentDeliveryItem]? {
+    value = allItems.filter(active)
+    update = {
+      allItems = new + allItems.filter(!_.active)
+    }
+  }
+  func journalDate = deliveryDate
+  func calcDeliveryDate: Future[Date] = {
+    let pms <- items.map{i => i.priceModel.map(pm => (item = i, pm))}.allCompleted
+    pms.mapOpt{i =>
+      i.pm.rentReturnDate(i.item.delivery.toRentDeliveryDesc, storeSchedule, i.item.duration)
+    }.min.alt(Date.now)
+  }
+  func updateDeliveryDate(): Future[Void] = {
+    if (status != Delivered) {
+      let dd <- calcDeliveryDate
+      if (status == Planned) silentUpdate(dispatchDate, dd)
+      silentUpdate(deliveryDate, dd)
+      deliveryDate
+    }
+  }
+  func canCancel = false
+  
+  func updatedDeliveryDate(): Future[Void] = {
+    items*.updateDuration().allCompleted
+  }
+}
+

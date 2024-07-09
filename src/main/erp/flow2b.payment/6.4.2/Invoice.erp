@@ -1,0 +1,52 @@
+trait IInvoice extends Debt with DebtOrigin {
+  background = "#d68400"
+  plural = "Invoices"
+  singular = "Invoice"
+   
+  func total: Money[currency]?
+  func paidAmount: Money[currency]?
+  func setoffs: [Setoff]?
+  func deliveryDate: Date?
+  func customer: LegalEntity
+  func debtDueDate = dueDate
+  
+  field paymentTerms: IPaymentTerms?
+  stored compute dueDate: Date? = {
+    if (paidAmount != total) paymentTerms?.paymentDueDate(issueDate, deliveryDate)
+  }
+  ref stored compute overdueState: PaymentOverdueState {
+    value = {
+      if (paidAmount == total) Paid
+      else if (let dd = dueDate) {
+        if (dd < now) PaymentOverdue else NoPaymentOverdue
+      }
+      else NoPaymentOverdue
+    }
+    visible = overdueState == PaymentOverdue
+  }
+  func canDispatch: Future[Bool] = {
+    (if (let terms = paymentTerms, let t = total) terms.canDispatch(customer, t, paidAmount)
+    else Future(true))
+  } 
+  compute prepaymentDate: Date? = {
+    if (let prepayment = paymentTerms?.deliveryPrepayment, let a = total*prepayment) {
+      setoffs.accum(amount.sum).find(amount >= a).map(#0.date)
+    } else date
+  }
+  func issueDate: Date = date
+  
+  report Report {
+    field bookkeeper: Person? {
+      from = Person.all.filter(is(Bookkeeper))
+    }
+    field state: [PaymentState]?
+    field from: Date?
+    field to: Date?
+    
+    view list = IInvoice.all.filter(
+      journalDate >=? from && journalDate <=? to 
+      && (!this.state || this.state.contains(reconcilationState.paymentState))
+      && isFor(bookkeeper, Bookkeeper)
+    ).sortBy(journalDate.desc) >> nav{list(canAdd = false){}}
+  }
+}

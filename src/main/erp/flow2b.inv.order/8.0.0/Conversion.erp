@@ -1,0 +1,9 @@
+back object Conversion extends IConversion {
+  func do(version: [Int?]?) = {
+    if (version < [8,0,0]) {
+      if (!Workspace.current.apps.apply("flow2b.asset.fixed")) {
+        recreateAllRegisters
+      }
+    }
+  } 
+}     

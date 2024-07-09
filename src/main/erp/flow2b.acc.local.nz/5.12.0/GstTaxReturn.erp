@@ -1,0 +1,75 @@
+entity GstTaxReturn extends TaxReturn with Journal with NewEngine {
+  impl func title = "GST $(year.unformattedString) $legalEntity"
+  ref compute year = period.end.year
+  impl ref field legalEntity: OurLegalEntity =? OurLegalEntity.onlyOne
+  func filingDuration: Duration = {
+    if (let d = try? legalEntity.as[OurCompany]!.legalStructure!.as[LegalStructure with NZLegalStructure]!.gstFilingPeriod!.duration) d 
+    else 6_month
+  }
+  field period: Period = {
+    let d = filingDuration
+    let taxYearStart: Date = Date.now.start(of = DateUnit.year) - 9_month
+    let perN = ((Date.now - taxYearStart).months / d).round(floor, 0) 
+    Period(start = taxYearStart + d*(perN - 1), end = taxYearStart + d*perN)
+  }
+   
+  field gst101: GST101Y17 inline by gstReturn {
+    availableFor = Inline
+    visible = id
+  }
+  field ir372: IR372Y10 inline by gstReturn {
+    visible = id
+  }
+  
+  impl view traitItem = y{h3("Gst Tax Return") x{title status}}
+  impl view ref = x {title status}
+  impl view form = nav{
+    tabs {
+      grid(labels = Top, label = "Settings"){
+        issuesView
+        date
+        status
+        period
+        legalEntity
+      }
+      gst101 >> field(label = "GST101A")
+      ir372 >> field(label = "IR372")
+    }
+    button("Recalculate", visible = id) {
+      back {
+        this.recalc()
+      }
+    } 
+    generalLedgerButton
+  }
+  
+  impl event onSave = {
+    let _ <- if (created) {
+      recalc()
+    }
+  }
+  
+  register ledgers: [Ledger]?
+  
+  back func recalc(): Future[Void] = {
+    this.touch()
+    date = now
+    gst101.defaultAllFields()
+    ir372.defaultAllFields()
+    let _ <- gst101.calc()
+    ir372.calc()
+  }
+  
+  impl func issues = {
+    (if (gst101.hasErrors) [DashboardIssue.AccountingErrors])
+  }.toSet
+  
+  impl func fixes(issue: DashboardIssue) = {
+    if (issue == AccountingErrors) [
+      Fix(
+        text = "Fix all accounting issue in $period"
+      )
+    ]
+  }
+  
+}

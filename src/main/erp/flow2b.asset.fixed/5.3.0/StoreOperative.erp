@@ -1,0 +1,28 @@
+extend role StoreOperative {
+  entity FixedAsset = readWrite
+  entity AssetRegistration = readWrite
+  entity Maintenance = readWrite
+  entity AssetDisposal = readWrite
+  entity AssetsPool = readWrite
+  entity AssetsPoolProduct = readWrite
+  entity AssetsStartup = readWrite
+  entity AssetsStartupProduct = readWrite
+  entity Good = readWrite
+  
+  extend view menu = menu ("Assets") {
+    IFixedAsset >> item("Assets", fastSearch)
+    AssetOperation >> item("Operations")
+    AssetProductMovement >> item("Asset Movements")
+    extension("Assets")
+  }
+  extend view menu = menu ("Settings") {
+    AssetsStartup >> item("Assets Startup")
+  }
+  extend view dashboard = row {
+    Maintenance.all.filter(status == Planned || status == InProgress).sortBy(period.start) 
+      >> nav(label = "Maintenances", limit = 5, more = Maintenance.Report(status = [MaintenanceStatus.Planned, MaintenanceStatus.InProgress]).list.open) {
+        list(){}
+      }
+  }
+}
+  

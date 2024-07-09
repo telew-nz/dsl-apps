@@ -1,0 +1,40 @@
+entity SubscrList extends HasN with NewEngine {
+  plural = "Subscription Lists"
+  singular = "Subscription List"
+  icon = "mail-bulk"
+  impl field title: String
+  field subscribers: [Subscriber]? inline by lst
+  field messages: [IBulkMsg]? read by lists
+  impl func itemRoles = [Marketer]
+  field from: [Contact]? {
+    from = Contact.all.filter(isOur && !_.is[IUser])
+  } 
+  
+  impl view form = nav{
+    grid {
+      x { title >> field(stretch = 1, fontStyle = H3) number >> field(fontStyle = Label)}
+      from
+      messages
+      subscribers >> list{
+        x {state contact >> field (stretch = 1) }
+      }
+    }
+  }
+  
+  impl func nextN = increment(BulkMsg.gen)
+  impl func numPrefix = "SBSL"
+  impl view ref = x {number >> field(fontStyle = Label) title}
+  impl view traitItem = ref
+  impl object view list = SubscrList.all >> nav{list{traitItem}}
+}
+
+inline entity Subscriber {
+  field lst: SubscrList by subscribers
+  field contact: ActorContact
+  field state: SubscriberState = Subscribed
+}
+
+enum SubscriberState {
+  case Subscribed {icon = "paper-plane" background = "#dea" }
+  case Unsubscribed {icon = "times-circle" background = "#999"}
+}

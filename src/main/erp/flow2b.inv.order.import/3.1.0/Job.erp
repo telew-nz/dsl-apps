@@ -1,0 +1,29 @@
+class PurchaseOrderImportJob extends ImportJob {
+  impl field task: PurchaseOrderImport
+  impl func import = {
+    task*.invoices*.delete
+    
+    task.files.oneByOne {file =>
+      let text <- file.plainText
+
+      if (let text) {
+        guard (let processor = OrderProcessor.subObjects
+          .sortBy(_.order)
+          .map(_.new(poi = task, text = text))
+          .find(canProcess)) 
+        else return throw "No processor found"
+
+        processor.process
+      }
+    }
+  }
+}
+
+back interface OrderProcessor {
+  field poi: PurchaseOrderImport
+  field text: PlainText
+  object func order: Dec[4]?
+  func canProcess: Bool
+  func process: Future[[POIInvoice]?]
+}
+

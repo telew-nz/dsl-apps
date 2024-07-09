@@ -1,0 +1,43 @@
+class Stock {
+  field unit: ProductUnit {views = []}
+  field fact: Dec[unit]?
+  field reserve: Dec[unit]?
+  
+  //func availableReserved: Dec[unit]? = reserve.min(qty)
+  compute available: Dec[unit]? = ((fact - reserve).max(0)) 
+  field expectation: Dec[unit]?
+  compute outlook: Dec[unit]? = fact - reserve + expectation 
+    
+  object func sum(unit: ProductUnit, items: [StockRegister]?): Stock = {
+    Stock(
+      unit = unit,
+      fact = items*.fact.sum, 
+      reserve = items*.reserve.sum, 
+      expectation = items*.expectation.sum)
+  }
+  
+  object func byGood(legalEntity: LegalEntity?, store: Store?, goods: [IProduct]): [IGood: Stock]? = {
+    StockRegister.current
+      .filter(m => goods.contains(m.good) && store.all(_ == m.store) && legalEntity.all(_ == m.legalEntity))
+      .groupBy(good).agg(Stock.sum(key.unit, _))
+      .result.toMap
+  }
+
+  view shortView = x(label = "Stock"){
+    (fact.toString)
+    ("− " + reserve.withoutUnit + " reserved") >> field(style = CommerceStyle.reserve, visible = reserve)
+    ("= " + available.withoutUnit + " available") >> field(visible = reserve)
+    ("+ " + expectation.withoutUnit  + " expected") >> field(style = CommerceStyle.expectation, visible = expectation)
+    ("= " + outlook.withoutUnit + " outlook") >> field(visible = expectation)
+  }
+  func title = fact + 
+    (if (reserve) " − " + reserve.withoutUnit + " reserved = " + available.withoutUnit + " available" else "") + 
+    (if (expectation) " + " + expectation.withoutUnit + " expected = " + outlook.withoutUnit + " outlook" else "")
+  //func sub(o: Stock?) = if (o.isEmpty) this else Stock(qty - o!.qty, reserve - o!.reserve, expectation - o!.expectation)
+    
+  view availableView(out: Bool, product: IProduct, qty: Qty) = x(product.isTangible) {
+    available + " available" >> field(visible = available >= qty && !out, style = CommerceStyle.available),
+    outlook + " will be available" >> field(visible = available < qty && outlook >= qty, style = CommerceStyle.incomplete)
+    title + " only" >> field(visible = outlook < qty && product.isTangible, style = CommerceStyle.unavailable) 
+  }
+}

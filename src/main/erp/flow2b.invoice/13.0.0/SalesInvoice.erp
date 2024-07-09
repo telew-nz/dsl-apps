@@ -1,0 +1,44 @@
+trait ISalesInvoice extends IInvoice {
+  func isPurchase: Bool = false
+  func isDebtDebit = true
+  event onSave = {
+    processRevision()
+    
+    if (isInstant) {
+      postOnSave()
+    } else {
+      if (registerUpdated) {
+      	updateLedgers()
+      } 
+      if (!(try? reconState) || moneyCalced) {
+        postOnSave()
+      } 
+    }
+  }
+  compute vendor = legalEntity
+  func customer: Customer?
+  func payee = legalEntity
+  func debtAllowance: Money? = payer?.as[Customer]?.debtAllowance
+  
+  
+  back func isInstantPaid: Bool = {
+    if (let c = onlyOneOrigin) c.amount == total && (c.origin.journalDate - this.date).abs <= 3600_second else false
+  }
+  back func instantLedgers(journal: Journal, date: Date): Future[[Ledger]?] 
+  
+  func cashFlow = Sales
+  
+  func getPaymentTerms = paymentTerms
+    .or(payer?.as[Customer]?.paymentTerms)
+    .or(if (debtAllowance) legalEntity.customerAccountPaymentTerms else legalEntity.customerCashPaymentTerms)?.as[IIPaymentTerms]
+    .alt(DefaultPaymentTerms)
+  //func debtLedger: LDebt = receivableLedger
+  //func isTheir = customer?.isTheir
+  
+  view statusesView = x {
+    issueState
+    paymentState
+    unpaidAmount 
+    overdueState
+  }  
+}

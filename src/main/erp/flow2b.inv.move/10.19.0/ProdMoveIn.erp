@@ -1,0 +1,87 @@
+trait IProdMoveIn extends IProdMove {
+  plural = "Incoming Deliveries"
+  func moveInDate: Date
+  func moveInState: ProdMoveState
+  func moveInLE: OurLegalEntity
+  func moveInStore: IStore
+  func moveInItems: [IIProdMoveItemIn]?
+  
+  view dashIn {
+    default layout = dash
+  }
+  
+  override func itemOrder = ("Date", moveInDate)
+  impl func isProdMoveIn: Bool = true
+  impl func moveItems: [IProdMoveItem]? = moveInItems
+  
+  func moveInBeforeInit = {
+    let d1 = moveInStore.initialDate(moveInLE)
+    (d1 && d1! > moveInDate) 
+  }
+  
+  
+  report Report {
+    field activeOnly = true
+    field storeOperative: User? {
+      default = User.current.filter(is(StoreOperative))
+      from = User.all.filter(is(StoreOperative))
+    }
+    impl view list = IProdMoveIn.all.filter(isFor(storeOperative, StoreOperative) && (!activeOnly || moveInState.active)) >> nav{list(canAdd = false){}}
+  }
+}
+
+interface IIProdMoveItemIn extends IProdMoveItem {
+  func prodMoveIn: IProdMoveIn
+  func moveInStockType: StockType
+  impl func prodMove: IProdMove = prodMoveIn
+  func moveInPriorityDate: Date = prodMoveIn.moveInDate
+  
+  
+  impl func needProductItems: Bool = prodMoveIn.moveInState == Complete
+  func makeInStocks: [ProdReg]? = {
+    if (isMoveItemIn && prodMoveIn.moveInState != Canceled && moveItemActive) {
+      product.tangibleProductQtys(baseQty).mapOpt(inStock(_.product, _.qty))
+    }
+  }
+  func makeInStockItems: [ProdItemReg]? = {
+    if (isMoveItemIn && prodMoveIn.moveInState != Canceled && moveItemActive) {
+      productItems.map (
+        ProdItemReg(
+          item = _
+          sort = prodMoveIn.moveInState.sort
+          date = prodMoveIn.moveInDate
+          priorityDate = moveInPriorityDate
+          newStockType = moveInStockType
+          doc = prodMoveIn, docItem = moveDocItem
+          qty = 1, isRent = isRent
+        )
+      )
+    }
+  }
+  func inStock(product: IProduct, baseQty: UQty): ProdReg? = {
+    ProdReg(
+      legalEntity = prodMoveIn.moveInLE
+      store = prodMoveIn.moveInStore
+      stockType = moveInStockType 
+      product = product
+      doc = prodMoveIn, docItem = moveDocItem
+      date = prodMoveIn.moveInDate
+      priorityDate = moveInPriorityDate
+      sort = prodMoveIn.moveInState.sort
+      qty = baseQty, isRent = isRent
+    )
+  }
+}
+
+trait IProdMoveItemIn extends AnyEntity with IIProdMoveItemIn {  
+  register inStocks: [ProdReg]? {
+    value = makeInStocks
+    availableFor = Inline
+    available(Inline).for(Inline)
+  }
+  register inStockItems: [ProdItemReg]? {
+    value = makeInStockItems
+    availableFor = Inline
+    available(Inline).for(Inline)
+  }
+}

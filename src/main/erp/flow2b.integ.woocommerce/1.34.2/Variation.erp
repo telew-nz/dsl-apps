@@ -4,14 +4,11 @@ back class UploadVariationsJob extends SystemJob {
   field change: BatchChange[ProductUpdate[ISubVariation]] 
   impl func do: Future[Any] = {
     change.regroup(service)
-  	change.created = change.created.distinct
-  	change.updated = change.updated.distinct
-  	change.deleted = change.deleted.distinct
     if (let pid = superProduct.extId(service)) {
       let u = BatchVariationUpdate(
-        create = change.created.groupBy(product).values.map(i => i.first).map(i => VariationData.create(service, i)).distinct,
-        update = change.updated.groupBy(product).values.map(i => i.first).map(i => VariationData.create(service, i)).distinct,
-        delete = change.deleted*.product*.extId(service).distinct
+        create = change.created.groupBy(product).values.map(i => i.first).map(i => VariationData.create(service, i)),
+        update = change.updated.groupBy(product).values.map(i => i.first).map(i => VariationData.create(service, i)),
+        delete = change.deleted*.product*.extId(service)
       )
       let response <- service.https("/products/$pid/variations/batch").post(u.json)
       let r = if (response.body!.toString == "[]") BatchVariationResponse() else response.body!.parseJson[BatchVariationResponse]

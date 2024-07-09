@@ -1,0 +1,90 @@
+enum OrderState(active: Bool, toDispatch: Bool, delivery: DlvState?, canceled: Bool) {
+  case Quote(active = true, toDispatch = false, delivery = null, canceled = false){icon = "quote-left" background = "#ecd"}
+  
+  case Accepted(active = true, toDispatch = true, delivery = null, canceled = false){background = "#ed9" icon = "thumbs-up"}
+  case Prepaid(active = true, toDispatch = true, delivery = null, canceled = false){background = "#ed9" icon = "dollar-sign"}
+  case InPreDelivery(active = true, toDispatch = false, delivery = null, canceled = false){background = "#ed9" icon = "box-open"}
+  case ToDispatch(active = true, toDispatch = true, delivery = null, canceled = false){background = "#ed9" icon = "dolly"}
+  
+  case Prepared(active = true, toDispatch = false, delivery = Prepared, canceled = false){background = "#c3e8c7"  icon = "boxes"}
+  case InTransit(active = true, toDispatch = false, delivery = InTransit, canceled = false){background = "#cce0ff" icon = "truck-moving"}
+  case InProgress(active = true, toDispatch = false, delivery = InProgress, canceled = false){background = "#8bf" icon = "sync"}
+  case RetInTransit(active = true, toDispatch = false, delivery = RetInTransit, canceled = false){icon = "truck-pickup" label = "In Transit Return" background = "#cce0ff"}
+  case PostProcessing(active = true, toDispatch = false, delivery = PostProcessing, canceled = false){background = "#c3e8c7" icon = "broom"}
+  case Complete(active = true, toDispatch = false, delivery = Complete, canceled = false){
+    background = "#dea" icon = "parachute-box"
+  }
+
+  case Closed(active = false, toDispatch = false, delivery = Complete, canceled = false){color = "white" background = "#090" icon = "award"}
+  
+  case Unaccepted(active = true, toDispatch = false, delivery = null, canceled = true){background = "#f99" icon = "thumbs-down"}
+  case Unpaid(active = true, toDispatch = false, delivery = null, canceled = true){background = "#f99" icon = "times"}
+  case Canceled(active = false, toDispatch = false, delivery = null, canceled = true){background = "#ddd" icon = "times-circle"}
+}
+
+enum DlvState(active: Bool, started: Bool, hasDate: Bool, path0: PathState, path1: PathState, order: OrderState, date: IOrderDlv => Date?) {
+  case Draft(active = true, started = false, hasDate = false, path0 = Draft, path1 = Draft, order = ToDispatch, date = null) {background = "#ecd" icon = "edit"}
+  case Planned(active = true, started = false, hasDate = false, path0 = Planned, path1 = Planned, order = ToDispatch, date = null) {background = "#ed9" icon = "play"}
+  
+  case Prepared(active = true, started = true, hasDate = false, path0 = InTransit, path1 = Planned, order = Prepared, date = null) {background = "#c3e8c7" icon = "boxes"}
+  case InTransit(active = true, started = true, hasDate = true, path0 = InTransit, path1 = Planned, order = InTransit, date = _.dlvInTransitDate) {background = "#cce0ff" icon = "truck-moving"}
+  case InProgress(active = true, started = true, hasDate = true, path0 = Complete, path1 = Planned, order = InProgress, date = _.dlvInProgessDate) {background = "#8bf" icon = "sync"}
+  case RetInTransit(active = true, started = true, hasDate = true, path0 = Complete, path1 = InTransit, order = RetInTransit, date = _.dlvRetInTransitDate) {
+    icon = "truck-pickup"
+    label = "In Transit Return"
+    background = "#cce0ff"
+  }
+  case PostProcessing(active = true, started = true, hasDate = false, path0 = Complete, path1 = InTransit, order = PostProcessing, date = null) {background = "#c3e8c7" icon = "broom"}
+  
+  
+  case Complete(active = false, started = true, hasDate = true, path0 = Complete, path1 = Complete, order = Complete, date = _.dlvCompleteDate) {
+    icon = "check-circle"
+    color = "white"
+    background = "#090"
+  }
+  case Canceled(active = false, started = false, hasDate = false, path0 = Canceled, path1 = Canceled, order = Canceled, date = null) {background = "#ddd" icon = "times-circle"}
+  
+  object func path0(st: PathState): DlvState = DlvState.all.reverse.find(path0 == st)!
+  object func path1(st: PathState): DlvState = DlvState.all.find(path1 == st)!
+}
+
+enum InvoiceItemPosition {
+  case Lines
+  case Subtotal = "Below Subtotal"
+}
+
+extend trait ISuperProduct {
+  ref field invoicePosition: InvoiceItemPosition {
+    default = Lines
+    visible = !isTangible
+  }
+  extend view superProductTabView = extend("invoice") {
+    invoicePosition
+  }
+}
+
+enum InvoiceState {
+  case Accepted{color = "white" background = "#090" icon = "thumbs-up"}
+  case Rejected{color = "white" background = "#c00" icon = "thumbs-down"}
+  case Paid{color = "white" background = "#090" icon = "check"}
+}
+
+enum OrderProcState(ast: ActiveState) {
+  case Processing(ast = InProgress) {
+    background = "#8bf"
+    icon = "spinner"
+  }
+  case Processed(ast = Closed) {
+    background = "#dea"
+    icon = "check-circle"
+  }
+  case AwaitingReply(ast = AwaitingReply) {
+    background = "#ffca99"
+    icon = "hourglass"
+  }
+  case FollowUp(ast = FollowUp) {
+    background = "#8bf"
+    icon = "bell"
+  }
+}
+

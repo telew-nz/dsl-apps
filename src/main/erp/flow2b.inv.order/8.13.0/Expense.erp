@@ -1,0 +1,36 @@
+inline entity ExpenseItem extends IOrderDeliveryItem with IPurchaseItemWithDelivery {
+  singular = "Expense"
+  func orderDeliveryItem: IOrderDeliveryItem? = this
+  func deliveryItem = this
+  func purchase: IPurchaseItem? = this
+  func sales: ISalesItem? = null
+    
+  field expense: IExpenseType
+  func cashFlow: CashFlow = GeneralExpenses
+  
+  view form = grid(margin = None, width = 1.2, labels = Top) {
+    row (labels = false){
+      expense >> field(width = 0.6) 
+      space(width = 0.4)
+      amountEditor >> field(width = 0.2, align = Right)
+    }
+    row {
+      space(width = 0.8) 
+      gstEditor  >> field(visible = ui.isSelected && order.as[PurchaseOrder]!.vendor?.hasGst, width = 0.2) 
+      discountEditor >> field(visible = ui.isSelected || discount, width = 0.2, align = Right)
+    }
+    deliveryItem.delivery >> field(visible = ui.isSelected && this.order.deliveries.count > 1)
+    invoice >> field(visible = ui.isSelected && this.order.invoices.count > 1)
+  }
+  
+  view rowView = group {
+    row{expense >> field(rowSpan = 2)
+        space
+        space
+        amountEditor}
+    row(visible = discount){label("Discount", span = 2, align = Right) discountEditor}
+  }
+  func expenseLedgers(journal: Journal, date: Date, baseAmount: Money?) = {
+    [LExpenses(account = GeneralExpenses, journal = journal, date = date, trAmount = baseAmount, expenseType = expense)]
+  }
+}

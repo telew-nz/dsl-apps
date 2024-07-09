@@ -1,0 +1,38 @@
+entity Service extends IBasicProduct {
+  func isTangible = false
+  field title: String
+  field obsolete: Bool
+  field description: Text?
+  ref field unit: ProductUnit = Item
+  field altUnits: [ProductAltUnit]? {title = "Alternative Units"}
+    
+  view form = nav{
+    tabs {
+      grid (labels = Top, label = "Main") {
+        photos >> field(height = 10, label = "")
+        title >> field(label = "")
+        sku
+        brands
+        categories
+        row {unit >> field(compact = true) obsolete }
+        baseMainView
+        extension("main")
+        description
+      }
+      grid (labels = Top, label = "Related") {
+        kits
+        accessories >> list(frame = false)
+        principals >> list(frame = false)
+        extension("rel")
+      }
+      extension("tabs")
+      grid (labels = Top, label = "Other") {
+        altUnits
+        extension
+      }
+      
+    }
+    productNavView
+    extension("nav")
+  }
+}

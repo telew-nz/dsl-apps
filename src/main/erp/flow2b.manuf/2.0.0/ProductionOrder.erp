@@ -1,0 +1,142 @@
+enum ProductionOrderType {
+  case ByMethod
+  case Oneoff
+}
+
+entity ProductionOrder extends IProductionOrder {
+  impl func number = "PR" + n
+  impl ref compute title: String = if (let n = refNum) "$number ($n) $mainProduct" else "$number $mainProduct"
+  impl field materials: [OproMethodMaterial]? inline by order
+  field resources: [OproMethodResource]? inline by order {
+    singular = "Resource"
+  }
+  impl ref compute mainProduct: OutputProduct = outputs!.first.outputProduct
+  impl field outputs: [OproMethodOutput]? inline by order {
+    validate = if (isOneoff && !outputs) "Outputs cannot be empty for oneoff orders"
+  }
+  func items = materials
+  func qtyK: UDec[8] = if (let method) qty.as[UDec[8]]/method.qty else 1
+  field method: Method? {
+    visible = type == ByMethod
+    label = "Method"
+    available(Inline).for(Inline)
+    update = {
+      if (let method) {
+        this.qty = this.qty.as[UQty[method.unit]]
+      }
+    }
+    validate = if (type == ByMethod && !method) "Method is required"
+  }
+  func isOneoff = type == Oneoff
+  field type: ProductionOrderType = ByMethod
+  compute unit: ProductUnit = method?.unit.alt(Item)
+  impl field qty: UQty[unit] {
+    default = 1
+    visible = type == ByMethod
+  }
+  
+  impl event onSave = {
+    if (!isOneoff && (updated(method ) || updated(qty))) {
+      refill()
+    }
+  }
+  
+  func refill(): Void = if (let method) {
+    materials*.delete
+    outputs*.delete
+    resources*.delete
+    method.materials.foreach {
+      OproMethodMaterial(order = this, material = material, unit = unit, qty = qty*qtyK, gstRate = gstRate)
+    }
+    method.outputs.foreach {
+      OproMethodOutput(order = this, outputProduct = outputProduct, unit = unit, qty = qty*qtyK, gstRate = gstRate, costWeight = costWeight)
+    }
+    method.resources.foreach {
+      OproMethodResource(order = this, resource = resource, duration = duration*qtyK)
+    }
+  }
+  
+  impl view form = nav {
+    grid(width = 1.2){
+      issuesView
+      row{number refNum space}
+      x {status >> field(editMode = AlwaysEdit) availability outputStockType  }
+      row{type >> field(label = "") method qty}
+      row {dispatchDate deliveryDate space}
+      row {legalEntity supplier >> field(visible = ui.edit || sSupplier || sReceiver) receiver >> field(visible = ui.edit || sSupplier || sReceiver)}
+      row {factory materialStore >> field(visible = ui.edit || sMaterialStore || sOutputStore) outputStore >> field(visible = ui.edit || sMaterialStore || sOutputStore)}
+      outputs >> table (editMode = if (isOneoff) Inherit else AlwaysRead) {
+        header{label("Code", width = 0.15) label("Product", width = 0.35)  label("Quantity", align = Right, width = 0.25) label("Transfer GST", width = 0.25) label("Cost Weight", width = 0.2) }
+        body {
+          row(editMode = if (isOneoff) Inherit else AlwaysRead){
+            outputProduct.product.fullNum >> field (fontStyle = Label, rowSpan = 2) outputProduct >> field(title = title) qty gstEditor costWeight 
+          }
+          row(visible = product.trackItems, editMode = Original) {grid(span = 4, labels = None, width = 0.9) {snView}}
+        }
+      }
+      materials >> table (editMode = if (isOneoff) Inherit else AlwaysRead) {
+        header{label("Code", width = 0.15) label("Product", width = 0.35)  label("Quantity", align = Right, width = 0.25) label("Transfer GST", width = 0.25) label("", width = 0.2) }
+        body{
+          row {
+            material.product.fullNum >> field (fontStyle = Label, rowSpan = 4) material >> field(title = title) qty gstEditor >> field(visible = sSupplier) space
+          }
+          row {y(span = 4, visible = status == Planned || !isAv){stockDesc}}
+          row {y(span = 4, visible = !isAv){availableView}}
+          row (visible = product.trackItems, editMode = Original) {y(span = 4) {snView}}
+        }
+      }
+      resources >> table (editMode = if (isOneoff) Inherit else AlwaysRead) {
+        resource >> field(width = 0.5, title = title) duration >> field(width = 0.25) space(width = 0.45, label = "")
+      }
+    }
+    generalLedgerButton
+  }
+  impl view ref = x{status >> field(editMode = AlwaysEdit) availability title}
+}
+
+inline entity OproMethodMaterial extends IProMaterial with FProductItems {
+  singular = "Material"
+  impl func moveItemActive = order.status != Canceled
+  impl func prodMoveOut = order
+  impl func moveOutStockType = Inventory
+  
+  field order: ProductionOrder
+  field material: Material {
+    available(Ref).with(product.unit, product.altUnits)
+    update = {
+      productUpdated()
+    }
+  }
+  impl func product = material.product
+  impl func updateGstRate(): Void = {
+    gstRate = product.gstRate(order.supplier.legalEntity)
+  }
+}
+
+inline entity OproMethodOutput extends IProOutput with FProductItemsInline {
+  singular = "Output"
+  impl func moveItemActive = order.status != Canceled
+  impl func prodMoveIn = order
+  impl func moveInStockType = order.outputStockType.stock
+  
+  field order: ProductionOrder
+  field outputProduct: OutputProduct {
+    label = "Product"
+    available(Ref).with(product.unit, product.altUnits)
+    update = {
+      productUpdated()
+    }
+  }
+  impl field costWeight: Dec[2] = 1
+  impl func product = outputProduct.product
+  impl func updateGstRate(): Void = {
+    gstRate = product.gstRate(order.legalEntity.legalEntity)
+  }
+}
+
+inline entity OproMethodResource extends IMethodResource {
+  singular = "Resource"
+  field order: ProductionOrder
+  impl field resource: Resource
+  impl field duration: UDuration[DateUnit.hour]
+}

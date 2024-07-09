@@ -1,0 +1,26 @@
+interface BankStatementItem {
+  func date: Date
+  func accountNumber: String? = ""
+  func data(account: BankAccount): BankData
+  func amount: Number?
+  func currency: Currency? = null
+  func amountInCurrency: Number? = 0
+  
+  func same(payment: Payment): Dec[2]? = {
+    let a = if (payment.isIncoming) payment.getAccountAmount else -payment.getAccountAmount
+    if (a == amount.as[Money[payment.account.currency]] && payment.date == date) 1.0 else 0.0
+  }
+}
+
+extend class BankData {
+  func same(o: BankData): Dec[2]? = {
+    if (bankId && o.bankId) {
+      if (bankId == o.bankId) 1
+      else 0
+    } else if (memo && o.memo) {
+      if (memo == o.memo) 1 else 0
+    } else {
+      0.5
+    }
+  }
+}

@@ -1,0 +1,214 @@
+inline entity RentDeliveryItem extends HasProductItems with IDeliveryProductItem with IOutgoingDeliveryItem with IIncomingDeliveryItem {
+  func storeRequired = true
+  func stockTypeSrc: StockType? = Asset
+  func stockTypeDst: StockType? = Asset
+  func needProductItems: Bool = delivery?.status?.started
+  func inDelivery = assetReturn?.as[SalesAssetReturn]
+  field assetReturn: AssetReturn? {
+    default = {
+      order.as[SalesOrder]!.assetReturns.first
+        .or(if (order.real) SalesAssetReturn(primary = true, salesOrders = [order.as[SalesOrder]!]) else null)
+    } 
+    from = {
+      sales!.order.assetReturns
+    }
+    validate = if (!assetReturn && order.real) "Asset return should be selected for every rent item"
+  }
+  func needsRevision: Bool = updated(product) || updated(duration) || updated(durationUnit) || updated(qty) || updated(chargeOvernight) || updated(nightsCount)
+  field product: ISubProduct {
+    available(Ref).with(vendors, productItems)
+    from = ISubProduct.all.filter(_.isTangible && _.rentStatus.forRent)
+    update = {
+      let pm <- priceModel
+      this.silentUpdate(durationUnit, if (pm == EmptyRentPriceModel) default else pm.rentDurationUnits.first.alt(default))
+      this.silentUpdate(duration, this.duration.as[Qty[this.durationUnit]])
+      if (!assetReturn?.items.exists(_ != this)) {
+        this.silentUpdate(chargeOvernight, pm.hasNightCharge)
+      }
+      doUpdateDuration()
+    }
+  }
+  func unit: ProductUnit = Item
+  field nightsCount: Qty[Night]? {
+    label = "Nights"
+    update = {
+      if (let o = old, let oo = o, let s = sales) {
+        let ona = s.sNightAmount
+        s.sNightAmount = s.sNightAmount*(new.as[Dec[12]]/oo)
+        s.sAmount = s.sAmount - ona + s.sNightAmount
+      }
+    }
+  }
+  field duration: Qty[durationUnit]? {
+    canEditUnit = true
+    default = assetReturn?.items.find(_ != this)?.duration.alt(1.as[Qty[RentDurationUnit.default]]!)
+    update = {
+      if (let o = old, let oo = o, let s = sales) {
+        s.sAmount = ((s.sAmount - s.sNightAmount)*(new.as[Dec[12]]/oo)) + s.sNightAmount
+      }
+      doUpdateDuration()
+    }
+    validate = if (!nightsCount && !duration) "Duration cannot be empty"
+  }
+  field durationUnit: RentDurationUnit {
+    default = duration.unit!.as[RentDurationUnit]!
+    update = {
+      this.duration = this.duration.as[Qty[durationUnit]]
+    }
+    from = priceModel.get.rentDurationUnits
+  }
+  field chargeOvernight: Bool {
+    default = assetReturn?.items.find(_ != this)?.chargeOvernight
+    update = {
+      updateAmount()
+    }
+  }
+  
+  func doUpdateDuration(): Future[Void] = {
+    let _ <- if (let ar = assetReturn) {
+      if (ar.items.count > 1) {
+        let dd <- ar.calcDeliveryDate
+        if (ar.dispatchDate != dd) {
+          this.assetReturn = SalesAssetReturn(salesOrders = [order.as[SalesOrder]!], dispatchDate = dd, deliveryDate = dd) 
+        }
+      } else {
+        ar.updateDeliveryDate()
+      }
+    }
+    let assetReturns = order.as[SalesOrder]!.assetReturns
+    if (assetReturns.count > 1) {
+      assetReturns.filter(status == Planned)
+        .groupBy(dispatchDate, deliveryDate)
+        .values
+        .foreach{returns =>
+          if(returns.count > 1) {
+            returns.drop(1).foreach{i =>
+              i.items.foreach{j => j.assetReturn = returns.first}
+              i.delete
+            }
+          }
+        }
+    }
+    let _ <- updateAmount()
+    if (let o = sales?.order) o.updateBond()
+  }
+  
+  func updateAmount(): Future[Void] = {
+    let pm <- priceModel
+    silentUpdate(nightsCount, if (chargeOvernight) {
+      if (let d = delivery?.dispatchDate, let r = assetReturn?.deliveryDate) pm.nightsCount(d, r)
+    })
+    let _ <- if (let s = sales) {
+      let currency = s.order.currency
+      let vendor = s.order.vendor
+      let customer = try? s.order.customer!
+      let pam <- productPrice
+      let ra <- if (let pr = pam) {
+        pr.rentSalesAmount(currency, customer, qty, duration, if (chargeOvernight) nightsCount, s.order.pricesIncludingGst)
+      }
+      if (let r = ra) {
+        s.amountEditor = r.amount
+        s.nightAmountEditor = r.nightAmount
+      }
+    }
+
+    updateGst()
+  }
+  
+  func durQty = if (let duration) duration*qty else qty
+  field qty: Qty[ProductUnit.Item] {
+    default = 1
+    label = "Quantity"
+    update = {
+      let _ <- if (old) {
+        if (let s = sales) s.sAmount = s.sAmount*(new.as[Dec[12]]/old!)
+        if (let p = purchase) p.sAmount = p.sAmount*(new.as[Dec[12]]/old!)
+        updateAmount()
+      }
+      if (let o = sales?.order) o.updateBond()
+    }
+  }
+  
+  field sales: SalesRentItem? inline by deliveryItem {
+    default = if (let d = delivery?.as[ISalesDelivery]) createSales(d)
+  }
+  func purchase: IPurchaseItem? = null
+  func createSales(sd: ISalesDelivery): SalesRentItem = SalesRentItem(deliveryItem = this, order = sd.salesOrders.first)
+  func createPurchase(pd: IPurchaseDelivery): IPurchaseItem = throw "Unsupported"
+  
+  func clearSales: Void = sales = null
+  func clearPurchase: Void = {}
+    
+
+  view form = grid(labels = None, width = 1.2, margin = TopBottom) {
+    row{product  >> field(width = 0.6), qty >> field(width = 0.3), duration >> field(width = 0.3)}
+    stockDesc
+    availableView
+    productItems >> field(editMode = Original)
+  }
+  
+  func toDuration = {
+    if (let dd = delivery?.dispatchDate, let rd = assetReturn?.deliveryDate) {
+      rd - dd
+    } 
+  }
+  compute priceAndModel: Future[(IRentPriceModel, IPrice?)] = {
+    let vendor = sales!.order.vendor
+    let prod = this.product.superProduct
+    back {
+      if (let pm = vendor.priceModel(prod)?.as[IRentPriceModel]) (pm, pm.price(this.product)) 
+      else (EmptyRentPriceModel, null)
+    }
+  }
+  compute priceModel: Future[IRentPriceModel] = priceAndModel.map(#0)
+  compute productPrice: Future[IPrice?] = priceAndModel.map(#1)
+  compute unsafePeriods: [Period]? = _availablePeriods?.unsafe
+  compute availablePeriods: [Period]? = _availablePeriods?.safe 
+  compute _availablePeriods: AvailablePeriods? = {
+    let excludeItems = (try? inStocks!)*.id + (try? outStocks!)*.id
+    let vendor = assetReturn!.order.orderVendor!
+    let returnSchedule = assetReturn!.deliveryDst!.getSchedule
+    if (let duration) {
+      ProdReg.at((1, Date.min))
+        .find(_.product == this.product && _.stockType == Asset && _.legalEntity == sales?.order?.vendor && _.store ==? delivery?.as[SalesDelivery]?.source)
+        .map{reg => 
+          AvailablePeriods(  
+            unsafe = reg.availablePeriods(qty, this.period.start.min(Date.now), priorityDate = order.date, excludeItems),
+            safe = RentAdjuster.adjustPeriods(
+              duration, if (let pm = vendor.priceModel(this.product.superProduct)?.as[IRentPriceModel]) pm else EmptyRentPriceModel, 
+              reg.store.getSchedule, returnSchedule, reg.availablePeriods(qty, Date.now, priorityDate = null, excludeItems)
+            )
+          )
+        }
+    }
+  }
+
+  func updateDuration(): Future[Void] = {
+    if (assetReturn!.deliveryDate > delivery!.dispatchDate) {
+      let pm <- priceModel
+      let new = pm
+          .rentDuration(delivery!.toRentDeliveryDesc, assetReturn!.toRentDeliveryDesc, unit = null)
+               
+      if (durationUnit != new.unit || duration != new) {
+        if (durationUnit != new.unit) silentUpdate(durationUnit, new.unit!.as[RentDurationUnit]!)
+        silentUpdate(duration, new)
+        updateAmount()
+      }
+    }
+  }
+  
+  compute isAvailableNow = {
+    if (delivery?.status == Planned) unsafePeriods.exists(includes(period)) 
+    else outStocks && outStocks.all(available >= 0)
+  }
+  func awaitingForDate: Date? = if (isUnavailable) availablePeriods.first?.start
+    
+  compute period = Period(
+    start = delivery?.dispatchDate.alt(Date.now), 
+    end = assetReturn?.deliveryDate.alt(delivery?.dispatchDate.alt(Date.now) + toDuration))
+}
+
+class AvailablePeriods {
+  field safe: [Period]?
+  field unsafe: [Period]?
+}

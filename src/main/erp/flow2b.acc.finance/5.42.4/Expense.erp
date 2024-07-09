@@ -1,0 +1,33 @@
+analytic ExpenseType(dataType = "ExpenseType")
+
+acctemplate Expenses(defaultAccount = "expenseType?.account?.acc.alt(Overheads)") {
+  key field expenseType: ExpenseType?
+  field counterparty: LegalEntity?
+  field product: ISubProduct?
+  field qty: Qty[product?.unit.alt(Item)]? {label = "Quantity"} 
+}
+
+extend entity ExpenseType {
+  field account: ExpenseAccount = Overhead
+}
+
+enum ExpenseAccount(acc: LedgerAccount) {
+  case OperatingExpense(acc = OperatingExpenses)
+  case Overhead(acc = Overheads)
+  case ExceptionalExpense(acc = ExceptionalExpenses)
+}
+
+acctemplate BankFees(type = singleAccount) {
+  key field finAccount: FinAccount
+  impl func currency: Currency = finAccount.currency
+}
+
+trait ILExpenses extends Ledger {
+  func expenseType: ExpenseType?
+}
+
+extend register LExpenses extends ILExpenses with ILProduct {
+  impl field taxableAmount: Money[currency]? = trAmount
+  extend view aview = taxableAmount >> field(visible = ui.edit || taxableAmount != trAmount)
+  impl func subProduct = product
+}

@@ -1,0 +1,14 @@
+notify BulkMessageSending[BulkMsgDelivery] (
+  to = [contact.addressee]
+  contacts = [contact]
+  from = msg.lists.first.from.find(c => c.channel == channel)
+  subject = subject
+  text = text
+  mainEntity = msg
+)
+
+extend object BulkMessageSending {
+  impl func unsubscribeUrl(data: BulkMsgDelivery, contact: Contact): Url? = {
+    BulkApi.apiUrl("unsubscribe") + "?msg=$(data.msg.uuid)&contact=$(contact.uuid)"
+  } 
+}

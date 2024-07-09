@@ -1,0 +1,13 @@
+extend trait IPhoneContact {
+  impl func channel: CommChannel? = SMS
+  impl func sender = ContactSenderPhone
+  
+  impl object func canSend = ContactSenderPhone.canSend
+}
+
+
+object ContactSenderPhone extends ContactSender {
+  impl back object func send(activity: Activity): Void = {
+    ActivitySendSMSJob(activity = activity).enqueue()
+  }
+}

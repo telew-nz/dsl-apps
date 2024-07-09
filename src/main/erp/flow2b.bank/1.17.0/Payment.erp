@@ -1,0 +1,41 @@
+class PaymentReprocessJob extends SystemJob {
+  impl func service = FinanceService
+  impl back func do = {
+    IncomingPayment.all.filter(!payer && !reconAmount && !source && !reasons && !manLinks).foreach(reprocessData)
+    OutgoingPayment.all.filter(!payee && !reconAmount && !source && !reasons && !manLinks).foreach(reprocessData)
+  }
+}
+
+extend entity IncomingPayment extends BankStatementItem {
+  back func reprocessData: Bool = {
+    if (!this.payer) {
+      let paymentMethod = account.paymentMethod(this, bankData)
+      if (let cp = paymentMethod?.legalEntity.or(account.counterparty(this, bankData))) {
+        this.payer = cp
+        this.paymentMethod = paymentMethod
+        save 
+        true
+      }
+    }
+  }
+  impl func stmAmount = amount.withoutUnit
+  impl func stmCurrency: Currency? = currency
+  impl func data(account: FinAccount): BankData = bankData
+}
+
+extend entity OutgoingPayment extends BankStatementItem {
+  back func reprocessData: Bool = {
+    if (!this.payee) {
+      let paymentMethod = account.paymentMethod(this, bankData)
+      if (let cp = paymentMethod?.legalEntity.or(account.counterparty(this, bankData))) {
+        this.payee = cp
+        this.paymentMethod = paymentMethod
+        save 
+        true
+      }
+    }
+  }
+  impl func stmAmount = -amount.withoutUnit
+  impl func stmCurrency: Currency? = currency
+  impl func data(account: FinAccount): BankData = bankData
+}

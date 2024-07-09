@@ -1,0 +1,91 @@
+object OrderImportService extends SystemService with MsgProcActivity {
+  impl func title: String = "Order Import Service"
+  impl func roles: [Role]? = [Admin]
+  impl func priority = 0.7
+  
+  field resolveReferences: Bool = true
+  field importMsg: Bool {
+    default = true
+    label = "Import messages from vendors"
+  }
+  
+  impl func canProc(msg: ExtMsg): Bool = {
+       importMsg 
+    && msg.attachs.exists(name.lower.endsWith(".pdf"))
+    && msg.from.contact?.legalEntity?.vendor
+  }
+  
+  func invoiceTitleTerms = ["tax invoice", "credit note", "debit note", "adjustment note"]
+  impl func refs(msg: ExtMsg): [Entity]? = {
+    if (let aa = msg.refActivities.first) [aa.mainEntity]
+  }
+  impl func item(msg: ExtMsg, from: Contact?, recipients: [Contact], refs: [Entity]?): Entity? = {
+    let files = msg.attachs!*.make
+    guard(let invoices = files
+      .filter(is("pdf"))!
+      .filter{f =>
+        let t = f.plainText.get.flex
+        invoiceTitleTerms.exists(t.contains(_))
+      }
+    ) else return {
+      files*.delete
+      null
+    }
+
+    Activity.current!.entities = files
+    PurchaseOrderImport(files = invoices, from = from)
+  }
+  
+  impl func attachs(msg: ExtMsg, item: Entity): [File]? = []
+  
+  field statUnit: DateUnit = day
+  field statPeriod: UDuration[statUnit]? {
+    canEditUnit
+    default = 30_day
+    label = "Show statistics for last"
+  }
+  compute invStat {
+    value = POIInvoice.all
+      .filter((!statPeriod || date > Date.now - statPeriod) && invoiceType)
+      .agg(InvStat(all = count, success = filter(_.success).count) )
+      .result
+    label = "Fully processed invoices"
+  }
+  
+  compute vendorStat {
+    value = POIInvoice.all
+      .filter((!statPeriod || date > Date.now - statPeriod) && invoiceType && vendorId && poi.invoices*.vendorId.onlyOne)
+      .groupBy(vendorId!)
+      .agg(success = _.all(i => i.success))
+      .agg(InvStat(all = count, success = filter(_.success).count.as[UPercent[2]]))
+      .result
+    label = "Fully processed vendors"
+  }
+  
+  compute fileStat {
+    value = PurchaseOrderImport.all
+      .filter((!statPeriod || date > Date.now - statPeriod) && invoices.exists(invoiceType))
+      .agg(InvStat(all = count, success = filter(_.success).count) )
+      .result
+    label = "Fully processed files"
+  }
+  
+  impl view form = nav{grid(labels = Top){
+    issuesView
+    serviceState
+    errorsCount >> field(editMode = AlwaysRead)
+    
+    resolveReferences
+    importMsg
+    
+    statPeriod
+    invStat
+    vendorStat
+    fileStat
+  }}
+}
+
+class InvStat(field success: UInt?, field all: UInt?) {
+  compute percent: UPercent[2]? = if (let all) success.as[UPercent[2]]/all
+  impl view form = x {percent success label("of") all}
+}

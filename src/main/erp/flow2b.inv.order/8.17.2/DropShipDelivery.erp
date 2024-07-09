@@ -1,0 +1,84 @@
+entity DropShipDelivery extends IPurchaseDelivery with ISalesDelivery {
+  icon = "truck-moving"
+  const ref field n: Int? = increment(Order.gen)
+  
+  func stockTypeSrc = null
+  func stockTypeDst = null
+  func deliverySource: Store? = null
+  ref compute number: String {
+    value = manualNumber.alt("DD" + n.format(3, 0))
+    update = {manualNumber = new}
+  }
+  func entityNumbers = [number, trackingNumber]
+  func isInstant = false
+  func pathSrc = null
+  func pathDst = null
+  func deliverySrc: IStore? = null
+  func deliveryDst: IStore? = null
+  func pathCanBeExecuted: Bool = false
+  
+  func orders: [Order] = purchaseOrders + salesOrders
+  func policyOrders: [Order] = salesOrders
+  list compute vendor = purchaseOrders.first.vendor
+  list compute customer = salesOrders.first.customer
+  field salesPolicy: IDeliveryPolicy?
+  field purchasePolicy: IDeliveryPolicy?
+  func deliverySupplier = supplier?.legalEntity
+  func deliveryReceiver = receiver?.legalEntity
+  func legalEntity: OurLegalEntity = salesOrders.first.legalEntity
+  func title = "$number $(try? receiver?.title)"
+  func defaultSalesOrders: [SalesOrder]? = [SalesOrder(deliveries = [this], vendor = purchaseOrders.first.customer)]
+  func defaultPurchaseOrders: [PurchaseOrder]? = [PurchaseOrder(deliveries = [this], customer = salesOrders.first.vendor)]
+  func updateSupplier(): Void = {
+    if (!purchaseOrders.first.id) purchaseOrders.first.vendor = getSupplier?.as[Vendor]
+  }
+  func updateReceiver(): Void = {
+    if (!salesOrders.first.id) salesOrders.first.customer = getReceiver?.as[Customer]
+  }
+  field shipTo: ILocation? {
+    from = Query(getReceiver?.legalEntity).flatMap(deliveryLocations)
+    visible = getReceiver
+  }
+  func debtDueDate = dueDate
+  stored compute dueDate: Date? = back {
+    if (status == Planned && purchasePolicy) dueDate(purchaseOrders, purchasePolicy)  
+    else dueDate(salesOrders, salesPolicy)  
+  }
+  func ledgers(journal: Journal, date: Date): Future[[Ledger]?] = {
+    let sl <- salesLedgers(journal, date)
+    let pl <- purchaseLedgers(journal, date)
+    sl + pl
+  }
+  view deliveryHeader = grid(width = 1.2){
+    issuesView
+    status
+    row {supplier, receiver, dispatchDate}
+    row {space, shipTo, deliveryDate}
+    row {purchasePolicy,  salesPolicy,  dueDate}
+    freightView
+    salesOrders
+    purchaseOrders
+    items >> list(editMode = AlwaysRead){form}
+  }
+  view form = nav{grid(width = 1.2, labels = Top) {
+    salesOrders
+    purchaseOrders
+    number
+    status
+    row {supplier, receiver, dispatchDate}
+    row {space, shipTo, deliveryDate}
+    row {purchasePolicy,  salesPolicy,  dueDate}
+    freightView
+    items >> list(editMode = AlwaysRead){form}
+  } generalLedgerButton} 
+  
+  view ref = x{title status}
+  event onSave = {
+    orders*.touch
+  }
+  
+  object view list = DropShipDelivery.all >> nav{list(canAdd = false){grid(labels = None){
+    row{number >> field(width = 0.2) deliveryDate >> field(visible = true, width = 0.3) vendor >> field(width = 0.25) customer >> field(width = 0.25)}
+    x{status, overdueState}
+  }}}
+}

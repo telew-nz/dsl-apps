@@ -1,0 +1,57 @@
+interface BankStatementItem {
+  func date: Date
+  func accountNumber: String? = ""
+  func data(account: FinAccount): BankData
+  func amount: Number?
+  func currency: Currency? = null
+  func amountInCurrency: Number? = 0
+  
+  func same(movement: CashMovement, data: BankData): Dec[2]? = {
+    let pa = (if (amount < 0) movement.srcAmount else movement.dstAmount).withoutUnit
+    let pData = if (amount < 0) movement.srcBankData! else movement.dstBankData!
+    if (pData.uploaded) {
+      if (pa == amount && pData.date.alt(movement.date) == date) 1.00 + data.same(if (amount < 0) movement.srcBankData! else movement.dstBankData!)
+    } else if (let amountRank = 
+      if (pa == amount) 1.00
+      else if (pa - 0.50 <= amount && amount <= pa + 0.50) 0.75) 
+    {
+      if (movement.date - 1_day <= date && date <= movement.date + 3_day) amountRank + 0.75
+    }
+  }
+  
+  func sameContra(movement: CashMovement, data: BankData): Dec[2]? = {
+    let pa = (if (amount > 0) movement.srcAmount else movement.dstAmount).withoutUnit
+    if (let amountRank = if (pa == -amount) 1.00) {
+      if (amount > 0) {
+        if (movement.date - 1_day <= date) amountRank + 0.75
+        else if (movement.date - 4_day <= date) amountRank + 0.5
+      } else if (amount < 0) {
+        if (date <= movement.date + 1_day) amountRank + 0.75
+        else if (date <= movement.date + 4_day) amountRank + 0.5
+      }
+    }
+  }
+}
+ 
+extend class BankData {
+  const system field uploadState: BankUploadState = NotUploaded
+  const system field date: Date?
+  func uploaded: Bool = uploadState == Uploaded
+  
+  func same(o: BankData): Dec[2]? = {
+    if (bankId && o.bankId) {
+      if (bankId == o.bankId) 1
+      else 0
+    } else if (memo && o.memo) {
+      if (memo == o.memo) 1 else 0
+    } else {
+      0.5
+    }
+  }
+}
+
+enum BankUploadState {
+  case NotUploaded {background = "#ed9"}
+  case Uploaded {color = "white" background = "#090"}
+  case Missing {background = "#f99" label = "Missing in Bank Statement"}
+}

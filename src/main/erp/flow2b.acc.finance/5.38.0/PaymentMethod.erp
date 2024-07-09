@@ -1,0 +1,46 @@
+trait PaymentMethod extends PseudoEntity {
+  ref field legalEntity: LegalEntity
+  impl func mainEntity = legalEntity
+  func currency: Currency
+}
+
+extend trait LegalEntity {
+  field paymentMethods: [PaymentMethod]? inline by legalEntity {
+    visible = !our
+  }
+}
+extend entity Company {
+  extend view form = extend("main") {
+    paymentMethods
+  }
+}
+extend entity Person {
+  extend view form = extend("main") {
+    paymentMethods
+  }
+}
+
+entity PMBankAccount extends PaymentMethod {
+  singular = "Bank Account"
+  ref field number: String
+  field name: String?
+  field particulars: String?
+  field code: String?
+  field reference: String?
+  impl func title = "$legalEntity: $number"
+  impl field currency: Currency = (try? legalEntity.currency!).alt(our)
+  impl view form = nav{grid{
+    legalEntity
+    x{currency number >> field(stretch = 1)}
+    row{particulars code reference}
+  }}
+  
+}
+
+extend trait LegalEntity {
+  back func addBankAccount(number: String?): PMBankAccount? = addBankAccount(number, currency.alt(our))
+  back func addBankAccount(number: String?, currency: Currency): PMBankAccount? = if (let number = number.trim) {
+    paymentMethods*.as[PMBankAccount].find(a => a.number == number)
+      .alt(PMBankAccount(legalEntity = this, number = number, currency = currency).save)
+  }
+}

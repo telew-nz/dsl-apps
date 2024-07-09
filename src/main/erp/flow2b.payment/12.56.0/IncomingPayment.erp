@@ -1,0 +1,136 @@
+entity IncomingPayment extends Payment with IPReasonOwner {
+  singularShort = "In"
+  icon = "sign-in-alt"
+  background = "#d68400"
+  impl func legalEntity = payee
+  impl func srcAccount: FinAccount? = null
+  impl func dstAccount: FinAccount? = account
+  impl func debtAmount = if (!source || !source!.isInstant) -((try? amount) - (try? reasons!)*.delta.sum).max(0)
+  
+  impl func movedAmount: Money[currency] = amount
+  impl compute srcAmount: Number? {
+    value = 0
+    update = {}
+  }
+  impl compute dstAmount: Number? {
+    value = accountAmountEditor
+    update = {accountAmountEditor =? new.positive}
+  }
+  impl compute srcBankData: BankData? {
+    value = null
+    update = {}
+  }
+  impl compute dstBankData: BankData?{
+    value = bankData
+    update = {bankData =? new}
+  }
+  impl func defaultReasons = try? defaultRecon.toSeq!
+  
+  func defaultRecon: IPReason? = {
+    if (let e = payer?.ipRecon, let a = unreconAmount.abs) {
+      if (!manLinks && !source) {
+        e.ipRecon(this, a) 
+      }
+    }
+  }
+  func creditAmount: Money[currency]? = amount
+  impl func debtCashFlows = if (let debtAmount) [CashFlowAmount(cashFlow = PurchaseReturns, amount = debtAmount)]
+  impl func isPurchase = false
+  impl func title = "$fullNum $payer"
+  impl view ref = x {title amount date}
+  impl func numPrefix = "IP"
+  impl compute debtCounterparty: LegalEntity? {
+    value = if (let source) source.debtCounterparty else payer
+    update = {
+      if (let n = new) this.payer = n
+    }
+  }
+  impl func cpName: String = "Payer"
+  impl ref field payer: LegalEntity? {
+    available(Ref).with(ipRecon)
+    default = try? origin!.debtCounterparty!
+    update = {
+      defaultRecon
+    }
+  }
+  impl field paymentMethod: PaymentMethod? {
+    from = payer?.paymentMethods
+    init = {
+      new.legalEntity =? payer
+      if (let bm = new.as[PMBankAccount]) {
+        bankData.initMethod(bm)
+      }
+    }
+  }
+  ref field payee: OurLegalEntity {
+    available(Ref).with(accounts)
+    default =? (try? origin!.legalEntity).or(OurLegalEntity.onlyOne)
+    update = {
+      this.account =? new.accounts.onlyOne
+    }
+  }
+  func isTheir = payer?.isTheir
+  impl func isIncoming: Bool = true
+  
+  impl event onSave = {
+    if (let p = payer) {
+      if (created || !origin(payer)) {
+        bankData.addTo(p)
+	    if (!paymentMethod) {
+          paymentMethod = bankData.forcePaymentMethod(p, currency)
+        }
+      }
+    }
+  }
+  
+  impl object view list = IncomingPayment.all >> nav{list{grid(labels = None){
+    row{number, date.as[Date[day]], payer, space, account}
+    row{stateView >> field(width = 0.8), amount >> field(width = 0.2)}
+    recRefs >> list(frame = false){_ >> field(title = title)}
+  }}}
+  
+  impl view form = nav{grid{
+      issuesView
+      number
+      refNum
+      date
+      stateView >> field(label = "State")
+      unreconAmount.abs >> field(label = "Unreconciled", visible = !source && unreconAmount)
+      payer >> field(visible = !source) 
+      debtCounterparty >> field(visible = source, label = "Payer")
+      paymentMethod >> field(visible = paymentMethod)
+      
+      payee
+      account
+      amount >> field(canEditUnit = true)
+      accountAmount
+      source >> field(editMode = AlwaysRead)
+      reasons >> field(visible = !source)
+      debtOriginsView >> field(label = "Origins")
+      desc
+      bankData >> field(editMode = AlwaysRead)
+    }
+    generalLedgerButton
+    button("Convert to Transfer", visible = !origin) {
+      convertTo(CashTransfer)
+    }                
+    extension("nav")
+  }
+  view stateView = x{eReconState uploadState}
+  override view posViewDebit = x{account amount}
+  override view posViewCredit = x{account mAmount}
+  
+  impl func converters = [
+    Converter[CashTransfer](to = CashTransfer, convert = {r =>
+      let to = account
+      let income = amount
+      let d = bankData
+      let date = this.date
+      r.silentUpdate(dateIn, date)
+      r.dateOut = date
+      r.to = to
+      r.dstBankData = d
+      r.income = income
+    })
+  ]
+}

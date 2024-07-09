@@ -1,0 +1,62 @@
+analytic Tax(dataType = "Tax")
+
+acctemplate Tax(type = singleAccount) {
+  impl key field currency: Currency
+  key field tax: Tax
+  field rate: Percent[2]??
+  field taxedAmount: Money[currency]? 
+  field isAdjustment: Bool
+  field isInstantPayment: Bool
+  field isTaxPayment: Bool
+}
+
+extend register LTax {
+//  func origin: DebtOrigin = journal.as[DebtOrigin]!
+  stored compute baseTaxedAmount: Money[legalEntity.getCurrency]? <- taxedAmount.to[Money[legalEntity.getCurrency]](date)
+  
+  func toTaxedAmount = TaxedAmount(rate = rate, isAdjustment = isAdjustment, 
+     tax = amount, baseTax = baseAmount, taxedAmount = taxedAmount, baseTaxedAmount = baseTaxedAmount)
+  
+  stored compute taxedAmountBalance: Money[currency]? = prev?.taxedAmountBalance + taxedAmount
+}
+
+
+enum Tax {
+  case IncomeTax
+  case Gst = "GST"
+  case ProvisionalTax
+  case PayrollTax
+  case WithholdingTax
+  
+  back func agg(le: OurLegalEntity, period: Period, currency: Currency, filter: LTax => Bool): TaxedAmount = {
+    let r = LTax
+      .between(period.start, period.end)*.items
+      .filter(i => i.tax == this && i.legalEntity == le && i.currency == currency && filter(i))
+      .agg(taxedAmount.sum, amount.sum).result.get
+    TaxedAmount(tax = r.amount, taxedAmount = r.taxedAmount) 
+  }
+  back func balance(le: OurLegalEntity, date: Date, currency: Currency): TaxedAmount = {
+    let b = LTax
+      .at(date)
+      .find(i => i.tax == this && i.legalEntity == le && i.currency == currency)
+      .result.get
+    TaxedAmount(tax = b?.balance, taxedAmount = b?.taxedAmountBalance)
+  }
+}
+
+class TaxedAmount {
+  field rate: Percent[2]??
+  field isAdjustment: Bool
+  field tax: Money?
+  field baseTax: Money? = tax
+  field taxedAmount: Money?
+  field baseTaxedAmount: Money? = taxedAmount
+  func fullAmount = tax + taxedAmount
+  func baseFullAmount = baseTax + baseTaxedAmount
+  func add(o: TaxedAmount) = TaxedAmount(rate = rate, isAdjustment = isAdjustment,
+    tax = tax + o.tax, baseTax = baseTax + o.baseTax, 
+    taxedAmount = taxedAmount + o.taxedAmount, baseTaxedAmount = baseTaxedAmount + o.baseTaxedAmount)
+  func mul(k: Number?): TaxedAmount = TaxedAmount(rate = rate, isAdjustment = isAdjustment,
+    tax = tax*k, baseTax = baseTax*k, 
+    taxedAmount = taxedAmount*k, baseTaxedAmount = baseTaxedAmount*k)
+}

@@ -1,0 +1,93 @@
+entity VariableKit extends ISuperProduct with ICustomerSuperProduct with TWeightSize {
+  func isTangible = true
+  field title: String
+  field photos: [Image]?
+  field description: Text?
+  field obsolete: Bool
+  field alwaysAvailable: Bool
+  field variations: [KitVariation]? read by variableKit
+  func skuPrefix = "VKIT"
+  
+  object func attrs: [ProductAttr]? = [ColorItem.as[ProductAttr]!, Size]
+  func child = variations
+  func customerProducts = variations
+  
+  view form = nav{
+    tabs {
+      grid (labels = Top, label = "Main") {
+        photos >> field(height = 10, label = "")
+        title >> field(label = "")
+        row {sku refNum space}
+        row {weight width height depth}
+        brands
+        categories
+        row {obsolete  alwaysAvailable >> field (label = "Always Available for Sale")}
+        productCost >> field(frame = false)
+        baseMainView
+        variations
+        extension("main")
+        description
+      }
+      grid (labels = Top, label = "Related") {
+        accessories >> list(frame = false)
+        principals >> list(frame = false)
+        extension("rel")
+      }
+      extension("tabs")
+      grid (labels = Top, label = "Other") {
+        extension
+      }
+    }
+    extension("nav")
+  }
+}
+
+entity KitVariation extends IKit with IComplexSubProduct with ICustomerComplexProduct {
+  func title: String = "$variableKit $(attrTerms.join(" "))"
+  
+  ref field variableKit: VariableKit
+  func getParent = variableKit
+  field obsolete: Bool
+  field photos: [Image]?
+  field alwaysAvailable: Bool
+  func isTangible = true
+  
+  func customerSuperProduct = variableKit
+  func attrTerms = color.toSeq + size.toSeq
+  
+  ref field color: ColorItem?
+  ref field size: Size?
+  
+  view form = nav{
+    tabs {
+      grid (labels = Top, label = "Main") {
+        photos >> field(height = 10, label = "")
+        variableKit >> field(label = "", noTab)
+        row {sku refNum >> field(noTab) space}
+        color
+        size
+        barcodes
+        row {obsolete  alwaysAvailable >> field (label = "Always Available for Sale")}
+        productCost >> field(frame = false)
+        items >> table {
+          product >> field(width = 0.7)
+          qty >> field(width = 0.3)
+        }
+        baseMainView
+        extension("main")
+        description
+      }
+      grid (labels = Top, label = "Related") {
+        kits
+        extension("rel")
+      }
+      extension("tabs")
+      grid (labels = Top, label = "Other") {
+        customerProductView
+        extension
+      }
+    }
+    extension("nav")
+  }
+  view ref = x{"   " >> field(background = color?.color, visible = color) title}
+}

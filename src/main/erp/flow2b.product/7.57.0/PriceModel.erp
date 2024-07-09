@@ -1,0 +1,235 @@
+interface IIPriceModel {
+  func priority: Dec[8]? = 0
+  
+  func isDynamic = false
+  func isSalesModel = true
+  func isRentModel = false
+  back func containsSales(product: IBaseProduct): Bool {
+    default value = priceSales(product)
+  }
+  back func containsRent(product: IBaseProduct): Bool {
+    default value = priceRent(product)
+  }
+  back func priceSales(product: IBaseProduct): IPriceSales? = null
+  back func priceRent(product: IBaseProduct): IPriceRent? = null
+  
+  func rentRetDate(dispatch: ScheduleDate, retSchedule: ISchedule, qty: UQty?): Date {
+    default value = {
+      let d = toDuration(qty)
+      retSchedule.addWorkingTime(dispatch.date, d)
+        .alt(dispatch.date + d)
+    }
+  }
+  func rentDur(dispatch: ScheduleDate, ret: ScheduleDate, unit: DurUnit?, forceUnit: Bool): UQty {
+    default value = {
+      if (let dur = ret.schedule.workingTime(Period(start = dispatch.date, end = ret.date))) {
+        if (let u = unit?.defDur) {
+          dur.to[Duration[u.unit!]].as[UQty[unit!]]!
+        } else {
+          dur.to[Duration[hour]].as[UQty[DurUnit.Hour]]!
+        }
+      } else {
+        1.as[UQty[unit.alt(DurUnit.Hour)]]
+      }
+    }
+  }
+  func rentDurUnits: [DurUnit]? {
+    default value = DurUnit.all.toSet
+  }
+  func toDuration(qty: UQty?): UDuration? = {
+    if (qty) qty.unit!.as[DurUnit]!.defDur*qty
+  }  
+}
+
+trait IPriceModel extends RefEntity with IIPriceModel {
+  object func ours: [IPriceModel]? = OurLegalEntity.ours*.priceModels
+  func currency: Currency = vendor.getCurrency
+  ref field vendor: IVendor by priceModels =? OurLegalEntity.onlyOne
+}
+
+object PriceModelNone extends IIPriceModel 
+
+class ScheduleDate(date: Date, schedule: ISchedule)
+
+trait IDynamicPriceModel extends IPriceModel 
+trait IStaticPriceModel extends IPriceModel {
+  func supports(product: IBaseProduct): Bool = false
+  func createPrice(product: IBaseProduct): IStaticPrice = throw "createPrice Unsupported"
+}
+
+interface IPrice {
+  func model: IPriceModel
+  func currency = model.currency
+  func vendor: IVendor = model.vendor
+  func product: IBaseProduct
+  func gstRate: UPercent[2]? = product.gstRate(vendor).alt(0)
+   
+  view form
+}
+interface IPriceSales extends IPrice {
+  list compute salesPrice: Future[SalesPrice] {
+    value = back{
+      salesPrice(currency, vendor.pricesIncludingGst)
+    }
+  }
+  back func salesPrice(currency: Currency, inclGst: Bool): Future[SalesPrice]
+  back func salesAmount(currency: Currency, customer: ICustomer?, qty: UQty, inclGst: Bool): Future[SalesPrice] {
+    default value = {
+	  let p <- salesPrice(currency, inclGst)
+      p.mul(product.toBase(qty))
+    }
+  }
+}
+interface IPriceRent extends IPrice {
+  
+  list compute rentPrices: Future[[DurPrice]?] {
+    value = back{
+      rentPrices(currency, vendor.pricesIncludingGst)
+    }
+  }
+  
+  back func rentPrices(currency: Currency, inclGst: Bool): Future[[DurPrice]?] = {
+    throw "Rent prices are not supported"
+  }
+  back func rentAmount(currency: Currency, inclGst: Bool, customer: ICustomer?, qty: UQty, period: RentPeriod): Future[SalesPrice] {
+    default value = {
+      let rps <- rentPrices(currency, inclGst)
+      guard (let rp = rps.first) else return SalesPrice()
+
+      let dur = period.dur
+      if (let d1 = dur.unit?.as[DurUnit]?.defDur, let d2 = rp.unit.defDur) {
+        rp.price.mul(qty * (dur*d1)/(rp.dur*d2))
+      } else {
+        rp.price.mul(qty * dur/rp.dur)
+      }
+    }
+  }
+  func bond: UMoney[currency]? = 0
+  back func bond(currency: Currency, customer: ICustomer?, qty: UQty, period: RentPeriod): Future[UMoney?] = {
+    let b <- bond.to[UMoney[currency]](now)
+    b*qty
+  }
+}
+class RentPeriod(dispatch: ScheduleDate, ret: ScheduleDate, dur: UQty?)
+
+trait IStaticPrice extends AnyEntity with IPrice {
+  impl func model: IStaticPriceModel
+  impl field product: IBaseProduct by staticPrices {
+    available(Ref).with(productCost)
+  }
+  func updateSalesPrice(salesPrice: SalesPrice): Bool = false
+}
+
+extend trait IVendor {
+  field priceModels: [IPriceModel]? read by vendor  
+  back func priceSales(product: IBaseProduct): IPriceSales? = {
+    priceModelSales(product)?.priceSales(product)
+  }
+  back func priceRent(product: IBaseProduct): IPriceRent? = {
+    priceModelRent(product)?.priceRent(product)
+  }
+  back func priceModelSales(product: IBaseProduct): IPriceModel? = {
+    priceModels.sortBy(priority).find(containsSales(product))
+  }
+  back func priceModelRent(product: IBaseProduct): IPriceModel? = {
+    priceModels.sortBy(priority).find(containsRent(product))
+  }
+}
+
+extend entity IVendor {
+  extend view vendorView = priceModels
+}
+
+extend trait IBaseProduct {
+  compute salesPrice: SalesPrice? {
+    availableFor = List
+    value <- {
+      if (let p = ourPrices*.as[IPriceSales].first) p.salesPrice
+    }
+    update = {
+      updateSalesPrice(OurLegalEntity.ours.first!, new)
+    }
+  }
+  compute rentPrices: [DurPrice]? {
+    availableFor = List
+    value <- {
+      if (rentStatus == ForRent) {
+        if (let p = ourPrices*.as[IPriceRent].first) p.rentPrices
+      }
+    }
+  }
+  compute currentPrice: UMoney? {
+    label = "Discounted Price"
+    value = salesPrice?.current
+    visible = !dynamicPrices
+    update = {
+      let sp = salesPrice.alt(SalesPrice(regular = new))
+      sp.current = new
+      updateSalesPrice(OurLegalEntity.ours.first!, sp)
+    }
+  }
+  compute regularPrice: UMoney? {
+    label = "Sales Price"
+    value = salesPrice?.regular
+    visible = !dynamicPrices
+    update = {
+      let sp = salesPrice.alt(SalesPrice(current = new))
+      sp.regular = new
+      updateSalesPrice(OurLegalEntity.ours.first!, sp)
+    }
+  }
+  func updateSalesPrice(le: IVendor, price: UMoney?): Void = {
+    if (let price) updateSalesPrice(le, SalesPrice(current = price, regular = price))
+  }
+  func updateSalesPrice(le: IVendor, price: SalesPrice?): Void = {
+    if (let sp = staticPrices.find(model.vendor == le && model.isSalesModel)) {
+      if (let p = price) sp.updateSalesPrice(p)
+      else sp.delete
+    } else if (let price) {
+      let pl = IPriceModel.all.result.get*.as[IStaticPriceModel]
+        .find(vendor == le && supports(this))
+        .alt(PriceList(vendor = le))
+      pl.createPrice(this).updateSalesPrice(price)
+    }
+  }
+  
+  compute ourPrices: [IPrice]? {
+    value = prices.filter(vendor.is[OurLegalEntity])
+  } 
+  compute purchasePrices: [IPrice]? {
+    value = prices.filter(!vendor.is[OurLegalEntity])
+  }
+  
+  compute prices = staticPrices + dynamicPrices
+  
+  field staticPrices: [IStaticPrice]? inline by product
+  
+  compute dynamicPrices: [IPrice]? {
+    availableFor = Inline
+    value = back {
+      IDynamicPriceModel.all
+        .groupBy(vendor)
+        .agg(prices = sortBy(b => b.priority).flatMap(b => b.priceSales(this).toSeq + b.priceRent(this).toSeq))
+        .flatMap(prices)
+    }
+  }
+  
+  view baseMainView = grid(labels = Top) {
+    //edit {
+    //  row {regularPrice currentPrice space }
+    //}
+    salesPrice >> field(frame = false, visible = !ui.edit || dynamicPrices)
+    edit{row{regularPrice currentPrice space}}
+    rentPrices >> field(frame = false)
+    ourPrices >> list(label = "Prices", visible = !OurLegalEntity.ours.onlyOne){ grid(labels = None) {
+      row {vendor model}
+      form >> field(frame = false)
+	}}
+  }
+  view supplyView = grid(labels = Top, label = "Supply", visible = purchasePrices) {
+    purchasePrices >> list(label = "Purchase Prices"){ grid(labels = None) {
+      row {vendor model}
+      form >> field(frame = false)
+	}}
+  }
+}

@@ -1,0 +1,119 @@
+trait IncomeItem extends OrderItem with IOrderDeliveryItem with IncomeRecodable {
+  impl func orderDeliveryItem: IOrderDeliveryItem? = this
+  func deliveryItem = this
+  
+  impl func name: String = income.title
+  field nonTaxable: UPercent? {
+    default = (try? income)?.nonTaxable
+    validate = if (0 > taxable || taxable > 1.00_PercentUnit) "Taxable percentage should be between 0% and 100%"
+  }
+  impl func recode(): Void = {
+    this.gstRate = if (let p = order.orderVendor) income.gstRate(p)
+    this.nonTaxable = income.nonTaxable
+    this.save
+  }
+  
+  compute taxable: UPercent? {
+    label = "Taxable Percentage"
+    value = (1.00_PercentUnit - nonTaxable).as[UPercent]
+    update = {
+      nonTaxable = (1.00_PercentUnit - new).as[UPercent]
+    }
+  }
+}
+
+inline entity ExpenseItem extends IPurchaseItemWithDelivery with IncomeItem {
+  singular = "Expense"
+  icon = "book"
+  
+  override func itemDelivery = delivery
+  impl func purchase: IPurchaseItem? = this
+  impl func sales: ISalesItem? = null
+  
+  field expense: ExpenseType {
+    update = {
+      recode()
+    }
+  }
+  impl func income = expense
+  override func cashFlow: CashFlow = Expenses
+  
+  impl view form = grid(margin = None, width = 1.2, labels = Top) {
+    row {
+      expense >> field(width = 0.6)
+      space(0.4)
+      amountEditor >> field(width = 0.2, align = Right)
+    }
+    row {
+      space(width = 0.401)
+      taxable >> field(showEmpty, visible = ui.isSelected || taxable != 1.as[Percent],  width = 0.4, align = Right)
+      gstEditor  >> field(visible = ui.isSelected, width = 0.2) 
+      discountEditor >> field(visible = ui.isSelected || discount, width = 0.2, align = Right)
+    }
+    row {
+      desc >> field(width = 1.0, visible = ui.isSelected || desc)
+      total >> field(visible = ui.isSelected && discount, width = 0.2, align = Right)
+    }
+   deliveryItem.delivery >> field(visible = ui.isSelected && this.order.deliveries.count > 1)
+  }
+  
+  impl view rowView = group {
+    row{expense >> field(rowSpan = 2)
+        space
+        space
+        amountEditor}
+    row(visible = discount){label("Discount", span = 2, align = Right) discountEditor}
+    row(visible = invoiceDesc) {invoiceDesc >> field(span = 4)}
+  }
+  impl func expenseLedgers(journal: Journal, date: Date, baseAmount: UMoney?) = {
+    [LExpenses(journal = journal, date = date, trAmount = baseAmount, expenseType = expense, taxable = taxable)]
+  }
+}
+
+inline entity RevenueItem extends ISalesItemWithDelivery with IncomeItem {
+  singular = "Revenue"
+  icon = "book"
+  
+  override func itemDelivery = delivery
+  impl func purchase: IPurchaseItem? = null
+  impl func sales: ISalesItem? = this
+  
+  field revenue: RevenueType {
+    update = {
+      recode()
+    }
+  }
+  impl func income = revenue
+  override func cashFlow: CashFlow = Sales
+  
+  impl view form = grid(margin = None, width = 1.2, labels = Top) {
+    row {
+      revenue >> field(width = 0.6)
+      space(0.4)
+      amountEditor >> field(width = 0.2, align = Right)
+    }
+    row {
+      space(width = 0.401)
+      taxable >> field(showEmpty, visible = ui.isSelected || taxable != 1.as[Percent],  width = 0.4, align = Right)
+      gstEditor  >> field(visible = ui.isSelected && order.as[SalesOrder]!.vendor?.hasGst, width = 0.2) 
+      discountEditor >> field(visible = ui.isSelected || discount, width = 0.2, align = Right)
+    }
+    row {
+      desc >> field(width = 1.0, visible = ui.isSelected || desc)
+      total >> field(visible = ui.isSelected && discount, width = 0.2, align = Right)
+    }
+    deliveryItem.delivery >> field(visible = ui.isSelected && this.order.deliveries.count > 1)
+  }
+  
+  impl view rowView = group {
+    row{revenue >> field(rowSpan = 2)
+        space
+        space
+        amountEditor}
+    row(visible = discount){label("Discount", span = 2, align = Right) discountEditor}
+    row(visible = invoiceDesc) {invoiceDesc >> field(span = 4)}
+  }
+  impl func revenueLedgers(journal: Journal, date: Date, baseAmount: UMoney?) = {
+    [LSales(account = Sales, journal = journal, date = date, trAmount = -baseAmount, revenueType = revenue, taxable = taxable)]
+  }
+}

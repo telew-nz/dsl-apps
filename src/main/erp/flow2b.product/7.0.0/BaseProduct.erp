@@ -1,0 +1,36 @@
+trait IBaseProduct extends RefEntity {
+  const system field skuGen: Int?
+  
+  func isTangible: Bool
+  func sku: String
+  func unit: ProductUnit = Item
+  func altUnits: [ProductAltUnit]? = []
+  func units: [ProductUnit] = (unit + altUnits*.unit).toSet
+  func photos: [Image]? = []
+  
+  func collectPhotos: [Image]?
+  func collectPhotosDown: [Image]? 
+  func collectPhotosUp: [Image]? 
+  func weightInGrams: Number?
+  func description: Text?
+  
+  func isValid: Bool
+  func gstRate(vendor: IVendor?): UPercent[2]??
+  func hasGst(vendor: IVendor?): Bool = gstRate(vendor)
+  
+  func obsolete: Bool
+  func alwaysAvailable: Bool
+  
+  func superProduct: ISuperProduct
+  func subProducts: [ISubProduct]?
+  
+  func parent: IBaseProduct?
+  func child: [IBaseProduct]?
+  func salesPrice: Future[SalesPrice] = SalesPrice.empty
+  
+  view traitItem = grid(labels = None) {
+    row {title >> field(width = 0.6) salesPrice >> field(width = 0.4, frame = false, align = Right)}
+  }
+  view baseMainView = grid (labels = Top) {
+  }
+}

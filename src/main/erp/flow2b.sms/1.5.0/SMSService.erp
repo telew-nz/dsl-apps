@@ -1,0 +1,78 @@
+entity SMSService extends SystemService with AWSService {
+  impl func title = "SMS Service"
+   
+  override func active = userEnabled
+  
+  back func pinpointHttps(path: Url?): HttpRequest = {
+    super.https("v1/apps/$awsPinpointAppId/$path")
+  }
+ 
+  
+  impl field awsAccessKeyID: String
+  impl field awsSecretAccessKey: Password
+  
+  impl func awsRegion = "ap-southeast-2"
+  impl func awsService = "pinpoint"
+  impl func awsServiceScope = "mobiletargeting"
+  
+  field awsPinpointAppId: String
+  
+  func countryCodeForValidation: String = Workspace.current.countryCode
+  field originationNumber: Phone?
+  field appKeyword: String?
+  
+  back func send(destinationNumber: Phone, message: PlainText): Future[String?] = {
+    let messageRequest = MessageRequest(
+      addresses = [destinationNumber -> AddressConfiguration()]
+      messageConfiguration = MessageConfiguration(
+        smsMessage = SMSMessage(
+          body = message
+          originationNumber = this.originationNumber
+          keyword = this.appKeyword
+        )
+      )
+    )
+    
+    //messageRequest.json.log("message request")
+    
+    let r <- this.pinpointHttps("messages").post(messageRequest.json)
+    
+    if (r.code == 200
+        let resMsg = r.body!.parseJson[MessageResponse].msgResult.apply(destinationNumber)){
+        if(resMsg.deliveryStatus == "SUCCESSFUL") resMsg.messageId else {
+       	  Activity.comment("Can't send sms.\n[${resMsg.deliveryStatus}]: ${resMsg.statusMessage}")
+          null[String]
+        }
+    } else null[String]
+  }
+  
+  
+  field snsWebhookEndpoint: SNSWebhookEndpoint inline by service
+  field snsTopicArn: String?
+  
+  field smsEventsWebhookEndpoint: SMSEventsWebhookEndpoint inline by service
+  
+  impl event onSave = {
+    if (serviceState == Active && !deleted && !created && updated(serviceState)) {
+      Activity.all.filter(deliveries.exists(d => d.status == Pending && d.channel == SMS)).foreach{a =>
+        IPhoneContact.send(a, a.deliveries.filter(d => d.status == Pending && d.channel == SMS)*.contact*.as[IPhoneContact]!)
+      }.result
+    }
+  }
+  
+  impl view form = nav{grid(labels = Top){
+    issuesView
+    serviceState
+    errorsCount >> field(editMode = AlwaysRead)
+    
+    awsAccessKeyID
+    awsSecretAccessKey
+    awsPinpointAppId
+    
+    countryCodeForValidation
+    originationNumber
+    appKeyword
+    snsTopicArn
+    
+  }}
+}

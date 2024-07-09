@@ -1,0 +1,130 @@
+inline trait ISalesItem extends OrderItem {
+  field order: SalesOrder by allItems
+  field invoice: SalesInvoice? by allItems {
+    default = order.invoices.first
+    from = order.invoices
+    isValid = invoice || !order.real
+    visible = this.order.invoices.count > 1
+  }
+}
+ 
+inline trait ISalesItemWithDelivery extends ISalesItem {
+  register ledgers: [Ledger]? <- if (let d = delivery) {
+    if (d.status == Delivered && (amount || discount) && active) {
+      let baseCurrency = d.legalEntity.getCurrency
+      let baseAmount <- amount.to[Money[baseCurrency]](d.deliveryDate)
+      let baseDiscount <- discount.to[Money[baseCurrency]](d.deliveryDate)
+        
+      let debt = LDebt(account = UnearnedRevenues, origin = d, journal = d, 
+               counterparty = order.customer, trAmount = amount - discount, currency = currency)
+      let disc = if (let d = baseDiscount) {
+        LCounterparty(account = DiscountsProvided, journal = delivery!, counterparty = order.customer, trAmount = d)
+      } 
+      let rev = if (let a = baseAmount) {
+        revenueLedger(a)
+      }
+      
+      CurrencyTrading.with([debt] + disc + rev)
+    } else Future.apply([]) 
+  } else Future.apply([]) 
+    
+  func revenueLedger(baseAmount: Money): Ledger = throw "$(this) cannot have revenue"
+}
+
+inline entity SalesItem extends ISalesItemWithDelivery with OrderProductItem {
+  field deliveryItem: DeliveryItem inline by sales
+    
+  singular = "Product"
+  
+  func outcomeStockReg: StockRegister? = stock
+  
+  //Register
+  register stock: StockRegister? {
+    availableFor = Inline
+    available(Inline).for(Inline)
+    value = {
+      if (delivery?.status == Canceled || !active)  null
+      else if (let sd = delivery?.as[SalesDelivery]) {
+        if (product.isTangible) StockRegister(
+          legalEntity = sd.supplier, store = sd.source!, good = product,
+          sort = if (sd.status == Planned) 2 else 0, 
+          date = sd.dispatchDate, document = sd,
+          factualQty = if (sd.status == Planned) 0 else -(baseQty), 
+          reservedQty = if (sd.status == Planned) baseQty else 0
+        ) else null
+      } else null
+    }
+    autoRecalc = true
+  }
+  
+  func revenueLedger(baseAmount: Money): Ledger = {
+    LSales(account = Sales, journal = delivery!, product = product, qty = qty, 
+           counterparty = order.customer, trAmount = -baseAmount)
+  }
+  register invLedger: LInventory? = {
+    if (let d = delivery?.as[SalesDelivery]) {
+      if (d.status == Delivered && product.isTangible && active) {
+        LInventory(journal = d, product = product, qty = baseQty, isDebit = false, contraAccount = CostOfGoodsSold)
+      } else null
+    } else null
+  }
+  compute revenue = -ledgers*.as[LSales]*.amount.sum
+  compute cost = -ledgers*.as[LInventory]*.amount.sum
+  compute grossMargin = revenue - cost
+  compute grossMarginPercent = if (revenue) (grossMargin.as[Dec[8]]/revenue.as[Dec[8]]).as[Percent[2]] else 0
+    
+  view form = grid(width = 1.2, margin = None) {
+    row {deliveryItem.product >> field(label = "", width = 0.55) 
+         deliveryItem.qty >> field(canEditUnit = true, width = 0.2) 
+         priceEditor >> field(width = 0.2) 
+         amountEditor >> field(width = 0.25)
+    }
+    read {
+      deliveryItem.stockDesc >> field(visible = active && delivery?.is[SalesDelivery] && delivery?.status == Planned, label = "", width = 0.95) 
+      discountEditor >> field(width = 0.25)
+    }
+    edit {
+      deliveryItem.stockDesc >> field(visible = active && delivery?.is[SalesDelivery] && delivery?.status == Planned, label = "")
+    }
+    deliveryItem.delivery >> field(visible = this.order.deliveries.count > 1)
+    invoice
+    deliveryItem.availableView >> field(visible = active && (delivery?.is[SalesDelivery] || !delivery), label = "")
+    edit {
+      panel(collapsed = !discount, label = "More", frame = false, margin = None) {
+        grid(width = 1.2, margin = Bottom) {
+          row{gstEditor >> field(width = 0.2) discountEditor >> field(width = 0.25) space(width = 0.75)}
+        }
+      }
+    }
+  }
+  /*view rowView(prev: this?) = group {
+    row{deliveryItem.product >> field(rowSpan = 2)
+        y {
+          prev?.qty >> field(fontStyle = Strikeout, align = Right, visible = prev?.qty != qty)
+          qty >> field(canEditUnit = true, align = Right) 
+        }
+        y {
+          prev?.priceEditor >> field(fontStyle = Strikeout, align = Right, visible = prev?.priceEditor != priceEditor)
+          priceEditor >> field(align = Right)
+        }
+        y {
+          prev!.amountEditor >> field(fontStyle = Strikeout, align = Right, visible = prev?.amountEditor != amountEditor)
+	      amountEditor >> field(align = Right)
+        }
+    }
+    row(visible = discount){label("Discount", span = 2, align = Right) y{
+      prev!.discountEditor >> field(fontStyle = Strikeout, align = Right, visible = prev?.discountEditor != discountEditor)
+      discountEditor >> field(align = Right)
+    }}
+  }*/
+    
+  view rowView = group {
+    row{deliveryItem.product >> field(rowSpan = 2)
+        deliveryItem.qty >> field(canEditUnit = true) 
+        priceEditor >> field(align = Right)
+        amountEditor  >> field(align = Right)
+    }
+    row(visible = discount){label("Discount", span = 2, align = Right) discountEditor}
+  }
+}
+

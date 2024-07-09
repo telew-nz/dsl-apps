@@ -1,0 +1,106 @@
+entity PriceList extends IStaticPriceModel {
+  func title = "PL $vendor $date"
+  ref field date: Date[day] = now
+  field pricesIncludingGst: Bool = (try? vendor.pricesIncludingGst).alt(true)
+  
+  field products: [PriceListProduct]? inline by priceList 
+  back func price(product: IBaseProduct): IPrice? = {
+    products.find(p => p.product == product || p.product == product.superProduct)
+  }
+  view form = nav{grid(width = 1.2){
+    date
+    vendor
+    pricesIncludingGst
+    products >> table {
+      product >> field(width = 0.35) 
+      cost >> field(width = 0.2, visible = vendor.legalEntity.our)
+      regular >> field(width = 0.2, fontStyle = if (current == regular) Normal else Strikeout) 
+      current >> field(width = 0.2)
+      marginsView
+    }
+  }}
+} 
+  
+inline entity PriceListProduct extends IStaticPrice {
+  func model = priceList
+  field priceList: PriceList by products
+  
+  field regular: Money[currency]? {
+    label = "Regular Price"
+    update = {
+      if (old == current) current = new
+    }
+  }
+  compute gstK = if (vendor.hasGst) (1.0000 + product.gstRate(vendor).alt(0)) else 1.0000
+  compute regularNoGst {
+    value = {
+      if (priceList.pricesIncludingGst) regular/gstK
+      else regular
+    }
+    update = {
+      if (priceList.pricesIncludingGst) regular = new*gstK
+      else regular = new
+    }
+  }
+  field current: Money[currency]? {
+    label = "Current Price"
+  }
+  compute currentNoGst {
+    value = {
+      if (priceList.pricesIncludingGst) current/gstK
+      else current
+    }
+    update = {
+      if (priceList.pricesIncludingGst) current = new*gstK
+      else current = new
+    }
+  }
+  compute cost: Future[Money[currency]?] {
+    label = "Approx Cost"
+    value = product.productCost?.cost.to[Money[currency]](now)
+  }
+  compute regularMargin: Percent[2]? {
+    value = {
+      if (let r = regularNoGst) {
+        let c = cost.get
+        if (c) (r - c).as[Percent[2]]/r
+      }
+    }
+    update = {
+      if (let c = cost.get, let p = 1.0000 - new) regularNoGst = c/p
+    }
+  }
+  compute currentMargin: Percent[2]? {
+    value = {
+      if (let r = currentNoGst) {
+        let c = cost.get
+        if (c) (r - c).as[Percent[2]]/r
+      }
+    }
+    update = {
+      if (let c = cost.get, let p = 1.0000 - new) currentNoGst = c/p
+    }
+  }
+  view marginsView = x (label = "Margin", width = 0.25, flow = false, visible = vendor.legalEntity.our) {
+    regularMargin >> field(fontStyle = if (current == regular) Normal else Strikeout, visible = current != regular || ui.edit) 
+    currentMargin
+  }
+  
+  
+  event onSave = product.touch
+  func salesPrice(currency: Currency, inclGst: Bool): Future[SalesPrice] = {
+    let rp <- regular.to[Money[currency]](now)
+    let cp <- {
+      if (regular != current) {
+        current.to[Money[currency]](now)
+      } else Future(rp)
+    }
+    SalesPrice(regular = rp, current = cp)
+      .convertGst(gstRate, priceList.pricesIncludingGst, inclGst)
+  }
+  view form = grid {row{
+    salesPrice >> field(frame = false)
+    marginsView
+  }}
+}
+

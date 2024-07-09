@@ -1,0 +1,77 @@
+trait ProductAttr extends InlineEntity {
+  func attrName: String = "ProductAttr.name"
+  func attrSlug: String? = ""
+}
+trait ProductAttrTerm  extends Entity {
+  object extends ProductAttr
+}
+
+alias ICustomerBaseProduct = IBaseProduct {
+  deprecated(use = "IBaseProduct")
+}
+extend trait IBaseProduct {
+  func customerTitle(superTitle: String): String {
+    value = title
+    deprecated(use = "subTitle")
+  }
+  func subTitle(superTitle: String): String //For Google merchant, seo titles and similar
+}
+
+alias ICustomerSuperProduct = ISuperProduct {
+  deprecated(use = "ISuperProduct")
+}
+
+extend trait ISuperProduct {
+  object func attrs: [ProductAttr]? = []
+  final func subTitle(superTitle: String): String = superTitle
+  func customerProducts: [ISubProduct]? {
+    value = subProducts
+    deprecated(use = "subProducts")
+  }
+  back func attrOptions: [ProductAttrOptions]? = attrOptions(subProducts)
+  back func attrOptions(products: [ISubProduct]?): [ProductAttrOptions]? = {
+    let m: [ProductAttr -> [ProductAttrTerm]]? = products*.attrTerms.groupBy(_.object)
+    object.attrs.map(attr => ProductAttrOptions(attr = attr, options = m.apply(attr)))
+  }
+  view customerSuperView {
+    layout = grid(labels = Top) {
+      extension
+    }
+    deprecated(use = "superProductTabView")
+  }
+  view superProductTabView {
+    layout = group{
+      categoriesView      
+    }
+    ignoreWarnings
+  }
+}
+
+alias ICustomerProduct = ISubProduct {
+  deprecated(use = "ISubProduct")
+}
+extend trait ISubProduct {
+  func customerSuperProduct: ISuperProduct {
+    value = superProduct
+    deprecated(use = "superProduct")
+  }
+  func attrTerms: [ProductAttrTerm]?
+  view customerProductView {
+    layout = grid(labels = Top) {
+      extension
+    }
+    deprecated(use = "subProductTabView")
+  }
+  view subProductTabView {
+    layout = group{
+      
+    }
+    ignoreWarnings
+  }
+}
+
+alias ICustomerComplexProduct = IComplexSubProduct {
+  deprecated(use = "IComplexSubProduct")
+}
+
+class ProductAttrOptions(system field attr: ProductAttr, options: [ProductAttrTerm]?) 

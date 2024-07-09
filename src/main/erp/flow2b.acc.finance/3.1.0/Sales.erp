@@ -1,0 +1,12 @@
+analytic Product(dataType = "IProduct")
+  
+acctemplate Sales {
+  key field counterparty: LegalEntity?
+  key field product: IProduct?
+  func unit: ProductUnit = product?.unit.alt(Item)
+  field qty: Qty[unit]? {label = "Quantity", visible = product}
+}
+account Sales(template = "Sales", number = 500, type = Revenue) 
+extend register LSales {
+  field qtyBalance: Qty[unit] = if (isClosing) 0 else prev?.qty + qty
+}

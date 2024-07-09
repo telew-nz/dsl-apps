@@ -1,0 +1,63 @@
+trait IBaseProduct {
+  func isTangible: Bool
+  func sku: String
+  func unit: ProductUnit = Item
+  func altUnits: [ProductAltUnit]? = []
+  func units: [ProductUnit] = (unit + altUnits*.unit).toSet
+  func photos: [Image]? = []
+}
+
+trait ISuperProduct extends IBaseProduct {
+  plural = "Products"
+  singular = "Product"
+  width = 0.45
+  
+  func collectPhotos: [Image]? = {
+    if (let p = photos) p
+    else subProducts*.photos
+  }
+  func subProducts: [ISubProduct]?
+  
+  func description: Text? = ""
+  
+  func isValid: Bool = true
+  func obsolete: Bool = false
+  func weightInGrams: Number? = 0
+  func alwaysAvailable: Bool = !isTangible 
+  
+  object field gen: Int?
+  const field n: Int? = increment(ISuperProduct.gen)
+  func superProduct: ISuperProduct = this
+  const system field skuGen: Int?
+  field manualSku: String?
+  ref compute sku: String {
+    value = manualSku.alt(n.toString)
+    update = {
+      manualSku = new
+    }
+  }
+  
+  field categories: [ProductCategory]? by products {
+    available(All).for(All)
+  }
+    
+  func forSale: Bool = true
+  func productItems: [IProductItem]? = subProducts*.productItems
+  func calcSalesPrice: Future[Money?] = 0
+  field gstRate: GstRate? = null
+  field specialGstRate: Percent[2]? {
+    visible = gstRate == Special
+  }
+  ref compute getGstRate: Percent[2]?? = {
+    if (gstRate == Special) specialGstRate
+    else if (gstRate) gstRate!.rate 
+  }
+  func forceGstRate(vendor: Actor?): Percent[2]?? = if (vendor && vendor!.forceHasGst) {
+    getGstRate.or(vendor!.defaultGstRate.rate)
+  }
+  event onSave = {}
+  report Report {
+    view list = ISuperProduct.all >> nav{list{}}
+  }
+}
+

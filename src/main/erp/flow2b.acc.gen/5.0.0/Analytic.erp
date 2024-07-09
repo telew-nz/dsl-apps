@@ -1,0 +1,14 @@
+generator analytic {
+  field dataType: String
+    
+  func generate: Dsl = '
+extend trait Ledger {
+  func a$name: $dataType? = null
+}
+
+
+extend report Ledger.Report {
+  field a$name: $dataType? {auto = true label = "$(name.fromCamelCase)"}
+}
+'
+}

@@ -1,0 +1,38 @@
+entity Good extends IBasicProduct {
+  func isTangible = true
+  field title: String
+  field description: Text?
+  field obsolete: Bool
+  field alwaysAvailable: Bool
+  ref field unit: ProductUnit = Item
+  field altUnits: [ProductAltUnit]? {title = "Alternative Units"}
+  view form = nav{
+    tabs {
+      grid (labels = Top, label = "Main") {
+        photos >> field(height = 10, label = "")
+        title >> field(label = "")
+        sku
+        brands
+        categories
+        row {unit >> field(compact = true) obsolete alwaysAvailable >> field (label = "Always Available for Sale")}
+        baseMainView
+        extension("main")
+        description
+      }
+      grid (labels = Top, label = "Related") {
+        kits
+        accessories >> list(frame = false)
+        principals >> list(frame = false)
+        extension("rel")
+      }
+      extension("tabs")
+      grid (labels = Top, label = "Other") {
+        altUnits
+        customerProductView
+        extension
+      }
+    }
+    productNavView
+    extension("nav")
+  }
+}

@@ -1,0 +1,30 @@
+inline entity OPBankFees extends OPReason {
+  singular = "Bank Fees"
+  icon = "cut"
+  impl field amount: UMoney[payment.currency] =? payment.unreconAmount.abs
+  impl func cashFlows = [CashFlowAmount(cashFlow = BankFees, amount = -amount)] 
+  
+  impl func ledgers: Future[[Ledger]?] = {
+    [LBankFees(finAccount = account, journal = journal, trAmount = amount)]
+  }
+  
+  impl view form = grid (labels = None) {
+    row{h3("Bank Fees") space amount >> field(align = Right)}
+  }
+}
+
+inline entity IPBankFees extends IPReason {
+  singular = "Bank Fees"
+  icon = "cut"
+  impl field amount: UMoney[payment.currency]
+  impl func cashFlows = [CashFlowAmount(cashFlow = BankFees, amount = -amount)] 
+  override func delta: Money = -amount
+  
+  impl func ledgers: Future[[Ledger]?] = {
+    [LBankFees(finAccount = account, journal = journal, trAmount = amount)]
+  }
+  
+  impl view form = grid (labels = None) {
+    row{h3("Bank Fees") space amount >> field(align = Right)}
+  }
+}

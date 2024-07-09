@@ -1,0 +1,17 @@
+extend entity Person {
+  func legalInfo: LegalInfo = soleTrader.alt(LegalInfo())
+  ref compute gstStatus: GstStatus? {
+    value = if (let s = soleTrader) s.gstStatus else NotRegistered
+    views = []
+  }
+  field soleTrader: LegalInfo? {
+    views = []
+  }
+  extend view form = extend("tabs") {
+    grid(labels = Top, label = "Legal Info") {
+      soleTrader
+      extension("legalInfo")
+    }
+  }
+  extend view form = accounts
+}

@@ -1,0 +1,121 @@
+extend entity Invoice {
+  impl view form {
+    printable = true
+    layout = nav{grid (labels = None, width = 1.2) {
+      y (margin = Around, visible = !isLastInvoice){
+        y(background = "#fff9e4", border = Around) {
+          x(margin = Around){
+            label ("Not the last invoice" color = "#ff6200")
+            button("Open last") {
+              order.invoices.last!.form.open()
+            }
+          }
+        }
+      }
+      row {
+        h1(width = 0.75, label = name)
+        y (width = 0.45, margin = Bottom) {
+          logo >> field(height = 4, margin = None)
+          vendor.legalName >> field(fontStyle = H1, margin = None, visible = !logo)
+        }
+      }
+      
+      row {
+        grid (width = 0.35, labels = Top, labelsWidth = 0.15, margin = Bottom, spacing = false) {
+          order >> field(label = "Order", title = number, editMode = AlwaysRead)
+          x(label = "Invoice"){number >> field(fontStyle = Bold)  date}
+          totalDue
+          dueDate
+        }
+        payer >> grid (width = 0.4, labels = Top, margin = Bottom, spacing = false) {
+          legalName >> field(label = "Customer")
+          legalInfo.gstView >> field(frame = false)
+          order.references >> field(label = "Reference")
+        }
+        vendor >> grid(width = 0.45, labels = Top, margin = Bottom, spacing = false) {
+          legalName >> field(visible = logo, label = "Vendor")
+          legalInfo.gstView  >> field(frame = false)
+          contacts*.as[PhoneContact]*.phone.join(", ") >> field(label = "Phone")
+          contacts*.as[EmailContact]*.email.join(", ") >> field(label = "EMail")
+        }
+      }
+      
+      (items + prev?.deletedItems).groupBy(itemDlv).toSeq >> subtotal {
+        row{itemDlv >> field(span = 4, title = invTitle)}
+        table {
+          header{label("Product", width = 0.55) 
+                 label("Quantity", align = Right, width = 0.2) 
+                 label("Price", align = Right, width = 0.2) 
+                 label("Amount", align = Right, width = 0.25)}
+          body{row{rowView(this)}}
+          //row{product qty price amount}
+          //row(visible = discount){label("Discount") space space discount}
+        }
+      }
+      
+      row {
+        y (width = 0.59) {
+          debtTable >> list(border = None, frame = false) {
+            //grid(labels = None, width = 0.59, border = None, frame = false, spacing = false, margin = TopBottom){
+            y{
+              x(flow = false){doc >> field(title = title, stretch = 1) label("Account Allowance", stretch = 1, visible = !doc) amount} 
+              //x(visible = dueDate){label("Due", fontStyle = Label) dueDate}
+            }
+          }
+        }
+        
+        y (width = 0.61, margin = Right) {
+          grid (labels = TopRight, width = 0.61, spacing = false) {
+            row(labels = false) {
+              label("Total excl GST", fontStyle = Label, width = 0.26)
+              x(width = 0.35, margin = None) {
+                diffTotalWithoutGst >> field(showPlus = true, stretch = 100, visible = prev) 
+                totalNoGst >> field(showEmpty = true, stretch = 1) 
+              }
+            }
+            row(labels = false) {
+              label("GST", fontStyle = Label, width = 0.26)
+              x(width = 0.35, margin = None) {
+                diffGstAmount >> field(showPlus = true, stretch = 100, visible = prev)
+                gstAmount >> field(showEmpty, stretch = 1)   
+              }
+            }
+            row(labels = false) {
+              label("Total incl GST", fontStyle = Label, width = 0.26)
+              x(width = 0.35, margin = None) {
+                diffTotal >> field(showPlus = true, stretch = 100, visible = prev)
+                total >> field(showEmpty, stretch = 1, fontStyle = Bold) 
+              }
+            }
+            row(labels = false) {
+              label("Due", fontStyle = Label, width = 0.26)
+              order.invoices.filter(debtAmount) >> list(width = 0.35, margin = None) {
+                x(margin = None, flow = false) {
+                  totalDuePercent >> field(stretch = 100)
+                  dueDate?.date >> field(stretch = 10)
+                  diffTotalDue >> field(stretch = 1)
+                }
+              }
+            }
+            row(labels = false) {
+              label("Amount to Pay", fontStyle = Label, width = 0.26, visible = order.revUnpaidAmount)
+              x(width = 0.35, margin = None) {
+                order.revUnpaidAmount >> field(stretch = 100, fontStyle = Bold) 
+              }
+            }
+            row {
+              label("Bank Accounts", fontStyle = Label, width = 0.26, visible = paymentAccounts && order.revUnpaidAmount)
+              paymentAccounts >> list(width = 0.35, visible = order.revUnpaidAmount, margin = None){
+                number 
+              }
+            }
+          }
+
+        }
+      }
+
+    }
+    generalLedgerButton
+    }
+  }
+}

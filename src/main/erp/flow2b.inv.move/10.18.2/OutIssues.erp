@@ -1,0 +1,132 @@
+object ITNegativeStockMovement extends IssueType[IProdMoveOut] {
+  impl func title = "Some products were unavailable at the dispatch time"
+  impl func roles(item: IProdMoveOut) = [BusAdmin]
+  impl func hasIssue(item: IProdMoveOut) = !item.moveOutBeforeInit 
+    && (item.availability == Unavailable || item.availability == UnavailableProdItems) 
+    && !item.moveOutState.active
+  impl func fixes(item: IProdMoveOut) = if (let uis = item.unavItems) {
+    let sos <- item.doSupplyOptions(item.moveOutDate)
+
+    [Fix(text = "Check inventory movements for incorrect sequience of operations, incorrect variation selected or other errors in the data", acts = 
+         uis.flatMap(product.products.keys.toSeq).map {p =>
+           Act(label = p.title, do = ProdMovement(product = p).list.open)
+         }
+        )] + sos.map{s => 
+      Fix(text = "Transfer from $(s.store) of $(s.legalEntity) could be missed", acts = [
+        Act(label = "Transfer", do = {
+          let tr <- item.createTransfer(item.moveOutDate, s.legalEntity, s.store)
+          tr.form.open
+        })
+      ])
+    } +
+    Fix(text = "If you cannot find out the reason, create a stocktake before the transaction and set estimated items cost", acts = [
+      Act(label = "Create Stocktake", do = item.createStocktake.form.open)
+    ])
+  }
+}
+
+object ITDeliveryUnavailable extends IssueType[IProdMoveOut] {
+  impl func title = "Some products are unavailable"
+  impl func roles(item: IProdMoveOut) = [BusAdmin]
+  impl func hasIssue(item: IProdMoveOut) = !item.moveOutBeforeInit 
+    && (item.availability == Unavailable || item.availability == UnavailableProdItems) 
+    && item.moveOutState.active
+  impl func fixes(item: IProdMoveOut) = {
+    let sos <- item.doSupplyOptions(item.moveOutDate)
+    
+    sos.map{s => 
+        Fix(text = "Transfer the unavailable products from $(s.store) of $(s.legalEntity)", acts = [
+          Act(label = "Transfer", do = {
+            let tr <- item.createTransfer(null, s.legalEntity, s.store)
+            tr.form.open
+          })
+        ])
+      }
+      + Fix(text = "Purchase products from a supplier")
+  }
+}
+
+object ITDeliveryAvailableLater extends IssueType[IProdMoveOut] {
+  impl func title = "All products will be available later than planned"
+  impl func roles(item: IProdMoveOut) = [BusAdmin]
+  impl func hasIssue(item: IProdMoveOut) = !item.moveOutBeforeInit 
+    && (item.availability == Unavailable || item.availability == UnavailableProdItems) 
+    && item.moveOutState.active
+  impl func fixes(item: IProdMoveOut) = {
+    let fxs <- ITDeliveryUnavailable.fixes(item)
+    (if (let d = item.earliestDispatchDate) {
+      [Fix(text = "Change the dispatch date from $(item.moveOutDate) to $d", acts = [
+        Act(label = "Change dispatch date", do = UI.save{
+          item.moveOutDate = d
+          item
+        })
+      ])]
+    }) + fxs
+  }
+}
+
+
+extend trait IProdMoveOut {
+  override func issueTypes = {
+    super.issueTypes + ITNegativeStockMovement + ITDeliveryUnavailable + ITDeliveryAvailableLater
+  }
+
+  func createStocktake = {
+    Stocktake(
+      stockType = unavItems*.moveOutStockType*.inv.first!
+      date = moveOutDate - 1_minute, 
+      legalEntity = moveOutLE, store = moveOutStore,
+      items = unavItems*.outStocks
+        .filter(outlook < 0)
+        .map{i =>
+          let qty = (i.fact - i.outlook).positive
+          StocktakeItem(product = i.product.as[IProductInv]!, unit = i.product.unit, 
+                        qty = qty, cost = i.product.productCost?.cost*qty)
+        }
+    )
+  }
+  func createTransfer(date: Date?, legalEntity: OurLegalEntity, store: IStore): Future[Transfer] = {
+    let sogs <- supplyOptionGoods(date, legalEntity, store)
+    let le = moveOutLE
+    Transfer(
+      sourceStockType = sogs!.first.stockType, destinationStockType = sogs!.first.stockType, 
+      source = store, destination = moveOutStore, legalEntity = le,
+      toLegalEntity = if (le != legalEntity) le
+      dispatchDate = moveOutDate - 1_minute, deliveryDate = moveOutDate - 1_minute,
+      items = sogs
+        .filter(stockReg?.outlook > 0)
+        .map(TransferItem(product = product.as[IProductInv]!, unit = unit, 
+                          qty = qty.min(stockReg?.outlook!).positive!))!
+    )
+  }
+  
+  compute supplyOptions = if (moveOutState.active) doSupplyOptions(null)
+  func doSupplyOptions(date: Date?) = {
+    let unavs = unavItems
+      *.outStocks
+       .filter(outlook < 0)
+    let unavProds = unavs*.product
+    let sss <- Query(unavProds).map(calcStocks(null /*date too slow*/)).result
+    let ss = sss.zip(unavs).map {i =>
+      i.#0.map(reg = _, unavailableQty = -i.#1.outlook)
+    }
+       
+    ss.flatMap(_)
+       .groupBy(reg.legalEntity, reg.store)
+       .agg(availableAllQty = map(i => i.reg.stock.outlook.clamp(0, i.unavailableQty)).sum).toSeq
+       .filter(availableAllQty > 0 && (store != this.moveOutStore || legalEntity != this.moveOutLE))
+       .sortBy(availableAllQty.desc)
+  } 
+  func supplyOptionGoods(date: Date?, legalEntity: OurLegalEntity, store: IStore) = {
+    let unavs = unavItems
+      *.outStocks
+       .filter(outlook < 0)
+    let unavProds = unavs.map(product, stockType, outlook)
+    Query(unavProds)
+      .map{i =>
+        let stockReg <- Query(i.product).map(_.calcStock(null /*date too slow*/, i.stockType, legalEntity, [store])).result
+        (i.product, i.product.unit, i.stockType, qty = -i.outlook!, stockReg)
+      }
+      .result
+  }
+}

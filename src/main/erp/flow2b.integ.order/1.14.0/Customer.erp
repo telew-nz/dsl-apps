@@ -1,0 +1,69 @@
+extend trait LegalEntity extends HasExtId
+
+back interface ECustomer[ID] {
+  func extId: ID?
+  func personFullName: String?
+  func emails: [Email]?
+  func phones: [Phone]?
+  func billingAddresses: [EAddress]?
+  func deliveryAddresses: [EAddress]?
+  func personNickname: String? = ""
+  
+  
+  func allAddresses = billingAddresses + deliveryAddresses
+  func allEmails = emails + billingAddresses*.emails + deliveryAddresses*.emails
+  func allPhones = phones + billingAddresses*.phones + deliveryAddresses*.phones
+  
+  func getFullName: String = {
+    personFullName
+      .or(personNickname)
+      .or(allAddresses.mapOpt(_.address.person).first)
+      .or(allAddresses.mapOpt(_.address.company).first)
+      .or(allEmails.first)
+      .or(allPhones.first)
+      .alt("Untitled")
+  }
+  
+  func make(service: ExtIdSource[ID]): Customer = {
+    let emails: [Email]? = allEmails.mapOpt(lower.trim).filter(e => EmailContact.isAddressValid(e))
+    let customer = service.findExtId(extId, _.as[LegalEntity])?.makeCustomer
+      .or(EmailContact.all.find(email == emails.first).result.get?.addressee?.as[LegalEntity]?.makeCustomer)
+      .alt(Customer(legalEntity = Person(name = getFullName)))
+    let le = customer.legalEntity
+    if (let person = le.as[Person]) {
+      person.name =? personFullName
+    }
+    emails.foreach(le.addEmail(_))
+    allPhones.foreach(le.addPhone(Phone, _))
+    allAddresses*.make(le)
+    if (let ei = extId) customer.legalEntity.updateExtId(service, ei)
+    customer.save
+  }
+  
+  func replyContact(customer: Customer): Contact? = {
+    customer.legalEntity.contacts*.as[EmailContact].first
+  }
+  func fromContact(customer: Customer): Contact? = {
+    customer.legalEntity.contacts*.as[EmailContact].first
+  }
+}
+
+back class ECustomerEmpty[ID] extends ECustomer[ID] {
+  func extId = null
+  func personFullName = ""
+  func emails = []
+  func phones = []
+  func billingAddresses = []
+  func deliveryAddresses = []
+}
+
+back interface EAddress {
+  func address: Address
+  func phones: [Phone]?
+  func emails: [Email]?
+
+  
+  func make(legalEntity: LegalEntity): IActorLocation? = {
+    legalEntity.addLocation(Real, address)
+  }
+}

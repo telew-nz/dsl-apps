@@ -1,0 +1,12 @@
+extend trait PriceModel {
+  func updatePrices(order: Order): Future[Any] = {
+    order.items.map{i =>
+      if (let di = i.orderDeliveryItem?.as[IDeliveryProductItem]
+          let pm = vendor.priceModels.sortBy(date.desc).find(contains(di.product.superProduct))
+      ) {
+        let amount <- pm.productPrice(di.product)!.salesAmount(order.currency, order.customer, di.qty) 
+        i.amount = amount
+      } else Future.apply(0)
+    }.allCompleted
+  }
+}

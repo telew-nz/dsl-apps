@@ -1,0 +1,11 @@
+report GoodsMovement {
+  view list = StockRegister.all.sortBy(sort.desc, date.desc) >> nav{table(mode = Static){
+    document >> field (width = 0.8), date, good, legalEntity, store,
+    group(label = "Change") {
+      factualChange, reservedQty, expectedQty
+    }
+    group(label = "Stock") {
+      fact, reserve, available, expectation, outlook
+    }
+  }}
+}

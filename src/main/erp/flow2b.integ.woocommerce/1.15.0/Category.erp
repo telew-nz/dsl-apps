@@ -1,0 +1,68 @@
+back class UploadCategoriesJob extends SystemJob {
+  field service: WooCommerceIntegration
+  field change: BatchChange[IProductCategory] 
+  func do: Future[Any] = {
+    change.regroup(service)
+    let u = BatchCategoryUpdate(
+      create = change.created.map(CategoryData.create(service, _)),
+      update = change.updated.map(CategoryData.create(service, _)),
+      delete = change.deleted*.extId(service)
+    )
+    let response <- service.https("/products/categories/batch").post(u.json)
+    let r = response.body!.parseJson[BatchCategoryResponse]
+    change.updateExtIds(service, r.create.map(id))
+    (u.create + u.update).zip(r.create + r.update, (ll, rr) => {
+      if (let left = ll.image, let right = rr.image) {
+        left.updateExtId(service, right)
+      }
+    })
+    r.check(this, u, change, process = false)
+  }
+}
+
+back class DownloadCategoriesJob extends SystemJob {
+  field service: WooCommerceIntegration
+  func do: Future[Any] = {
+    let response <- service.https("/products/categories").get
+    let cats: [Int -> CategoryData]? = response.body!.parseJson[[CategoryData]?].toMap(_.id!)
+    cats.values.foreach {cat =>
+      if (let parent = cat.parent) {
+        cat.superCategory = cats(parent)
+      }
+    }
+    cats.values*.make(service)
+  }
+}
+ 
+back class BatchCategoryUpdate {
+  field create: [CategoryData]?
+  field update: [CategoryData]?
+  field delete: [Int]?
+}
+
+back class BatchCategoryResponse extends WooResponse[CategoryData] {
+  field create: [CategoryData]?
+  field update: [CategoryData]?
+  field delete: [CategoryData]?
+  func all = create + update + delete
+}
+back class CategoryData extends WooData with EProductCategory[Int] {
+  extFieldNaming = Underscore
+  field id: Int?
+  field name: String
+  field parent: Int?
+  field description: Text?
+  field image: WooImage? {extRequired}
+  
+  field superCategory: CategoryData? {transient}
+  func extId = id!
+  func photos = image.toSeq
+  
+  object func create(service: WooCommerceIntegration, u: IProductCategory): CategoryData = {
+    CategoryData(
+      id = service.extId(u), name = u.name, parent = u.superCategory?.extId(service), description = u.description,
+      image = u.collectPhotos.first.map{f => 
+        WooImage.create(service, f, 0)
+      })
+  }
+}

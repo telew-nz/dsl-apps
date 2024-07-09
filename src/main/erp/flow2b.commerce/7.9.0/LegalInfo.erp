@@ -1,0 +1,10 @@
+interface LegalInfo extends AnyRef {
+  field name: String? {label = "Legal Name"}
+  
+  var gstNumber: String?
+  var taxNumber: String?
+  
+  object func newDefault: LegalInfo? = {
+    if (let lob = LegalInfo.subObjects.onlyOne) lob.new()
+  }
+}

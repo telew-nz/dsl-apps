@@ -1,0 +1,20 @@
+access InventoryManager {
+  menu Inventory {
+    entity Transfer
+    entity Stocktake
+    report StockReport
+    report SupplyRequirement
+    report GoodsMovement
+    report NegativeStock
+    trait ISuperProduct
+  }
+  view dashboard = row {
+    IDelivery.all.filter(hasInvIssues && isForCurrent(InventoryManager)).sortBy(dispatchDate) 
+      >> nav(label = "Inventory Issues", limit = 5, more = InventoryIssue().list.open) {
+      list(canAdd = false) {}
+      add("Transfer") {Transfer().form.open}
+      add("Stocktake") {Stocktake().form.open}
+      button("Products") {ISuperProduct.Report().list.open}
+    }
+  }
+}

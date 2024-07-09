@@ -1,0 +1,24 @@
+trait IStore extends Entity with ILocation with ScheduleAssignee {
+  background = "#2e8e67"
+  object func ours: [IStore]? = Workspace.current.stores
+  object func onlyOne: IStore? = Workspace.current.stores.onlyOne
+}
+
+extend entity Workspace {
+  compute stores: [IStore]? {
+    availableFor = Inline
+    value = IStore.all
+  }
+}
+
+entity Store extends IStore {
+  impl field title: String
+  impl func locationAddress: Address? = address
+  field address: Address?
+  impl view form = nav{grid(labels = Top){
+    title >> field(label = "", fontStyle = H1)
+    address
+    schedule
+    contacts
+  }}
+}

@@ -1,0 +1,6 @@
+extend trait IOrder {
+  func assetReturned: Bool = allItems.all(!active || _.assetReturned)
+}
+extend trait IOrderItem {
+  func assetReturned: Bool = true
+}

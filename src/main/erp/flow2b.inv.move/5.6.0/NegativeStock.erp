@@ -1,0 +1,14 @@
+report NegativeStock {
+  view list = StockRegister.all
+    .filter(i => 
+          i.fact < 0 
+       && i.sort == 0 
+       && i.date >? Stocktake.all.filter(st => st.type == Initial && st.store == i.store && st.legalEntity == i.legalEntity).agg(date.min)
+    )
+    .sortBy(date) >> 
+  nav{table(mode = Static){
+    document >> x (label = "Document" width = 0.3) {title}, date, good, legalEntity, store,
+    factualChange >> field(label = "Change")
+    fact
+  }}
+}

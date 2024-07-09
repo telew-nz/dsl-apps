@@ -1,0 +1,89 @@
+trait IShipping extends PseudoEntity with IProdMovePath {
+  func dlv: OrderDlv
+  var dlvDate: Date
+  func startAttached: Bool
+  
+  impl func mainEntity = dlv
+  impl func pathStart = start
+  impl func pathEnd = end
+  
+  field detached: Bool
+  
+  field start: Date {
+    label = "Dispatch Date"
+    default = if (startAttached) dlvDate else dlvDate - 1_day
+    visible = !startAttached || detached 
+    update = {
+      if (let o = old) {
+        if (startAttached || detached) {
+          silentUpdate(end, end + (new - o))
+        } else if (new > end) {
+          silentUpdate(end, new)
+        }
+      }
+      updDlvDate
+    }
+  }
+  
+  field end: Date {
+    label = "Receiving Date"
+    default = if (!startAttached) dlvDate else dlvDate + 1_day
+    visible = startAttached || detached 
+    update = {
+      if (let o = old) {
+        if (!startAttached) {
+          silentUpdate(start, start + (new - o))
+        } else if (new < start) {
+          silentUpdate(start, new)
+        }
+      }
+      updDlvDate
+    }
+  }
+  
+  func dlvDateUpdated(date: Date): Void = {
+    if (!detached) {
+      if (startAttached) {
+        start = date
+      } else {
+        end = date
+      }
+    }
+  }
+  func updDlvDate: Void = {
+    if (startAttached) {
+      if (detached) detached = dlvDate != start
+      else dlvDate = start
+    } else {
+      if (detached) detached = dlvDate != end
+      else dlvDate = end
+    }
+  }
+}
+
+trait Shipping extends IShipping {
+  field loc: ILocation? {
+    label = "Location"
+    from = Query(dlv.counterparty).flatMap(deliveryLocations)
+    init = {
+      new.as[IActorLocation]?.actor = dlv.counterparty
+    }
+  }
+  
+  impl view form = grid(width = 1.2) {
+    row {
+      loc 
+      x(label = "Dispatch Date"){
+        start >> field(visible = detached || !startAttached)
+        start >> field(visible = !detached && startAttached, editMode = AlwaysRead)
+        button(icon = "unlink", visible = ui.edit && !detached && startAttached) {detached = true}
+      }
+      x(label = "Receiving Date"){
+        end >> field(visible = detached || startAttached)
+        end >> field(visible = !detached && !startAttached, editMode = AlwaysRead)
+        button(icon = "unlink", visible = ui.edit &&  !detached && !startAttached) {detached = true}
+      }
+    }
+    freightView
+  }
+}

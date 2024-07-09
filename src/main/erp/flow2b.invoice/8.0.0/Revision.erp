@@ -1,0 +1,120 @@
+trait IInvoiceRevision {
+  func currency: Currency
+  func date: Date
+  func items: [IInvoiceItem]?
+  compute gstAmount: Money[currency]? {
+    value = items*.gstAmount.sum
+  }
+  compute totalWithoutGst: Money[currency]? {
+    value = items*.invoiceAmount.sum
+    visible = gstAmount
+  }
+  ref compute total: Money[currency]? = totalWithoutGst + gstAmount
+  func invoice: IInvoice
+  func number: String
+}
+
+
+enum InvoiceIssueState {
+  case InvoiceNotIssued {background = "#ed9"}
+  case InvoiceIssued {color = "white" background = "#090"}
+  case InvoiceModified {background = "#f99"}
+}
+
+entity InvoiceRevision extends IInvoiceRevision with Journal {
+  background = "#d68400"
+  field date: Date 
+  func journalDate = date
+  field invoice: IInvoice by revisions
+  field currency: Currency
+  field prev: InvoiceRevision? {
+    available(Inline).for(Inline)
+  }
+  compute diffTotal {
+    value = total - prev?.total
+  }
+  compute diffGstAmount = gstAmount - prev?.gstAmount
+  compute diffTotalWithoutGst = totalWithoutGst - prev?.totalWithoutGst
+  func legalEntity = invoice.legalEntity
+  func deletedItems = items.filter(i => !i.active && !i.next && i.revisions.last == this)
+  field items: [IInvoiceItem]? inline by revisions {deleteCascade = false}
+  ref compute n: Int? = if (let p = prev) p.n + 1 else 0
+  ref compute number = {
+    if (n) "$(invoice.number).R$n" else invoice.number
+  }
+  ref compute isNote: Bool = prev
+  func isDebit: Bool = diffTotal > 0
+  func title = number
+  func sign = if (isDebit) "+" else "−"
+  
+  view form {
+    printable = true
+    layout = nav{grid (labels = None, width = 1.2) {
+      x {
+        invoice.vendor.legalName >> field(fontStyle = H1, stretch = 1)
+        h1(if (isNote) (if (isDebit) "Debit Note" else "Credit Note") else "Tax Invoice", margin = Bottom)
+      }
+      row {
+        invoice.vendor >> grid(width = 0.4, labels = Left, labelsWidth = 0.15, margin = Bottom, spacing = false) {
+          legalInfo.gstView
+          contacts.phones.join(", ") >> field(label = "Phone")
+          contacts.emails.join(", ") >> field(label = "EMail")
+        }
+        invoice.customer >> grid (width = 0.4, labels = Right, labelsWidth = 0.15, margin = Bottom, spacing = false) {
+          legalName >> field(label = "Customer")
+          legalInfo.gstView
+          invoice.references >> field(label = "Reference")
+        }
+        grid (width = 0.4, labels = Right, labelsWidth = 0.15, margin = Bottom, spacing = false) {
+          number >> field(align = Right)
+          date >> field(align = Right)
+          invoice >> field(align = Right, visible = this.isNote, label = "Invoice", title = number)
+          invoice.dueDate >> field(align = Right, label = "Payment Due")
+        }
+      }
+        
+      
+      [(totalWithoutGst, gstAmount, total, invoice.paidAmount, items = (items + prev?.deletedItems).groupBy(deliveryGroup).toSeq)] >> total {
+        group {
+          row(fontSize = 1) {label("Total Excluding GST", align = Right) 
+                             x(align = Right, span = 3){
+                               x(visible = prev, margin = None){
+                                 prev!.totalWithoutGst >> field(stretch = 1) label(sign) diffTotalWithoutGst.abs label("=")
+                               }
+                               totalWithoutGst >> field(margin = None, align = Right)
+                             }} 
+          row(fontSize = 1) {label("GST", align = Right) 
+                             x(align = Right, span = 3){
+                               x(visible = prev, margin = None){
+                                 prev!.gstAmount >> field(stretch = 1) label(sign) diffGstAmount.abs label("=")
+                               }
+                               gstAmount >> field(margin = None, align = Right)
+                             }}
+          row(fontSize = 1) {label("Total", align = Right) 
+                             x(align = Right, span = 3){
+                               x(visible = prev, margin = None){
+                                 prev!.total >> field(stretch = 1) label(sign) diffTotal.abs label("=")
+                               }
+                               total >> field(margin = None, align = Right)
+                             }}
+          row(fontSize = 1) {label("Paid", align = Right) paidAmount >> field(span = 3)}
+          row(fontSize = 1) {label("Amount To Pay", align = Right) total - paidAmount  >> field(span = 3)}
+        }
+        subtotal {
+          deliveryGroup.rowView
+          table {
+            header{label("Product", width = 0.55) 
+                   label("Quantity", align = Right, width = 0.2) 
+                   label("Price", align = Right, width = 0.2) 
+                   label("Amount", align = Right, width = 0.25)}
+            body{row{rowView(this)}}
+            //row{product qty price amount}
+            //row(visible = discount){label("Discount") space space discount}
+          }
+        }
+      }
+    }
+    generalLedgerButton
+    }
+  }
+}

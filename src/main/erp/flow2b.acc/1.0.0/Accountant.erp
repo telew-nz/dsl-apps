@@ -1,0 +1,6 @@
+extend access Accountant {
+  menu Accounting {
+    trait Journal
+    report Balance
+  }
+}

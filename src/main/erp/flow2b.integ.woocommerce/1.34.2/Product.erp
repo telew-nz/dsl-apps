@@ -3,13 +3,10 @@ back class UploadProductsJob extends SystemJob {
   field change: BatchChange[ProductUpdate[ISuperProduct]] 
   impl func do: Future[Any] = {
     change.regroup(service)
-    change.created = change.created.distinct
-  	change.updated = change.updated.distinct
-  	change.deleted = change.deleted.distinct
     let u = BatchProductUpdate(
-      create = change.created.map(ProductData.create(service, _)).distinct,
-      update = change.updated.map(ProductData.create(service, _)).distinct,
-      delete = change.deleted*.product*.extId(service).distinct
+      create = change.created.map(ProductData.create(service, _)),
+      update = change.updated.map(ProductData.create(service, _)),
+      delete = change.deleted*.product*.extId(service)
     )
     let response <- service.https("/products/batch").post(u.json)
     if (response.body!.toString == "[]") {

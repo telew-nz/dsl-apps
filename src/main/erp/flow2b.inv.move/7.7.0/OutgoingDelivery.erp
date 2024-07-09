@@ -1,0 +1,227 @@
+extend enum DashboardIssue {
+  case NegativeStockMovement(role = BusAdmin, priority = major) = "Some products were unavailable at the moment"
+  case DeliveryUnavailable(role = BusAdmin, priority = default) = "Some products are unavailable"
+  case DeliveryAvailableLater(role = BusAdmin, priority = default) = "All products will be available later than planned"
+}
+
+
+trait IBaseOutgoingDelivery extends IDelivery  {
+  background = "#2e8e67"
+  func pathSrc = deliverySrc
+  func deliveryDst: IStore? = null
+  func itemOrder = ("Date", dispatchDate)
+  ref stored compute availability: GoodAvailability {
+    value = {
+      if (deliveryStatus == Canceled) Canceled
+      else if (unavailableItems) Unavailable
+      else if (deliveryStatus != Planned) Dispatched
+      else if (items.all(isAvailableNow)) Available
+      else if (items.exists(awaitingForDate && awaitingForDate! > dispatchDate)) AvailableLater
+      else Waiting
+    }
+	visible = availability.isIssue
+  }  
+  ref compute dispatchState: DispatchState {
+    value = {
+      if (deliveryStatus == Canceled) Canceled
+      else if (deliveryStatus != Planned) Dispatched
+      else if (!canDispatch) {if (availability != Available) NotReady else NoDispatch}
+      else if (dispatchDate <= now) ToDispatch
+      else NotReady
+    }
+    visible = dispatchState.display
+  }
+  func canDispatch = deliveryStatus == Planned && availability == Available
+  func hasInvIssues = (availability.isIssue || overdueState == DeliveryOverdue) && !isBeforeInit
+  func issues = if (!isBeforeInit) {
+    if (availability == Unavailable) {
+      if (deliveryStatus == Planned) [DeliveryUnavailable] else [NegativeStockMovement]
+    } else if (availability == AvailableLater) {
+      [DeliveryAvailableLater]
+    }
+  }
+  func fixes(issue: DashboardIssue) = {
+    if (issue == NegativeStockMovement) {
+      if (let uis = invUnavailableItems) {
+        [Fix(text = "Check inventory movements for incorrect sequience of operations or other errors in the data", acts = 
+          uis.flatMap(product.products.keys.toSeq).map {p =>
+            Act(label = p.title, do = GoodsMovement(good = p).list.open)
+          }
+         ),
+         Fix(text = "If you cannot find out the reason, create a stocktake before the transaction and set estimated items cost", acts = [
+            Act(label = "Create Stocktake", do = createStocktake.form.open)
+         ])
+        ]
+      }
+    } else if (issue == DeliveryUnavailable || issue == DeliveryAvailableLater) {
+      let sos <- supplyOptions
+      (if (issue == DeliveryAvailableLater) if (let d = earliestDispatchDate) {
+        [Fix(text = "Change the dispatch date from $dispatchDate to $d", acts = if (let dp = this.as[IDeliveryPath]) [
+          Act(label = "Change dispatch date", do = UI.save{
+            dp.dispatchDate = d
+            dp
+          })
+        ])]
+      }) 
+      + sos.map{s => 
+        Fix(text = "Transfer unavailable product from $(s.store) of $(s.legalEntity)", acts = [
+          Act(label = "Transfer", do = {
+            let tr <- this.createTransfer(s.legalEntity, s.store)
+            tr.form.open
+          })
+        ])
+      } 
+      + Fix(text = "Purchase products from a supplier")
+    }
+  }
+  func activeRoles = if (!isBeforeInit) {
+    if (deliveryStatus == Planned && canDispatch) [StoreOperative] 
+  }
+   
+  compute earliestDispatchDate: Date? {
+    value = items*.awaitingForDate.max
+    visible = deliveryStatus == Planned && earliestDispatchDate
+  }
+  compute possibleDispatchPeriods: [Period]? {
+    value = if (unavailableItems) {
+      items.filter(isUnavailable)
+        .fold[[Period]?](
+          [Period(start = Date.min, end = Date.max)], 
+          (item, acc) => item.availablePeriods.flatMap(p1 => acc.mapOpt(p2 => p1.intersect(p2)))
+        )
+    }
+    visible = deliveryStatus == Planned && possibleDispatchPeriods
+  }
+  func createStocktake = {
+    Stocktake(
+      date = dispatchDate - 1_minute, 
+      legalEntity = legalEntity, store = deliverySrc!,
+      items = invUnavailableItems*.outStocks
+        .filter(outlook < 0)
+        .map{i =>
+          StocktakeItem(product = i.good, unit = i.good.unit, qty = i.fact - i.outlook!, differencePrice = i.good.productCost?.cost)
+        }
+    )
+  }
+  func createTransfer(legalEntity: OurLegalEntity, store: IStore): Future[Transfer] = {
+    let sogs <- supplyOptionGoods(legalEntity, store)
+    Transfer(
+      source = store, destination = this.deliverySrc!, legalEntity = this.deliverySupplier!.our!,
+      dispatchDate = dispatchDate, deliveryDate = dispatchDate,
+      items = sogs
+        .filter(stockReg?.outlook > 0)
+        .map(TransferItem(product = good, unit = unit, qty = qty.min(stockReg?.outlook!)))!
+    )
+  }
+  compute invUnavailableItems = unavailableItems*.as[IIOutgoingDeliveryItem]
+  compute unavailableItems = items.filter(isUnavailable)
+  compute supplyOptions = if (deliveryStatus == Planned) {
+    let ss <- invUnavailableItems
+      *.outStocks
+       .filter(outlook < 0)
+       .map{u => 
+         let sts <- u.good.stocks
+         sts.map(reg = _, unavailableQty = -u.outlook)
+       }
+       .allCompleted
+    ss.flatMap(_)
+       .groupBy(reg.legalEntity, reg.store)
+       .agg(availableAllQty = map(reg.stock.outlook.clamp(0, unavailableQty)).sum).toSeq
+       .filter(availableAllQty > 0 && (store != deliverySrc || legalEntity != deliverySupplier))
+       .sortBy(availableAllQty.desc)
+  } else Future([])
+  func supplyOptionGoods(legalEntity: OurLegalEntity, store: IStore) = {
+    invUnavailableItems
+      *.outStocks
+       .filter(outlook < 0)
+       .map{i =>
+         let stockReg <- Query(i.good).map(_.calcStock(legalEntity, [store])).result
+         (i.good, i.good.unit, qty = -i.outlook!, stockReg)
+       }
+       .allCompleted
+  }
+  
+}
+ 
+trait IOutgoingDelivery extends IDeliveryPath with IBaseOutgoingDelivery {
+  background = "#449977"
+  singular = "Outgoing Delivery"
+  plural = "Outgoing Deliveries"
+  report Report {
+    field canDispatchOnly: Bool = true
+    field storeOperative: User? {
+      default = User.current.filter(is(StoreOperative))
+      from = User.all.filter(is(StoreOperative))
+    }
+    view list = IOutgoingDelivery.all
+      .filter(isFor(storeOperative, StoreOperative) && (!canDispatchOnly || canDispatch))
+      .sortBy(dispatchDate)
+      >> nav{list(canAdd = false){}}
+  }
+  func pathCanBeExecuted: Bool = !freightCompany && dispatchState == ToDispatch
+}
+
+interface IIOutgoingDeliveryItem extends IDeliveryPItem {
+  func outStocks: [StockRegister]?
+  
+  //Compute
+  compute isAvailableNow = !isTangible || outStocks.all(available >= 0)
+  compute isAwaiting = !isAvailableNow && outStocks.all(outlook >= 0)
+  compute awaitingForDate = if (isTangible) outStocks*.awaitingForDate.max 
+  compute isUnavailable = if (outStocks.exists(!calced)) throw "Not calced" else isTangible && outStocks.exists(outlook < 0)
+  compute unavailableQty = if (isTangible) (qty - availableStock?.outlook).max(0)
+  compute availableIn = {
+    if (isUnavailable && (!itemDelivery || itemDelivery!.deliveryStatus == Planned)) {
+      let sts <- product.stocks
+      sts.filter(i => !i.isEmpty && ((i.legalEntity.legalEntity != itemDelivery?.deliverySupplier) || (i.store != (try? itemDelivery!.deliverySrc!)) ))
+    } else Future([])
+  }
+  compute availableStock: Stock? = {
+    if (isTangible) product.kitStock(outStocks*.prevStockStore)
+  }
+  func makeOutStocks = if (itemDelivery && itemDelivery!.is[IBaseOutgoingDelivery] && itemDelivery!.deliveryStatus != Canceled && active) {
+    product.tangibleProductQtys(qty).mapOpt(outStock(_.product, _.qty))
+  }
+  
+  //Views
+  func stockDesc = availableStock.alt(Stock()).availableView(product, qty)
+  view availableView {
+    canInline = false
+    layout = grid(labels = Top, width = 1.2) {
+      outStocks*.awaitingForDocs.distinct >> list(label = "Awaiting for", frame = false, editMode = AlwaysRead) {
+        grid(labels = None, margin = NoneInner) {
+          row{
+            product.fromBase(to = unit, qty.as[Qty[product.unit]]!) >> field(width = 0.1) 
+            item.date >> field(width = 0.3)
+            item.document >> field(width = 0.6)
+          }
+        }
+      }
+      availableIn >> list(frame = false, mode = Static, label = "Available in") {
+        x{legalEntity >> field(visible = legalEntity != this.itemDelivery?.deliverySupplier), store, stock.title}
+      }
+    }
+  }
+  func outStock(product: IProduct, baseQty: Qty): StockRegister? = {
+    if (let d = itemDelivery) {
+      StockRegister(
+        legalEntity = d.legalEntity, store = d.deliverySrc!, good = product, item = stockItem,
+        sort = if (d.deliveryStatus == Planned) 1 else 0, 
+        date = d.dispatchDate, document = d,
+        factualQty = if (d.deliveryStatus == Planned) 0 else -(baseQty), 
+        reservedQty = if (d.deliveryStatus == Planned) baseQty else 0
+      )
+    }
+  }
+}
+
+trait IOutgoingDeliveryItem extends InlineEntity with IIOutgoingDeliveryItem {
+  var product: ISubProduct 
+  
+  register outStocks: [StockRegister]? {
+    value = makeOutStocks
+    availableFor = Inline
+    available(Inline).for(Inline)
+    autoRecalc = true
+  }
+}

@@ -1,0 +1,45 @@
+entity BankStatementUpload extends ImportTask {
+  background = "#d68400"
+  object field gen: Int?
+  const ref field n: Int? = increment(gen)
+  compute number = "BSU$n"
+  ref field date: Date = now
+  func service = BankService
+  
+  field type: BankStatementType?
+  field account: BankAccount? {
+    visible = !type?.knowOurAccount
+  }
+  field files: [File]
+  const field payments: [CashMovement]? by uploads
+  list compute paymentsCount { 
+    value = payments.count
+    label = "Payments Uploaded"
+  }
+  func title = "$number $date"
+  view form = nav{grid{
+    number
+    date
+    account
+    files
+    stateView
+    payments
+  }}
+  func createJob = StatementProcessJob(task = this)
+
+  report Report {
+    field state: [ImportTaskState]? {auto}
+    view list = BankStatementUpload.all >> nav{table {
+      date state account type paymentsCount
+    }}
+  }
+}
+
+object BankService extends SystemService {
+   func title: String = "BankService"
+   func roles: [Role]? = [Admin]
+}
+
+
+
+

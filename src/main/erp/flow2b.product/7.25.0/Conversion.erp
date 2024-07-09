@@ -1,0 +1,11 @@
+back object Conversion extends IConversion {
+  func do(version: [Int?]?) = {
+    if (version < [7,23,0]) {
+      renameEntity(CrossSell, "Accessory")
+      CrossSell.all.foreach {a =>
+        a.products = [conv(a).field[ISuperProduct]("product"), conv(a).field[ISuperProduct]("accessory")]
+        a.save
+      }
+    }
+  }   
+}   

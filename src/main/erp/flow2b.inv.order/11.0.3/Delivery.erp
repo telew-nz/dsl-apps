@@ -1,0 +1,320 @@
+trait OrderDlv extends IOrderDlv with Journal with DashboardItem with HasNumber {
+  background = "#2e8e67"
+   
+  func store: IStore?
+  func retStore: IStore?
+  impl func orders: [Order]
+  func needLedgers: Bool
+  var shipping: IShipping?
+  var retShipping: IShipping?
+  func counterparty: LegalEntity?
+  
+  back func ledgers(journal: Journal, date: Date): Future[[Ledger]?]
+  back func doRepeat: Future[OrderDlv?]
+  
+  func stockType: StockInvType = Inventory 
+  
+  // IMPL 
+  impl func journalDate = start
+  impl func dlvItems = allItems
+  impl func dlvPrePath = shipping
+  impl func dlvPostPath = retShipping
+  impl compute dlvState {
+    value = if (_state == InProgress && !hasProgress) Complete else _state
+    update = {
+      state = new
+    }
+  }
+  impl func dlvOrderStates = dlvStates*.order.filter(_ != ToDispatch)!.toSet
+  
+  impl func dlvInTransitDate = if (let shipping) shipping.start.min(start) else start
+  impl func dlvInProgessDate = if (let shipping) shipping.end.max(start) else start
+  impl func dlvRetInTransitDate = if (let retShipping) retShipping.start.min(dlvEnd) else dlvEnd
+  impl func dlvCompleteDate = if (let retShipping) retShipping.end.max(dlvEnd) else dlvEnd
+  impl func invTitle: String = {
+    if (hasProgress) "$fullNum $(start) - $(dlvEnd)" 
+    else if (_state.started) "$fullNum $(start.date)"
+    else fullNum
+  }
+  
+  
+  // FIELDS 
+  field _state: DlvState {
+    default = Planned
+  }
+  ref field start: Date {
+    label = "Delivery Date"
+    default = now
+    update = {
+      shipping?.dlvDateUpdated(new)
+      updateDlvPeriod(start = false, end = true)
+    }
+  }
+  ref field end: Date? {
+    label = "Return Delivery Date"
+    visible = hasProgress
+    validate = if (!end && hasProgress && !repeat) "Either return or repeat should be set"
+    update = {
+      if (let n = new) {
+        retShipping?.dlvDateUpdated(n)
+      } else {
+        retShipping = null
+      }
+      updateDurs()
+    }
+  }
+  compute dlvEnd: Date {
+    value = {
+      if (!hasProgress) start
+      else if (let repeat, let end) repeat.next.min(end)
+      else repeat?.next.or(end).alt(start)
+    }
+    update = {
+      if (!hasProgress) start = new
+      else if (let repeat, let end) {
+        if (repeat.next < end) repeat.next = new
+        else this.end = new
+      } else if (let repeat) {
+        repeat.next = new
+      } else {
+        end.alt(start) = new
+      }
+    }
+  }
+  
+  field allItems: [IOrderDlvItem]? inline by delivery {deleteCascade = false}
+  field repeat: DlvRepeat? inline by dlv 
+  const field next: OrderDlv? by prev
+  const field prev: OrderDlv? by next {label = "Previous"}
+  
+  register ledgers: [Ledger]? <- back {
+    if (!isInstant && needLedgers) {
+      let ls <- ledgers(this, journalDate)
+      CurrencyTrading.with(ls)
+    }
+  }
+  
+  
+  //COMPUTE
+  ref compute state: DlvState {
+    value = {
+      if (canceled) Canceled 
+      else if (_state == Planned) if (planned) Planned else Draft
+      else if (_state == InProgress && !hasProgress) Complete
+      else _state
+    }
+    from = {
+      if (canceled) [Canceled] 
+      else dlvStates
+    }
+    update = {
+      if (!canceled) {
+        _state = if (new == Draft) Planned else new
+        stateUpdated(origin(_state))
+      }
+    }
+  }
+  compute items: [IOrderDlvItem]? {
+    value = allItems.filter(active)
+    update = { 
+      allItems = new + allItems.filter(!_.active)
+    }
+  } 
+  compute hasRetDate: Bool {
+    label = ""
+    value = end
+    update = {
+      if (!new && !repeat) {
+        DlvRepeat(dlv = this)
+      }
+      end = if (new) repeat?.next.alt(start + 1_hour)
+    }
+  }
+  
+  
+  //FUNCS
+  func hasProgress = items.exists(_.is[IDlvProgressItem])
+
+  back func isInstant = orders.onlyOne?.isInstant
+  compute canceled: Bool = orders.all(state.canceled)
+  compute planned: Bool = orders.all(state.canceled || state != Quote || getTerms.reserveQuote)
+  func startShDate = ScheduleDate(date = start, schedule = store?.schedule.alt(Schedule24))
+  func endShDate = ScheduleDate(date = dlvEnd, schedule = retStore?.schedule.alt(Schedule24))
+
+  func stateUpdated(old: DlvState): Void = {
+    if (state >= InTransit && old < InTransit) {
+      if (shipping?.detached) shipping!.start = now
+      else start = now
+    }
+    if (shipping?.detached && state >= InProgress && old < InProgress) {
+      shipping!.end = now
+    }
+    if (retShipping?.detached && state >= RetInTransit && old < RetInTransit) {
+      retShipping!.start = now
+    }
+    if (state >= PostProcessing && old < PostProcessing && hasProgress) {
+      if (retShipping?.detached) retShipping!.end = now
+      else start = now
+    }
+  }
+ 
+  
+  func updateDlvPeriod(start: Bool, end: Bool): Future[Period] = {
+    guard (state != Complete && hasProgress) else return Period(start = this.start, end = dlvEnd)
+    
+    let dd <- calcDlvPeriod(start)
+    if (start && state < InProgress) silentUpdate(_.start, dd.start)
+    if (end) {
+      silentUpdate(_.end, dd.end)
+      retShipping?.dlvDateUpdated(dd.end)
+    }
+    dd
+  }
+  compute schedule = store?.schedule.alt(Schedule24)
+  compute retSchedule = retStore?.schedule.alt(Schedule24)
+  
+  func calcDlvPeriod(modifyStart: Bool): Future[Period] = {
+    guard (let prods = items*.as[IDlvProgressItem].map(product, order.orderVendor!, dur)) else return {
+      Period(start = dlvInTransitDate, end = dlvCompleteDate)
+    }    
+
+    if (modifyStart let prod = prods.onlyOne) {
+      back {
+        if (
+          let pm = prod.orderVendor.priceModelRent(prod.product)
+          let per = pm.rentPeriods(dlvInTransitDate, schedule, retSchedule, prod.dur)
+            .find(start >= dlvInTransitDate)
+        ) {
+          per
+        } else {
+          Period(start = dlvInTransitDate, end = PriceModelNone.rentRetDate(startShDate, retSchedule, prod.dur))
+        }
+      }
+    } else {
+      back {
+        let end = prods
+          .mapOpt(i => if (let pm = i.orderVendor.priceModelRent(i.product)) (pm, i.dur))
+          .distinct
+          .map{
+            pm.rentRetDate(startShDate, retSchedule, dur)
+          }
+          .max
+          .alt(PriceModelNone.rentRetDate(startShDate, retSchedule, prods*.dur.max))
+        Period(start = dlvInTransitDate, end = end)
+      }
+    }
+  }
+  
+  func updateDurs(): Future[Void] = {
+    items*.as[IDlvProgressItem].oneByOne(updateDur())
+  }
+  
+  
+  final func calcRefItems = {
+    RefProductItems.create(items*.as[IDlvProductItem].sortBy(sales?.amount.or(purchase?.amount).desc).map(RefProductQty(product = product, qty = qty)))
+  }
+  
+  back func salesLedgers(journal: Journal, date: Date): Future[[Ledger]?] = {
+    let baseCurrency = legalEntity.getCurrency
+      
+    let lss <- items*.sales.map{p =>
+      let baseAmount <- p.invoiceAmount(noGst = legalEntity.hasGst).to[UMoney[baseCurrency]](date)
+      let baseDiscount <- p.orderDiscount.to[Money[baseCurrency]](date)
+      (p, baseAmount, baseDiscount)
+    }.allCompleted
+    lss.groupBy(p.currency, p.order.payer, p.order.customer).toSeq.flatMap{c =>
+      let items = c.#3
+      let amount = items*.p*.invoiceAmount(noGst = legalEntity.hasGst).sum
+      let baseDiscount = items*.baseDiscount.sum
+      
+      let debt = if(!isInstant) if (let p = c.payer) {
+        LDeliveryDebt(account = UnearnedRevenues, origin = this, journal = journal, date = date, 
+              counterparty = p.legalEntity, trAmount = amount, currency = c.currency)
+      }
+      let disc = if (let dis = baseDiscount) {
+        LSales(journal = journal, date = date, 
+               counterparty = c.customer?.legalEntity, trAmount = dis)
+      } 
+      let ls = items.flatMap(p.revenueLedgers(journal, date, _.baseAmount))
+      debt.toSeq + disc + ls
+    }
+  }
+  
+  back func purchaseLedgers(journal: Journal, date: Date): Future[[Ledger]?] = {
+    let baseCurrency = legalEntity.getCurrency
+      
+    let lss <- items*.purchase.map{p =>
+      let baseAmount <- p.invoiceAmount(noGst = legalEntity.hasGst).to[UMoney[baseCurrency]](date)
+      let baseDiscount <- p.orderDiscount.to[UMoney[baseCurrency]](date)
+      (p, isTangible = p.as[PurchaseItem]?.product?.isTangible, baseAmount, baseDiscount)
+    }.allCompleted
+    var tangibleItems = lss.filter(isTangible)
+    let intagibleItems = lss.filter(!isTangible)
+    let tan = tangibleItems && intagibleItems
+    if (tan) {
+      if (let intagibleAmount = intagibleItems.map(baseAmount - baseDiscount).sum) {
+        tangibleItems = tangibleItems.distribute(intagibleAmount, by = baseAmount).map{
+          (p, isTangible, baseAmount = baseAmount + value, baseDiscount)
+        }
+      }
+    }
+    (tangibleItems + intagibleItems).groupBy(p.currency, p.order.payee, p.order.vendor).toSeq.flatMap{c =>
+      let items = c.#3
+      let amount = items*.p*.invoiceAmount(noGst = legalEntity.hasGst).sum
+      let baseDiscount = if (!tan) items*.baseDiscount.sum
+      
+      let debt = if(!isInstant) if (let p = c.payee) {
+        LDeliveryDebt(account = PrepaidExpenses, origin = this, journal = journal, date = date, 
+              counterparty = p.legalEntity, trAmount = -amount, currency = c.currency)
+      }
+      let disc = if (let dis = baseDiscount) {
+        LSales(journal = journal, date = date, unit = Item, 
+               counterparty = c.vendor?.legalEntity, trAmount = -dis)
+      } 
+      let ls = items.filter(!tan || isTangible).flatMap(p.expenseLedgers(journal, date, baseAmount))
+      debt.toSeq + disc + ls
+    }
+  }
+  
+  func order: Order = orders.first
+  
+  
+  func dlvStates: [DlvState] = {
+      (if (planned) [DlvState.Planned, DlvState.Prepared, DlvState.Complete]
+       else [DlvState.Draft, DlvState.Prepared, DlvState.Complete]) 
+    + (if (shipping) [DlvState.InTransit])
+    + (if (hasProgress) [DlvState.InProgress, DlvState.PostProcessing])
+    + (if (hasProgress && retShipping && end && end! <=? repeat?.next) [DlvState.RetInTransit])
+  }.toSet
+  
+  
+  //VIEW
+  
+  view retDateEditor = x(label = "Return date", visible = hasProgress) {
+    hasRetDate >> field(noTab) end >> field(noTab, visible = end)
+  }
+}
+
+inline entity DlvRepeat extends DeferredJob {
+  impl func service = FinanceService
+  impl func jobDate = if (!dlv.next) next
+  impl func do = {
+    dlv.doRepeat
+  }
+  field dlv: OrderDlv by repeat
+  field next: Date {
+    default = dlv.dlvEnd
+    update = {
+      dlv.updateDurs()
+    }
+  }
+  func nextEnd: Date = next + every
+  field unit: DateUnit = month
+  field every: UDuration[unit] {
+    canEditUnit
+    default = 1_month
+  }
+  impl view form = grid {
+    x{label("First on", fontStyle = Label) next label("then every", fontStyle = Label) every}
+  }
+}

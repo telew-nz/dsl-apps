@@ -1,0 +1,60 @@
+entity ProductItem extends HasN {
+  object func map[R](product: IBaseProduct, qty: UQty, items: [ProductItem]?, f: (item: ProductItem?, trQty: UQty) => R): [R] = {
+    if (product.trackItems == Always) {
+      if (items.count != qty.withoutUnit) throw "There should be $qty items but there $items"
+   	  items!.map(f(_, 1.as[UQty[ProductUnit.Item]]!))
+    } else {
+      [f(null, qty)]
+    }
+  }
+  
+  object func flatMap[R](product: IBaseProduct, qty: UQty, items: [ProductItem]?, f: (item: ProductItem?, trQty: UQty) => [R]?): [R]? = {
+    if (product.trackItems == Always) {
+      if (items.count != qty.withoutUnit) throw "There should be $qty items but there $items"
+   	  items!.flatMap(f(_, 1.as[UQty[ProductUnit.Item]]!))
+    } else {
+      f(null, qty)
+    }
+  }
+  
+  object func distribute[R](product: IBaseProduct, qty: UQty, amount: UMoney?, items: [ProductItem]?, f: (item: ProductItem?, trQty: UQty, trAmount: UMoney?) => R): [R] = {
+    if (product.trackItems == Always) {
+      if (items.count != qty.withoutUnit) throw "There should be $qty items but there $items"
+      items!.distribute(amount, 1).map(f(item, 1.as[UQty[ProductUnit.Item]]!, value.positive))
+    } else {
+      [f(null, qty, amount)]
+    }
+  }
+  
+  impl func numPrefix: String = "SN"
+  ref field product: IProduct by productItems
+  object field gen: Int?
+  impl func nextN = increment(ProductItem.gen)
+  impl func title = "$product $(entityNumbers.mapOpt(i => i).join(' '))"
+  ref field serialNum: String? {
+    label = "Serial Number"
+  }
+  override func entityNumbers = [number, refNum, serialNum]
+  
+  impl view form = nav {
+    grid(labels = Top) {
+      product
+      row{number refNum serialNum}
+      extension
+    }
+    button("Print Label") {
+      labelView.print
+    }
+    extension("nav")
+  } 
+  
+  view itemView = grid{
+    read{_ >> field(label = "", title = number)}
+    edit{row{number refNum serialNum}}
+  }
+  
+  view labelView = grid(labels = None, margin = Around, pageBreakAfter){
+    title
+    number >> field(barcode = "CODE128")
+  }
+}

@@ -1,0 +1,30 @@
+class KiwibankCsvShortData extends BankStatementItem {
+  field date: Date {format = "dd MMM yyyy"}
+  field memo: String?
+  field unknown: String?
+  field amount: Dec[2]?
+  field balance: Dec[2]?
+  func toString = "$date $amount"
+  
+  func data(account: FinAccount): BankData = {
+    BankData(memo = memo, balance = balance)
+  }
+}
+
+extend enum BankStatementType {
+  case KiwibankCsvShort(
+    canProcess = file.is("csv") && {
+      let h = data.toString.lines(CSV).first
+      h["," .. ] == ",,,,"
+    }
+    process = {
+      let lines = data.toString.lines(CSV)
+      let h = lines.first
+      ProcessResult(
+        accountNumber = h[ .. ","), 
+        items = lines.drop(1).map(splitTo[KiwibankCsvShortData](",", CSV))
+      )
+    }, 
+    knowOurAccount = true
+  )
+}

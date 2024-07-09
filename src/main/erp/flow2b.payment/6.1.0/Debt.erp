@@ -1,0 +1,83 @@
+trait Debt extends Journal {
+  background = "#d68400"
+  func origin: Debt?
+  
+  func currency: Currency
+  
+  ref field cancelationDate: Date? {
+    visible = cancelationDate
+  }
+  func startingBalance: Money[currency]?
+  ref compute balance = startingBalance + creditAmount - debitAmount
+  
+  compute canceled: Bool = (cancelationDate)
+  func cancelable: Bool
+  func cashFlowCategory: CashFlowCategory
+  func journalPriority: Int? = 0
+  func counterparty: LegalEntity
+  func definesDate: Bool = false
+  
+  func debitAmount: Money[currency]? = 0
+  func creditAmount: Money[currency]? = 0
+    
+  func creditOriginLedger(setoff: Setoff): Future[Ledger] = {
+    Unreconciled.ledger(setoff.journal, setoff.date, -setoff.amount)
+  }
+  func debitOriginLedger(setoff: Setoff): Future[Ledger] = {
+    Unreconciled.ledger(setoff.journal, setoff.date, setoff.amount)
+  }
+  func reconcilationState: ReconcilationState
+}
+
+
+
+trait DebtCredit extends Debt {
+  field debits: [Setoff]? inline by credit
+  func origin: Debt? = debits.first?.debit
+  compute debitAmount: Money[currency]? = debits*.amount.sum
+  
+  ref compute creditRepaid: Money[currency]? = debits.map(i => try? i.amount).sum
+  compute creditUnpaid: Money[currency]? = startingBalance - creditRepaid
+  ref stored compute creditState: ReconcilationState = {
+    if (canceled) Canceled
+    else if (!debits) {if (!startingBalance) Reconciled else Unreconciled}
+    else if (creditUnpaid > 0) PartiallyReconciled
+    else if (creditUnpaid < 0) OverReconciled
+    else Reconciled
+  } 
+  compute creditPaymentState: PaymentState {
+    value = creditState.paymentState
+    update = {
+      if (new == Canceled) cancelationDate = Date.now else cancelationDate = null
+    }
+    from = if (cancelable) [if (creditPaymentState == Canceled) PaymentState.Unpaid else creditState, PaymentState.Canceled] else [creditPaymentState]
+  }
+  func reconcilationState = creditState
+  func debitDebtAmount = 0
+}
+
+trait DebtDebit extends Debt {
+  func origin: Debt? = credits.first?.credit
+  field credits: [Setoff]? inline by debit
+  
+  func reconcilationState = debitState
+  compute creditAmount: Money[currency]? = credits*.amount.sum
+  
+  func creditDebtAmount = 0
+  ref compute debitRepaid: Money[currency]? = credits.map(i => try? i.amount).sum
+  compute debitUnpaid: Money[currency]? = -startingBalance - debitRepaid
+  ref stored compute debitState: ReconcilationState = {
+    if (canceled) Canceled
+    else if (!credits) {if (!startingBalance) Reconciled else Unreconciled}
+    else if (debitUnpaid > 0) PartiallyReconciled
+    else if (debitUnpaid < 0) OverReconciled
+    else Reconciled
+  } 
+  compute debitPaymentState: PaymentState {
+    value = debitState.paymentState
+    update = {
+      if (new == Canceled) cancelationDate = Date.now else cancelationDate = null
+    }
+    from = if (cancelable) [if (debitPaymentState == Canceled) PaymentState.Unpaid else debitState, PaymentState.Canceled] else [debitPaymentState]
+  }
+}

@@ -1,0 +1,145 @@
+class ODGDeliveryReturn extends OrderDeliveryGroup {
+  field delivery: Delivery
+  field assetReturn: AssetReturn
+  
+  view rowView = row(fontSize = 1) {x(span = 4){
+    label("Delivery") delivery.number delivery.deliveryDate >> field(visible = true, stretch = 1)
+    label("Return") assetReturn.number assetReturn.deliveryDate >> field(visible = true)
+  }}
+}
+
+inline entity SalesRentItem extends ISalesItemWithDelivery with OrderProductItem {
+  icon = "retweet"
+  singular = "Rent"
+  
+  func name: String = "Hire $(product.title) for $(deliveryItem.duration)"
+  
+  func ledgerDelivery = deliveryItem.assetReturn
+  func complete = delivered && assetReturned && (paid || (order.invoices && order.debtAllowance))
+  func orderDeliveryItem: IOrderDeliveryItem? = deliveryItem
+  field deliveryItem: RentDeliveryItem inline by sales
+  func qty = deliveryItem.qty
+  func durQty = deliveryItem.durQty
+  func nightsCount = deliveryItem.nightsCount
+  func deliveryGroup: OrderDeliveryGroup = {
+    ODGDeliveryReturn(delivery = delivery, assetReturn = deliveryItem.assetReturn)
+  }
+  compute priceNoGst: UMoney[currency]? {
+    value = (amountNoGst - nightAmountNoGst).unsigned/durQty
+    update = {amountNoGst = new*durQty + nightAmountNoGst}
+  }
+  compute priceWithGst: UMoney[currency]? {
+    value = (amountWithGst - nightAmountWithGst).unsigned/durQty
+    update = {amountWithGst = new*durQty + nightAmountWithGst}
+  }
+  compute priceEditor: UMoney[currency]? {
+    label = "Price"
+    value = if (pricesIncludingGst) priceWithGst else priceNoGst
+    update = {
+      if (pricesIncludingGst) this.priceWithGst = new 
+      else this.priceNoGst = new
+    }
+  }
+  
+  field sNightAmount: UMoney[currency]? 
+  compute nightAmountNoGst: UMoney[currency]? {
+    value = if (storedWithGst) sNightAmount/gstRateK else sNightAmount
+    update = {
+      storedWithGst = false
+      sNightAmount = new
+    }
+  }
+  compute nightAmountWithGst: UMoney[currency]? {
+    value = if (storedWithGst) sNightAmount else sNightAmount*gstRateK
+    update = {
+      storedWithGst = true
+      sNightAmount = new
+    }
+  }
+  compute nightAmountEditor: UMoney[currency]? {
+    label = "Night Amount"
+    value = if (pricesIncludingGst) nightAmountWithGst else nightAmountNoGst
+    update = {
+      if (pricesIncludingGst) this.nightAmountWithGst = new 
+      else this.nightAmountNoGst = new
+    }
+  }
+  compute nightPriceNoGst: UMoney[currency]? {
+    value = if (let nc = nightsCount) nightAmountNoGst/nc
+    update = {nightAmountNoGst = new*nightsCount}
+  }
+  compute nightPriceWithGst: UMoney[currency]? {
+    value = if (let nc = nightsCount) nightAmountWithGst/nc
+    update = {nightAmountWithGst = new*nightsCount}
+  }
+  compute nightPriceEditor: UMoney[currency]? {
+    label = "Night Price"
+    value = if (pricesIncludingGst) nightPriceWithGst else nightPriceNoGst
+    update = {
+      if (pricesIncludingGst) this.nightPriceWithGst = new 
+      else this.nightPriceNoGst = new
+    }
+    visible = nightsCount && deliveryItem.chargeOvernight && hasNights
+  }
+
+  compute hasNights = deliveryItem.chargeOvernight && deliveryItem.nightsCount && deliveryItem.priceModel.get.hasNight
+  view form = grid(margin = None, width = 1.2, labels = Top) {
+    row {
+      deliveryItem.product >> field(width = 0.4, label = "") 
+      deliveryItem.qty >> field(width = 0.2, align = Right) 
+      deliveryItem.duration >> field(width = 0.2, align = Right) 
+      priceEditor >> field(width = 0.2, align = Right)
+      amountEditor >> field(width = 0.2, align = Right)
+    }
+    row (labels = false) {
+      deliveryItem.availableView >> field(width = 0.38)
+      deliveryItem.chargeOvernight >> field(width = 0.22, visible = (ui.isSelected || hasNights) && deliveryItem.priceModel.get.hasNight) 
+      deliveryItem.nightsCount >> field (width = 0.2, visible = deliveryItem.chargeOvernight && (ui.isSelected || hasNights), align = Right)
+      nightPriceEditor >> field (width = 0.2, visible = deliveryItem.chargeOvernight && (ui.isSelected || hasNights), align = Right)
+      space(width = 0.2)
+    }
+    row {
+      invoiceDesc >> field(width = 0.8, visible = ui.isSelected || desc)
+      gstEditor  >> field(visible = ui.isSelected, width = 0.2, align = Right) 
+      discountEditor >> field(visible = ui.isSelected || discount, width = 0.2, align = Right)
+    }
+    deliveryItem.delivery >> field(visible = ui.isSelected && this.order.deliveries.count > 1)
+    deliveryItem.assetReturn >> field(visible = ui.isSelected && this.order.assetReturns.count > 1)
+    accessories >> list {
+      x {_ add("Add") {
+        let item = SalesItem(order = order, 
+                             deliveryItem = DeliveryItem(product = _, delivery = deliveryItem.delivery, qty = deliveryItem.qty.as[UQty[_.unit]]!) 
+                            )
+        item.deliveryItem.updateAmount()
+      }}
+    }
+    deliveryItem.productItems >> field(editMode = Original, visible = ui.isSelected && deliveryItem.product.trackItems)
+  }
+   
+  func revenueLedgers(journal: Journal, date: Date, baseAmount: UMoney?) = {
+    let rt = product.revenueType
+    [LSales(account = Rent, journal = journal, date = date, product = deliveryItem.product, revenueType = rt, 
+            location = deliveryItem.delivery.deliverySrc,
+            qty = (deliveryItem.assetReturn.deliveryDate - deliveryItem.delivery.dispatchDate).hours, unit = Hour,
+            counterparty = order.customer?.legalEntity, trAmount = -baseAmount)]
+  }
+  func assetReturned = deliveryItem.assetReturn?.status == Delivered
+  func assetReturnInTransit = deliveryItem.assetReturn?.status == InTransit
+    
+  view rowView = group {
+    row{deliveryItem.product >> field(rowSpan = 2)
+        y(margin = None){
+          deliveryItem.duration >> field(align = Right)
+          deliveryItem.nightsCount >> field (width = 0.2, visible = ui.isSelected || hasNights, align = Right)
+          deliveryItem.qty >> field(align = Right) 
+        }
+        y(margin = None){
+          priceEditor >> field (align = Right)
+          nightPriceEditor >> field (align = Right)
+        }
+        amountEditor >> field (align = Right)
+    }
+    row(visible = discount){label("Discount", span = 2, align = Right) discountEditor}
+    row(visible = invoiceDesc) {itemDesc >> field(span = 4)}
+  }
+}

@@ -1,0 +1,3 @@
+extend entity ProductItem {
+  field maintenances: [Maintenance]? read by productItem
+}

@@ -1,0 +1,20 @@
+interface ProductAttr[T] {
+  func name: String
+  func toString = name
+}
+
+trait ICustomerBaseProduct extends IBaseProduct 
+trait ICustomerSuperProduct extends ICustomerBaseProduct {
+  object func attrs: [ProductAttr]? = []
+  func variations: [ProductVariation]? = customerProducts*.variation
+  func customerProducts: [ICustomerProduct]?
+}
+trait ICustomerProduct extends ICustomerBaseProduct {
+  func customerSuperProduct: ICustomerSuperProduct
+  func variation: ProductVariation?
+  func attrValue[T](attr: ProductAttr[T], value: T) = ProductAttrValue[T](attr = attr, value = value)
+  func variation(attrs: [ProductAttrValue]) = ProductVariation(attrs = attrs)
+}
+
+class ProductVariation(attrs: [ProductAttrValue])
+class ProductAttrValue[T](attr: ProductAttr[T], value: T)

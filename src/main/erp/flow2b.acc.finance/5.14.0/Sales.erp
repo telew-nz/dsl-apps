@@ -1,0 +1,39 @@
+analytic RevenueType(dataType = "RevenueType")
+analytic Product(dataType = "ISubProduct")
+trait ILProduct extends Ledger {
+  func subProduct: ISubProduct?
+  func qty: Qty?
+  func salesAmount: Money? = 0
+}
+extend register LProduct extends ILProduct {
+  func subProduct: ISubProduct? = product
+}
+extend register LSales extends ILProduct {
+  field taxable: UPercent? = 1.0
+  func subProduct: ISubProduct? = product
+  func salesAmount: Money? = -amount
+  override field unit: ProductUnit {
+    default = Item
+    visible = false
+  }
+}
+
+acctemplate Product {
+  field counterparty: LegalEntity?
+  field product: ISubProduct?
+  field qty: Qty[product?.unit.alt(Item)]? {label = "Quantity"}
+}
+
+acctemplate Sales {
+  key field revenueType: RevenueType?
+  field counterparty: LegalEntity?
+  field product: ISubProduct?
+  field location: ILocation?
+  field unit: ProductUnit
+  field qty: Qty[unit]? {
+    label = "Quantity"
+    canEditUnit
+    visible = product
+  }  
+}
+

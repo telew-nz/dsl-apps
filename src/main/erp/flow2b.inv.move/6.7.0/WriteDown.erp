@@ -1,0 +1,68 @@
+entity InventoryWriteDown extends StockCorrection with IBaseOutgoingDelivery with IOutgoingDeliveryItem {
+  field date: Date = now
+  const ref field n: Int? = increment(Stocktake.gen)
+  field legalEntity: LegalEntity {
+    default =? try? LegalEntity.ours.onlyOne!
+    from = LegalEntity.ours
+  }
+  ref field store: Store {
+    default =? Store.ours.onlyOne
+    from = Store.ours
+  }
+  ref field product: IProduct {
+    from = IProduct.all.filter(isTangible)
+    available(Ref).with(unit, altUnits)
+    update = {
+      this.unit = new.unit
+      this.qty = this.qty.as[Qty[this.unit]]
+    }
+  }
+  field unit: ProductUnit {
+    from = product.units
+  }
+  field qty: Qty[unit] {
+    default = 1
+    label = "Quantity"
+  }
+  func deliverySupplier: LegalEntity? = legalEntity
+  func deliveryReceiver: LegalEntity? = legalEntity
+  
+  compute number = "WD$n"
+  func title: String = "$number $product"
+  func journalDate: Date = date
+  func deliveryStore = store
+  func deliverySource = store
+  func items: [IDeliveryItem]? = [this]
+  func itemDelivery: IDelivery? = this
+  
+  compute baseQty: Qty[product.unit]? = product.toBase(qty)
+  func outStock(product: IProduct, baseQty: Qty): StockRegister? = {
+    StockRegister(
+      legalEntity = legalEntity, store = store, good = product,
+      date = date, document = this,
+      factualQty = -baseQty
+    )
+  }  
+  register inventoryLedger = {
+    LInventory(journal = this, product = product, qty = baseQty, isDebit = false,
+               contraAccount = InventoryAdjustments)
+  }
+  
+  view form = nav{grid {
+      date
+      number
+      availability
+      legalEntity
+      store
+      product
+      qty >> field(canEditUnit = true)
+      stockDesc
+    }
+    generalLedgerButton
+  }
+  object view list = InventoryWriteDown.all >> nav{list{grid(labels = None){
+    row{number date legalEntity store}
+    row{product qty space space}
+  }}}
+}
+  

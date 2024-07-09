@@ -1,0 +1,11 @@
+acctemplate FixedAssets(singleAccount = true) {
+  key field product: IProduct
+  key field productItem: ProductItem?
+  field qty: Qty[product.unit]? {label = "Quantity"} 
+}
+
+account FixedAssets(template = "FixedAssets", number = 160, type = Asset) 
+account AccumulatedDepreciation(template = "Product", number = 165, type = Asset) 
+account DepreciationExpense(template = "Product", number = 630, type = Expense)
+
+extend register LFixedAssets extends LInvBase

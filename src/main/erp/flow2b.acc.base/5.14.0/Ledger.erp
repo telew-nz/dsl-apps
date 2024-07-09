@@ -116,3 +116,4 @@ inline trait Ledger extends Register with HasDate {
     }}
   }
 }
+

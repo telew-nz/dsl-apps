@@ -1,0 +1,116 @@
+trait ISubProduct extends IBaseProduct {
+  plural = "Products"
+  singular = "Product"
+  width = 0.45
+  
+  impl final func child: [IBaseProduct]? = []
+  override final func subProducts: [ISubProduct]? = [this]
+  impl func collectPhotos: [Image]? = collectPhotosUp
+  impl func collectPhotosUp: [Image]? = if (let p = photos) p else parent?.collectPhotosUp
+  override final func collectPhotosDown: [Image]? = photos
+  impl func variationPhotos = if (let p = photos) p else parent?.variationPhotos
+  impl func trackItems {
+    default value = superProduct.trackItems
+  }
+  func products: [IProduct : UQty]
+  impl func productCost: ProductCost?
+  func prodCondition: ProdCondition? = null
+  func isNew: Bool = if (let prodCondition) prodCondition.isNew else true
+  
+  field includedInKitItems: [KitItem]? inline by product {deleteCascade = false}
+  override compute kits = includedInKitItems*.kit.distinct
+  impl func weightSize {
+    default value = parent!.weightSize
+  }
+  impl func expenseType = superProduct.expenseType
+  impl func revenueType = superProduct.revenueType
+  
+  func productQtys(qty: UQty): [ProdUQty] = {
+    let bq = toBase(qty)
+    products.toSeq.map{i =>
+      ProdUQty(product = i.#0, qty = i.#1*bq)
+    }
+  } 
+  func tangibleProductQtys(qty: UQty): [ProdUQty]? = productQtys(qty).filter(product.isTangible)
+
+  impl event onSave = {}
+}
+
+
+trait IComplexSubProduct extends ISubProduct {
+  impl func parent: IBaseProduct? = getParent
+  func getParent: IBaseProduct
+  impl func superProduct: ISuperProduct = getParent.superProduct
+  
+  
+  field subRentStatus: ProdRentStatus?
+  impl compute rentStatus: ProdRentStatus {
+    views = []
+    value = subRentStatus.alt(getParent.rentStatus)
+    update = {
+      subRentStatus = if (new != getParent.rentStatus) new
+    }
+  }
+  
+  impl ref compute sku = getParent.sku + "." + skuN
+  
+  const field skuN: Int? = increment(getParent.skuGen)
+  impl event onSave = {}
+  
+  impl func isValid: Bool = superProduct.isValid
+  impl func isTangible: Bool = superProduct.isTangible
+  func weightInGrams: Number? = superProduct.weightInGrams
+  impl func description: Text? = superProduct.description
+  func obsolete: Bool = superProduct.obsolete
+  impl func unit: ProductUnit = superProduct.unit
+  impl func units = superProduct.units
+  override func collectPhotos: [Image]? = if (let p = photos) p else superProduct.collectPhotos.first(1)
+  
+  field subStatus: ProductStatus?
+  impl compute status: ProductStatus {
+    from = getParent.status.subs
+    value = {
+      let ps = getParent.status
+      if (let ss = subStatus) if (ps.subs.contains(ss)) ss else ps
+      else ps
+    }
+    update = {
+      subStatus = if (new != getParent.status) new
+    }
+  }
+}
+
+
+class ProductCost {
+  field date: Date
+  field cost: UMoney[our]?
+  compute curCost: UMoney[our]? {
+    deprecated(use = "cost")
+    value = cost
+  }
+  
+  impl view form = x(label = "Approximate Cost") {cost label("at", fontStyle = Label) date >> field(fontStyle = Label)}
+  impl func toString = "$cost at $date"
+  
+  func mul(qty: UQty?): ProductCost = ProductCost(date = date, cost = cost*qty)
+  object func sum(costs: [ProductCost]): ProductCost = {
+    ProductCost(date = costs*.date.min, cost = costs*.cost.sum)
+  }
+  func to(currency: Currency, date: Date): Future[ProductCost] = {
+    if (currency == our) {
+      ProductCost(date = date, cost = cost)
+    } else {
+      let cost <- cost.to[UMoney[currency]](date)
+      ProductCost(date = date, cost = cost)
+    }
+  }
+}
+
+class ProdUQty {
+  field product: IProduct
+  field qty: UQty
+  
+  impl func toString = "$product -> $qty"
+}
+
+

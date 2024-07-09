@@ -1,0 +1,153 @@
+inline entity IR10Y14Income {
+  system field ir: IncomeTaxReturn by ir10Income
+  field f2: Money[NZD]? {label = "2: Gross Income from Sales and Services"}
+  field f3: Money[NZD]? {label = "3: Opening stock (include work in progress)"}
+  field costOfGoodsSold: Money[NZD]? 
+  compute f4: Money[NZD]? {
+    value = f5 - f3 + costOfGoodsSold
+    label = "4: Purchases"
+  }
+  field f5: Money[NZD]? {label = "5: Closing stock (include work in progress)"}
+  compute f6: Money[NZD]? {
+    value = f2 - costOfGoodsSold
+    label = "6: Gross Profit"
+  }
+  field f7: Money[NZD]? {label = "7: Interest received"}
+  field f8: Money[NZD]? {label = "8: Dividends received"}
+  field f9: Money[NZD]? {label = "9: Rental, lease and licence income"}
+  field f10: Money[NZD]? {label = "10: Other income"}
+  compute f11: Money[NZD]? {
+    value = f6 + f7 + f8 + f9 + f10
+    label = "11: Total income"
+  }
+  
+  field f12: Money[NZD]? {label = "12: Bad debts"}
+  field f13: Money[NZD]? {label = "13: Accounting depreciation and amortisation"}
+  field f14: Money[NZD]? {label = "14: Insurance (exclude ACC levies)"}
+  field f15: Money[NZD]? {label = "15: Interest expense"}
+  field f16: Money[NZD]? {label = "16: Professional and consulting fees"}
+  field f17: Money[NZD]? {label = "17: Rates"}
+  field f18: Money[NZD]? {label = "18: Rental, lease and licence payments"}
+  field f19: Money[NZD]? {label = "19: Repairs and maintenance"}
+  field f20: Money[NZD]? {label = "20: Research and development"}
+  field f21: Money[NZD]? {label = "21: Related party remuneration"}
+  field f22: Money[NZD]? {label = "22: Salaries and wages paid to employees"}
+  field f23: Money[NZD]? {label = "23: Contractor and sub-contractor payments"}
+  field f24: Money[NZD]? {label = "24: Other expenses"}
+  compute f25: Money[NZD]? {
+    value = f12 + f13 + f14 + f15 + f16 + f17 + f18 + f19 + f20 + f21 + f22 + f23 + f24
+    label = "25: Total expenses"
+  }
+  field f26: Money[NZD]? {label = "26: Exceptional items"}
+  compute f27: Money[NZD]? {
+    value = f11 - f25 + f26
+    label = "27: Net profit/loss before tax"
+  }
+  field f28: Money[NZD]? {
+    label = "28: Tax adjustments"
+  }
+  compute f29: Money[NZD]? {
+    value = f27 + f28
+    label = "29: Current year taxable profit/loss"
+  }
+  
+  system field unknownExpenseTypes: [RefEntity]?
+  system field hasErrors: Bool
+  
+  back func calc(): Future[Void] = {
+    let le = ir.legalEntity
+    let p = ir.period
+    let other = ir.ir10Other
+
+    Ledger.at(p.start).filter{i => 
+      let t = i.subAccount.subType
+      i.legalEntity == le && (t == Inventory || t == WorkInProgress)
+    }.result.get.foreach(f3 += _.balance)
+    Ledger.at(p.end).filter{i => 
+      let t = i.subAccount.subType
+      i.legalEntity == le && (t == Inventory || t == WorkInProgress)
+    }.result.get.foreach(f5 += _.balance)
+    
+    let accountSubTypes <- IncomeStatement(legalEntity = le, from = p.start, to = p.end)
+      .baseQuery
+      .filter(account.template != Expenses && account.template != SalaryExpenses)
+      .groupBy(account.subType)
+      .agg(Income(amount = amount.sum, taxAmount = taxableAmount.sum))
+      .result
+    
+    accountSubTypes.toSeq.foreach{i =>
+      let t = i.#0
+      let a = -i.#1.amount
+      let ta = -i.#1.taxAmount
+      f28 += a - ta
+      
+      if (t.type == Revenue) {
+        if (t == Sales) {
+          f2 -= a
+          if (!ta) other.f53 -= a
+        } else if (t == InterestRevenue) f7 -= a
+        else if (t == DivedendsRevenue) f8 -= a
+        else if (t == RentRevenue) f9 -= a
+        else if (t == ExceptionalRevenue) f26 -= a
+        else f10 -= a 
+      } else if (t.type == Expense) {
+        if (t == CostOfGoodsSold) {
+          costOfGoodsSold += a
+          if (!ta) other.f53 -= a
+        } else if (t == BadDebts) f12 += a
+        else if (t == DepreciationExpense) {
+          f13 += a
+          other.f52 += ta
+        } else if (t == InterestExpense) f14 += a
+        else if (t == ExceptionalExpense) f26 -= a
+        else f24 += a
+      } else if (t.type == Error) { 
+        hasErrors = true
+      } else {
+        throw "Unexpected type ${t.type}"
+      }
+    }
+    
+    ILExpenses
+      .between(p.start, p.end).filter(start.legalEntity == le)*.items
+      .groupBy(expenseType).agg(amount = baseAmount.sum).result.get
+      .foreach {i =>
+        let e = i.expenseType?.nzExpense
+        let a = i.amount
+        if (e == BadDebts) f12 += a
+        else if (e == Depreciation) f13 += a
+        else if (e == Insurance) f14 += a
+        else if (e == Interest) f15 += a
+        else if (e == Consulting) f16 += a
+        else if (e == Rates) f17 += a
+        else if (e == Rental) f18 += a
+        else if (e == Maintenance) f19 += a
+        else if (e == RnD) f20 += a
+        else if (e == Remuneration) f21 += a
+        else if (e == Salaries) f22 += a
+        else if (e == Conractor) f23 += a
+        else if (e == Other) f24 += a
+        else {
+          f24 += a
+          if (let et = i.expenseType) this.unknownExpenseTypes += et        
+        }
+      }
+    ILSalaryExpenses
+      .between(p.start, p.end).filter(start.legalEntity == le)*.items
+      .groupBy(salaryType).agg(amount = baseAmount.sum).result.get
+      .foreach {i =>
+        let e = i.salaryType.nzSalary
+        let a = i.amount
+        if (e == Remuneration) f21 += a
+        else if (e == Salaries) f22 += a
+        else if (e == Conractor) f23 += a
+        else if (e == RnD) f20 += a
+        else {
+          f23 += a
+          this.unknownExpenseTypes += i.salaryType        
+        }
+      }
+  }
+}
+
+

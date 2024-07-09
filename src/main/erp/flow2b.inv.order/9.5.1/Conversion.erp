@@ -1,0 +1,54 @@
+back object Conversion extends IConversion {
+  func convert(version: [Int?]): Future[Any] = {
+    if (version < [9,0,0]) {
+      SalesOrder.all.foreach{o =>
+        if (let i = field[[ConvEntity]?](o, "invoices").first) {
+          if (let p = i.field[Customer?]("sPayer")) {
+            o.sPayer = p
+          }
+          o.invoices = i.field[[Invoice]?]("revisions")
+          o.payments = i.field[[Payment]?]("payments")
+          o.manLinks = i.field[[DebtOrigin]?]("manLinks")
+          o.save
+        }
+      }
+      PurchaseOrder.all.foreach{o =>
+        if (let i = field[[ConvEntity]?](o, "invoices").first) {
+          if (let p = i.field[Vendor?]("sPayee")) {
+            o.sPayee = p
+          }
+          o.invoices = i.field[[Invoice]?]("revisions")
+          o.payments = i.field[[Payment]?]("payments")
+          o.manLinks = i.field[[DebtOrigin]?]("manLinks")
+          o.save
+        } 
+      }
+      Invoice.all
+        .filter(i => i.items.exists(_.order != i.order))
+        .update(items = items.filter(ii => order == ii.order))
+    }
+    if (version < [9,0,1]) {
+      SubjectObserver.all.filter(!try? subject)*.delete
+    }
+    if (version < [9,3,0]) {
+      Order.all.filter(field[String](_, "status") == "Canceled").update(manCanceled = true)
+      SalesOrder.all.filter(!try? deliveries).foreach(so => [SalesDelivery(primary = true, salesOrders = [so], source = IStore.all.first)])
+      PurchaseOrder.all.filter(!try? deliveries).foreach(so => [PurchaseDelivery(primary = true, purchaseOrders = [so], destination = IStore.all.first)])
+      IOrderDeliveryItem.all.filter(!try? delivery).update(delivery = order.deliveries.first)
+      PurchaseOrder.all.filter(!vendor && !complete).update(vendor = LegalEntity.all.find(_.title == "Unknown").result.get.alt(Company(title = "Unknown")).makeVendor)
+      SalesOrder.all.filter(!customer && !complete).update(customer = LegalEntity.all.find(_.title == "Unknown").result.get.alt(Company(title = "Unknown")).makeCustomer)
+      Invoice.all.update(totalDue = total)
+      IOrder.all.foreach{o => 
+        o._due = o.getTerms.due(o)
+        o._state = o.getTerms.orderState(o)
+        o.save
+      }
+    }
+    if (version < [9,4,2]) {
+      IOrder.all.filter(!try? currency)*.delete
+      IOrder.all.foreach(updateDue())
+      recreateAllRegisters 
+    }
+  } 
+  
+}   

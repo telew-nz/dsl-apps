@@ -1,0 +1,184 @@
+inline entity RentDeliveryItem extends IDlvProgressItem with FProductItems {
+  override func storeRequired = product.isTangible 
+  override func isRent = true
+  override func calcAv = isTangible && delivery.state.active
+  
+  impl func moveInStockType = product.rentStockType
+  impl func moveOutStockType = product.rentStockType
+  
+  impl func needsRevision: Bool = updated(product) || updated(dur) || updated(durUnit) || updated(qty) 
+  impl func sameAsPrev(prev: IDlvProductItem): Bool = {
+    let p = prev.as[RentDeliveryItem]!
+    p.product == product && p.qty == qty && p.dur == dur && p.durUnit == durUnit 
+  }
+  compute priceModel = sales?.priceModel.alt(purchase!.priceModel) 
+  impl field product: ISubProduct {
+    available(Ref).with(vendors, productItems, invoiceDesc, rentPrices)
+    from = ISubProduct.all.filter(_.rentStatus.forRent)
+    init = {
+      new.superProduct.status = NotForSale
+      new.superProduct.rentStatus = ForRent
+    }
+    update = {
+      let pm <- priceModel
+      this.silentUpdate(durUnit, new.rentPrices.first?.unit.alt(if (pm == PriceModelNone) default else pm.rentDurUnits.first.alt(default)))
+      this.silentUpdate(dur, this.dur.as[UQty[this.durUnit]])
+      durUpdated()
+    }
+  }
+  impl func unit: ProductUnit = Item
+  func priceQty = dur*qty
+  impl field dur: UQty[durUnit] {
+    label = "Duration"
+    canEditUnit = true
+    default = delivery.items*.as[IDlvProgressItem].filter(_ != this)*.dur.first.alt(1.as[UQty[DurUnit.default]])
+    update = {
+      if (let oo = old, let s = sales) {
+        s.sAmount = s.sAmount*(new.as[UDec[12]]/oo)
+      }
+      if (let oo = old, let p = sales) {
+        p.sAmount = p.sAmount*(new.as[UDec[12]]/oo)
+      }
+      durUpdated()
+    }
+  }
+  impl field durUnit: DurUnit {
+    default = dur.unit!.as[DurUnit]!
+    update = {
+      this.dur = this.dur.as[UQty[durUnit]]
+    }
+    from = priceModel.get.rentDurUnits
+  }
+    
+  func durUpdated(): Future[Void] = {
+    let _ <- {
+      if (delivery.items*.as[IDlvProgressItem].exists(i => i.dur != this.dur)) {
+        let dd <- delivery.calcDlvPeriod(modifyStart = false)
+        if (dd.end != delivery.dlvCompleteDate) {
+          let sd = delivery.copy(allItems = [this]) 
+          sd.updateDlvPeriod(start = true, end = true)
+        } else {
+          dd
+        }
+      } else {
+        delivery.updateDlvPeriod(start = true, end = true)
+      }
+    }
+    let dlvs = order.deliveries
+    if (dlvs.count > 1) {
+      dlvs.filter(!state.started)
+        .groupBy(dlvInTransitDate, dlvCompleteDate)
+        .values
+        .foreach{returns =>
+          if(returns.count > 1) {
+            returns.drop(1).foreach{i =>
+              i.items.foreach{j => j.delivery = returns.first}
+              i.delete
+            }
+          }
+        }
+    }
+    
+    let _ <- updateAmount()
+    if (let o = sales?.order) o.updateBond()
+  }
+    
+  override func updateAmount(): Future[Void] = {
+    let _ <- if (let s = sales) {
+      let currency = s.order.currency
+      let vendor = s.order.vendor
+      let customer = try? s.order.customer!
+      let pam <- s.productPrice
+      let ra <- if (let pr = pam) {
+        Query(pr).map{p =>
+          p.rentAmount(currency, s.order.pricesIncludingGst, customer, qty, rentPeriod)
+        }.result
+      }
+
+      if (let r = ra) {
+        s.amountEditor = r.current
+      }
+    }
+    let _ <- if (let s = purchase) {
+      let currency = s.order.currency
+      let vendor = try? s.order.vendor!
+      let customer = s.order.customer
+      let pam <- s.productPrice
+      let ra <- if (let pr = pam) {
+        Query(pr).map{p =>
+          p.rentAmount(currency, s.order.pricesIncludingGst, customer, qty, rentPeriod)
+        }.result
+      }
+
+      if (let r = ra) {
+        s.amountEditor = r.current
+      }
+    }
+    
+    updateGst()
+  }
+  
+  impl field qty: UQty[ProductUnit.Item] {
+    default = 1
+    label = "Quantity"
+    update = {
+      let _ <- if (let old) {
+        if (let s = sales) s.sAmount = s.sAmount*(new.as[UDec[12]]/old)
+        if (let p = purchase) p.sAmount = p.sAmount*(new.as[UDec[12]]/old)
+        updateAmount()
+      }
+      if (let o = sales?.order) o.updateBond()
+    }
+  }
+  
+  impl field sales: SalesRentItem? inline by deliveryItem {
+    default = if (let d = delivery.as[ISalesDelivery]) SalesRentItem(deliveryItem = this, order = d.salesOrders.first)
+  }
+  impl field purchase: PurchaseRentItem? inline by deliveryItem {
+    default = if (let d = delivery.as[IPurchaseDelivery]) PurchaseRentItem(deliveryItem = this, order = d.purchaseOrders.first)
+  }
+   
+  impl view form = grid(labels = None, width = 1.2, margin = TopBottom) {
+    row{product  >> field(width = 0.6), qty >> field(width = 0.3), dur >> field(width = 0.3)}
+    stockDesc
+    availableView
+    productItems >> field(editMode = Original)
+  }
+  
+  func toDuration = delivery.dlvCompleteDate - delivery.dlvInTransitDate
+  
+  compute unsafePeriods: [Period]? = _availablePeriods?.unsafe
+  compute availablePeriods: [Period]? = _availablePeriods?.safe 
+  compute _availablePeriods: AvailablePeriods? = {
+    let excludeItems = (try? inStocks!)*.id + (try? outStocks!)*.id
+    let vendor = delivery.order.orderVendor!
+    let returnSchedule = delivery.completeShDate.schedule
+    ProdReg.at((1, Date.min))
+      .find(_.product == this.product && _.stockType == this.product.rentStockType && _.legalEntity == sales?.order?.vendor && _.store ==? delivery.store)
+      .map{reg => 
+        AvailablePeriods(  
+          unsafe = reg.availablePeriods(qty, delivery.dlvInTransitDate.min(Date.now), priorityDate = order.date, excludeItems),
+          safe = RentAdjuster.adjustPeriods(
+            dur, if (let pm = vendor.priceModelRent(this.product.superProduct)) pm.as[IIPriceModel] else PriceModelNone, 
+            reg.store.getSchedule, returnSchedule, reg.availablePeriods(qty, Date.now, priorityDate = null, excludeItems)
+          )
+        )
+      }
+
+  }
+
+  override compute isAvNow = {
+    if (!delivery.dlvState.started) unsafePeriods.exists(includes(period)) 
+    else outStocks && outStocks.all(available >= 0)
+  }
+  override func awaitingForDate: Date? = if (isUnav) availablePeriods.first?.start
+    
+  compute period = Period(
+    start = delivery.dlvInTransitDate, 
+    end = delivery.dlvCompleteDate)
+}
+
+class AvailablePeriods {
+  field safe: [Period]?
+  field unsafe: [Period]?
+}

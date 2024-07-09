@@ -1,0 +1,67 @@
+entity SalesAssetReturn extends AssetReturn with IIncomingDelivery {
+  background = "#2e8e67"
+    
+  field primary: Bool
+  func deliverySource: Store? = null
+  const ref field n: Int? = if (primary) order.n else increment(Order.gen)
+    
+  func orders = salesOrders
+  field salesOrders: [SalesOrder] by assetReturns {
+    available(Inline).for(Inline)
+  }
+  func deliveryStore: Store? = destination  
+  func multiupdate = salesOrders
+  
+  field destination: Store {
+    default =? (try? orders*.deliveries*.as[SalesDelivery].first?.source!).or(Store.ours.onlyOne)
+    from = Store.ours
+  }
+  field pickUpLocation: Location? {
+    from = Location.all.filter(l => l.actor == supplier || l.actor == supplier?.top || l.mutual)
+    init = {new.actor =? supplier}
+    visible = supplier
+  }
+  func hasInTransit: Bool = pickUpLocation
+  func deliverySupplier: LegalEntity? = supplier
+  func deliveryReceiver: LegalEntity? = order.legalEntity
+  ref compute number: String {
+    value = manualNumber.alt(if (primary) "ASR" + orders.first.nakedN else "ASR" + n)
+    update = {manualNumber = new}
+  }  
+  ref compute supplier {
+    value = order.orderCustomer
+    label = "Customer"
+  }
+  func legalEntity = order.legalEntity
+  func title = "$number $(try? supplier?.title)"
+  func deliveryDateLabel = "Return Date"
+  
+  view returnHeader = grid(width = 1.2){
+    statusesView
+    row {pickUpLocation, destination, dispatchDate}
+    row {space, space,  deliveryDate}
+  }
+  view form = nav{grid(width = 1.2, labels = Top) {
+    number
+    returnHeader
+    salesOrders
+    items >> list(editMode = AlwaysRead){form}    
+  }
+    generalLedgerButton
+  } 
+  object view list = SalesAssetReturn.all >> nav{list{grid(labels = None){
+    row{number >> field(width = 0.2) deliveryDate >> field(visible = true, width = 0.3) supplier >> field(width = 0.25) destination  >> field(width = 0.25)}
+    statusesView
+  }}}
+  view statusesView = x {status overdueState} 
+  
+  view ref = x{title status}
+    
+  event onSave = {
+    if (primary) n = order.n 
+    else if (!n) n = increment(Order.gen)
+    if (salesOrders.all(canceled)) status = Canceled
+    salesOrders*.touch
+    1
+  }
+}

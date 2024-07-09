@@ -1,0 +1,41 @@
+object FinanceNotificator extends SystemService {
+  func title = "Finance Notificator"
+  field sendInvoiceToCustomers: Bool = true
+  func serviceAccess: [Role]? = [Admin]
+  view form = nav{grid(labels = Top){
+    issuesView
+    serviceState
+    errorsCount >> field(editMode = AlwaysRead)
+    
+    sendInvoiceToCustomers
+    contacts
+  }}
+  field contacts: [IContact]?
+  func ourContacts = contacts
+  func traitItem = serviceState
+}
+
+extend trait IInvoice extends DeferredJob {
+  func service = FinanceNotificator
+  func jobDate = if (!paid && revisions) {
+    getPaymentTerms.nextReminder(revisions.first!.date, deliveryDate)
+  }
+  func do = {
+    if (let dd = dueDate) {
+      touch
+      Activity.current!.setMainEntity(this)
+      let t = if (let dueIn = (dd - Date.now).days.floor(0)) {
+        if (dueIn > 0) "Invoice is due in $dueIn"
+        else "Invoice is overdue by $(-dueIn)"
+      } else {
+        "Invoice is due today"
+      }
+      if (isPurchase) {
+        Activity.current!.comment(t)
+      } else {
+        invoice.payer?.invoiceContact?.join(this)
+        Activity.current!.makePublic(t)
+      }
+    }
+  }
+}

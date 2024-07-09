@@ -1,0 +1,127 @@
+trait ISalesDelivery extends Delivery {
+  background = "#2e8e67"
+  func deliverySupplier = supplier?.legalEntity
+  func deliveryReceiver = getReceiver?.legalEntity
+  func supplier: IVendor?
+  field receiver: ICustomer? {
+    update = updateReceiver()
+  }
+  ref compute getReceiver: ICustomer? {
+    label = "Receiver"
+    value = receiver.or(customer)
+    update = {
+      this.receiver = if (new == customer) null else new
+    }
+  }
+  func isTheir = customer?.isTheir
+  field salesOrders: [SalesOrder] by deliveries {
+    available(All)
+    default =? defaultSalesOrders
+  }
+  func deliveryHeader: Layout
+    
+  func defaultSalesOrders: [SalesOrder]? = []
+  func updateReceiver(): Void = {}
+  func availability: GoodAvailability = Available
+  func ledgers(journal: Journal, date: Date): Future[[Ledger]?] = salesLedgers(journal, date)
+} 
+
+entity SalesDelivery extends ISalesDelivery with IOutgoingDelivery with RoutePath {
+  icon = "truck"
+  background = "#2e8e67"
+  field primary: Bool
+  field stockType: StockType = Inventory
+  func stockTypeSrc = stockType
+  const ref field n: Int? = if (primary) order.n else increment(Order.gen)
+  func deliverySrc: IStore? = source
+  func vendor = legalEntity
+  ref field source: IStore? {
+    default = onlyOne
+    validate = if (!source && items.exists(storeRequired)) "Source field in delivery $(this) is required"
+    /*update = {
+      if (let c = source?.as[ISalesChannel]) {
+        salesOrders.foreach {so =>
+          if (!so.salesChannel) so.salesChannel = c
+        }
+      }
+    }*/
+  }
+  func canDispatch = deliveryStatus == Planned && availability == Available && orders.all(canDispatch)
+
+  field shipTo: ILocation? {
+    from = Query(getReceiver?.legalEntity).flatMap(deliveryLocations)
+    visible = getReceiver
+  }
+  func pathSrc = source
+  func pathDst = shipTo
+  func debtDueDate = deliveryDate
+  
+  func hasInTransit: Bool = shipTo
+
+  ref compute number: String {
+    value = manualNumber.alt(if (primary) "SD" + orders.first.nakedN else "SD" + n.format(3, 0))
+    update = {manualNumber = new}
+  }
+  func entityNumbers = [number, trackingNumber.replace(" ", "")]
+  func orders: [Order] = salesOrders
+  list compute supplier = order.orderVendor
+  compute customer = order.orderCustomer
+    
+  func legalEntity = order.legalEntity
+  func title = "$number $(try? getReceiver?.title)"
+  
+  view deliveryHeader = grid(width = 1.2){
+    issuesView
+    statusesView
+    row {getReceiver, source, dispatchDate}
+    row {shipTo, space,  deliveryDate}
+    row {space, space, dueDate}
+    stockType >> field(visible = ui.edit || stockType != Inventory)
+    freightView
+    possibleDispatchPeriods >> list(frame = false){ 
+      x {
+        start
+        label("—")
+        if (end == Date.max) "∞" else end
+        button("Set") {
+          this.dispatchDate = start
+          this.save()
+        }
+      }
+    }
+    items >> list(editMode = AlwaysRead, mode = EditSelect){form.unnav}
+  }
+  view form = nav{grid(width = 1.2, labels = Top) {
+      salesOrders
+      number    
+      deliveryHeader
+    }
+    generalLedgerButton
+  } 
+  
+  view ref = y {
+    x{title dispatchDate}
+    statusesView
+  }
+  view dash = y {
+    dispatchDate
+    title
+    statusesView
+    refItems
+  }
+  event onSave = {
+    if (primary) n = order.n 
+    else if (!n) n = increment(Order.gen)
+    salesOrders*.touch
+    if (salesOrders.all(canceled)) status = Canceled
+  }
+  
+  view statusesView = x{status availability >> field(visible = availability.isIssue) dispatchState}
+  
+  object view list = SalesDelivery.all >> nav{list(canAdd = false){grid(labels = Top){
+    row{number >> field(width = 0.3) dispatchDate >> field(visible = true, width = 0.3) source >> field(width = 0.4) }
+    statusesView
+    row{receiver >> field(width = 0.3) shipTo >> field(width = 0.7)}
+    refItems
+  }}}
+}

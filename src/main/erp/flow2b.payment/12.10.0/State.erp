@@ -1,0 +1,50 @@
+enum ReconState(paymentState: PaymentState, isIssue: Bool) {
+  case Unrecon(paymentState = Unpaid, isIssue = true) {
+    label = "Unreconciled"
+    background = "#ed9"
+  }
+  case PartRecon(paymentState = PartPaid, isIssue = true) {
+    label = "Partially Reconciled"
+    background = "#ed9"
+  }
+  case Recon(paymentState = Paid, isIssue = false) {
+    label = "Reconciled"
+    color = "white"
+    background = "#090"
+  }
+  case Canceled(paymentState = PaymentState.Canceled, isIssue = false) {
+    background = "#ddd"
+  }
+}
+
+enum PaymentStatus {
+  case Entered {background = "#ed9"} 
+  case Executed {
+    color = "white"
+    background = "#090"
+  }
+}
+
+enum PaymentState {
+  case Unpaid {background = "#ed9"}
+  case PartPaid {label = "Partially Paid" background = "#ed9"}
+  case Paid {
+    color = "white"
+    background = "#090"
+  }
+  case Canceled {background = "#ddd"}
+}
+
+enum PaymentOverdueState {
+  case NoPaymentOverdue {background = "#dea"}
+  case PaymentOverdue {background = "#e99"}
+  case Paid {
+    color = "white"
+    background = "#090"
+  }
+}
+
+enum ChargeType {
+  case Cash {background = "#b6e2c6"}
+  case Account {background = "#dec4ee"}
+}

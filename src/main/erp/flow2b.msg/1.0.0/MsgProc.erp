@@ -1,0 +1,35 @@
+back interface MsgProc {
+  func priority: Dec[2]?
+  func proc(msg: ExtMsg): Bool
+}
+
+back interface MsgProcActivity extends MsgProc{
+  impl func proc(msg: ExtMsg): Bool = {
+    msg.fillActivity(this)                                  
+  } 
+  func refs(msg: ExtMsg): [Entity]? {
+    default value = {
+      if (let aa = msg.refActivities.first) [aa.mainEntity]
+      else if (!msg.flow2b) {
+        Entity.findReferences(msg.subject)
+      }
+    }
+  }
+  
+  func item(msg: ExtMsg, recipients: [Contact], refs: [Entity]?): Entity? = {
+    if (let r = refs.onlyOne) return r 
+
+    Ticket(
+      channel = msg.channel
+      status = if (msg.isSpam) Canceled else Entered
+      subject = (if (msg.isSpam) "SPAM: ") + msg.subject.alt("No Subject")
+      roles = if (let r = recipients*.as[Dashboard]*.role.toSet) r else recipients*.as[RoleContactGroup]*.role.toSet
+    ).save
+  }
+}
+back object MsgProcDefault extends MsgProcActivity {
+  impl func priority = 0.0
+}
+      
+
+

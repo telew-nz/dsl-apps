@@ -1,0 +1,11 @@
+entity Location extends IActorLocation {
+  field address: Address
+  
+  view form = nav{grid(labels = Top){
+    actor
+    address
+    schedule
+    contacts
+  }}
+}
+

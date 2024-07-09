@@ -1,0 +1,217 @@
+inline entity IR4Y18 {
+  system field ir: IncomeTaxReturn by ir4
+  
+  field f12a: Money[NZD]? {label = "12A: Schedule Payments: Total tax"} 
+  field f12b: Money[NZD]? {label = "12A: Schedule Payments: Gross income"} 
+  
+  field f13a: Money[NZD]? {label = "13A: Total RWT and/or NRWT"}
+  field f13b: Money[NZD]? {label = "13B: Total gross interest"}
+  
+  field f14: Money[NZD]? {label = "14: Total dividend imputation credits"}
+  field f14a: Money[NZD]? {label = "14A: Total dividend RWT credits"}
+  field f14b: Money[NZD]? {label = "14B: Total gross dividends"}
+  
+  field f15a: Money[NZD]? {label = "15A: Total Māori authority credits"}
+  field f15b: Money[NZD]? {label = "15B: Total Māori authority distributions"}
+  
+  field f16a: Money[NZD]? {label = "16A: Total partnership, estate or trust tax credits"}
+  field f16b: Money[NZD]? {label = "16B: Total partnership, estate or trust income"}
+  
+  compute f17a {
+    value = f12a + f13a + f14a + f15a + f16a
+    label = "Total tax credits"
+  }
+  
+  field f18a: Money[NZD]? {label = "18A: Total overseas tax paid"}
+  field f18b: Money[NZD]? {label = "18B: Total overseas income"}
+  
+  field netIncome: Money[NZD]? {label = "Net Tax Income"}
+  compute f19b: Money[NZD]? {
+    value = netIncome - f12b - f13b - f14b - f15b - f16b - f18b
+    label = "19B: Net profit or loss from business or rental"
+  }
+  
+  
+  field f20: Money[NZD]? {label = "20: Insurance premiums to any overseas insurer"}
+  field f20a: Money[NZD]? {label = "20A: Insurance premiums to a Switzerland insurer"}
+  compute f20b: Money[NZD]? {
+    value = (f20 - f20a)*0.1
+    label = "20B: Total taxable premium"
+  }
+  
+  field f21b: Money[NZD]? {label = "21B: Total other income"}
+  field f21ba: Money[NZD]? {label = "21BA: Residential land withholding tax (RLWT) Credit"}
+  
+  compute f22: Money[NZD]? {
+    value = f12b + f13b + f14b + f15b + f16b + f18b + f19b + f21b
+    label = "22: Total income before donations"
+  }
+  field f23b: Money[NZD]? {label = "23B: Donations made"}
+  compute f24: Money[NZD]? {
+    value = f22 - f23b
+    label = "24: Total income or net loss"
+  }
+  field f25a: Money[NZD]? {label = "25A: net losses brought forward"}
+  field f25b: Money[NZD]? {label = "25B: net losses claimed this year"}
+  
+  compute f26: Money[NZD]? {
+    value = f24 - f25b
+    label = "26: Total income after net losses brought forward"
+  } 
+  
+  compute f27: Money[NZD]? {
+    value = f39*.e.sum
+    label = "27: Net losses to or from other companies"
+  }
+  compute f27a: Money[NZD]? {
+    value = f39*.f.sum
+    label = "27A: Subvention payments to or from other companies"
+  }
+  
+  compute f28: Money[NZD]? {
+    value = f26 + f27 + f27a
+    label = "28: Taxable income or net loss to carry forward"
+  }
+  compute f29a {
+    value = f28.max(0)
+    label = "29A: Taxable income"
+  }
+  compute f29b {
+    value = f29a*0.28
+    label = "29B: Total tax payable"
+  }
+  compute f29c {
+    value = f18a
+    label = "29C: Overseas tax paid"
+  }
+  compute f29d {
+    value = (f29b - f29c).max(0)
+    label = "29D"
+  }
+  field f29e: Money[NZD]? {label = "29E: Foreign investor tax credit"}
+  compute f29f {
+    value = (f29d - f29e).max(0)
+    label = "29F"
+  }
+  compute f29g {
+    value = f14
+    label = "29G: Total imputation credits"
+  }
+  compute f29h {
+    value = (f29f - f29g).max(0)
+    label = "29H"
+  }
+  compute f29i {
+    value = f17a
+    label = "29I: Total tax credits"
+  }
+  compute f29ia {
+    value = f21ba
+    label = "29IA: RLWT credit"
+  }
+  
+  system compute f29j0 = f29h - f29i - f29ia
+  compute f29j {
+    value = f29j0.abs
+    label = "29J: Residual income tax"
+  }
+  compute f29jDC: DebitCredit {
+    label = "29J"
+    visible = f29j0
+    value = if (f29j0 < 0) Credit else Debit
+  }
+  
+  field f29k: Money[NZD]? {label = "29K: Provisional tax paid"}
+  field provTaxBalance: Money[NZD]? {label = "Provisional tax balance"}
+  
+  
+  system compute taxedAmount = f24 - f27 - f27a
+  system compute tax = f29j0 - f29k
+  
+  compute f29l {
+    value = tax.abs
+    label = "29L: Residual income tax"
+  }
+  compute f29lPR: RefundPay {
+    visible = tax
+    label = "29L"
+    value = if (tax < 0) Refund else TaxToPay
+  }
+  
+  field f32b: Money[NZD]? {label = "32B: Next year provisional tax"}
+  field f39: [IR4Y18CurAcc]? inline by ir4 {
+    visible = f39
+    label = "39: Shareholders current accounts"
+  }
+
+  back func calc(): Future[Void] = {
+    let le = ir.legalEntity
+    let p = ir.period
+    
+    let wt = Tax.WithholdingTax.agg(le, p, Currency.NZD, filter = true)
+    f13a = wt.tax
+    f13b = wt.taxedAmount
+    
+    let ne <- IncomeStatement(legalEntity = le, from = p.start, to = p.end).taxIncome
+    netIncome = ne
+    
+    f25a = Tax.IncomeTax.balance(le, p.end, Currency.NZD).taxedAmount.min(0)
+    f25b = -(f24.clamp(0, -f25a))
+    
+    f29k = Tax.ProvisionalTax.agg(le, p, Currency.NZD, filter = amount > 0).tax
+    provTaxBalance = Tax.ProvisionalTax.balance(le, p.end, Currency.NZD).tax
+    
+    CurrentAccount.all
+      .groupBy(counterparty)
+      .map(v => IR4Y18CurAcc(shareholder = v.#0, accs = v.#1, ir4 = this))
+      .result.get
+    let _ <- f39*.calc(ir).allCompleted
+    f39.filter(isEmpty)*.delete
+    empty()
+  }
+  back func empty(): Void = {} 
+}
+
+inline entity IR4Y18CurAcc {
+  system field ir4: IR4Y18 by f39
+  
+  field shareholder: LegalEntity
+  field accs: [CurrentAccount] {label = "Current Accounts"}
+  field a: String? {label = "39A: IRD number"}
+  field b: Money[NZD]? {label = "39B: Remuneration with no PAYE deducted"}
+  compute c: Money[NZD]? {
+    value = if (balance > 0) balance
+    label = "39C: Value of loans from the company"
+  }
+  system field balance: Money[NZD]?
+  compute d: Money[NZD]? {
+    value = balance.abs
+    label = "39D: Current account balance"
+  }
+  compute dDC: DebitCredit {
+    label = "39D"
+    value = if (balance < 0) Credit else Debit
+  }
+  field e: Money[NZD]? {label = "39E: Loss offsets"}
+  field f: Money[NZD]? {label = "39F: Subvention payments"}
+
+  back func calc(ir: IncomeTaxReturn): Future[Void] = {
+    let p = ir.period
+    let le = ir.legalEntity
+    a = shareholder.legalInfo?.taxNumber
+    let bs <- accs*.balance(at = p.end).map(_.to[Money[NZD]](ir.period.end)).allCompleted
+    balance = bs.sum
+    b = ILSalaryExpenses
+      .between(p.start, p.end)
+      .filter(start.legalEntity == le && start.counterparty == shareholder && start.salaryType.nzSalary == Remuneration)*.items
+      .filter(!incomeTaxed)*.baseAmount.agg(sum).result.get
+    1
+  }
+
+  func isEmpty = !b && !balance
+}
+
+enum RefundPay {
+  case Refund
+  case TaxToPay
+}

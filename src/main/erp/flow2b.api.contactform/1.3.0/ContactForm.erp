@@ -1,0 +1,122 @@
+entity ContactFormService extends SystemService with NewEngine with IEndpoint {
+  impl func title = "Contact Form Service"
+  
+  field redirectPath: String = "thank-you"
+  field contactRole: Role {
+  	default = Salesperson
+  }
+  impl func canRead = true
+  impl func service = this
+  
+  field receivedNotification: ContactFormReceivedNotification inline by service
+  
+  back func postMessage(request: IncomingHttpRequest, nm: String, eml: Email, org: String?, phone: Phone?, message: Text?, name: String?, email: Email?): HttpResponse = {
+    guard (!name && !email) else return {
+      HttpResponse(
+        code = 200,
+        headers = ["Reason" -> "Bot"]
+      )
+    }
+    let p0: Person? = Person.all.find(
+      contacts.exists(_.as[EmailContact]?.email =%= eml)
+    ).result.get
+    
+    let p: Person = if (let org) {
+      let c = Company.add(org).saveBy(title.flex)
+      if (let p0) {
+        if (!c.people.exists(person == p0)) {
+          CompanyPerson(company = c, person = p0)
+        }
+        p0
+      } else {
+        c.addPerson(nm)!.person
+      }
+    } else if (let p0) {
+      p0 
+    } else {
+      Person(name = nm).save
+    }
+    
+    let contact = p.addEmail(eml)!
+    p.addPhone(Phone, phone)
+    p.save
+    
+    let t = Ticket(
+      status = Entered
+      subject = "Message from ${nm}"
+      roles = [contactRole]
+      ticketPerson = p
+    ).saveMain
+    
+    Activity.current!.from = contact
+    Activity.current!.comment(message)
+    
+    contact.join(t)
+    
+    receivedNotification.send(t)
+    
+    HttpResponse(
+      code = 303,
+      headers = ["Location" -> request.header("Origin") + "/" + redirectPath + "?f2bu=$(p.uuid)"]
+    )
+  }
+  
+  compute endpointUrl: Url {
+    availableFor = Inline
+    value = back{this.apiUrl("message")}
+  }
+  
+  compute htmlForm: Html {
+    availableFor = Inline
+    value = back {'<div class="container">
+ <form method="POST" action="$endpointUrl">
+   <div class="row" style="position: absolute; opacity: 0; top: 0; left: 0; height: 0; width: 0; z-index: -1" >
+      <label for="name">Name</label>
+      <input type="text" name="name" autocomplete="off">
+      <label for="email">Email</label>
+      <input type="text" name="email" autocomplete="off">
+   </div>
+   <div class="row">
+     <div class="col">
+       <label for="nm"><b>Name *</b></label>
+       <p><input type="text" style="width: 100%" name="nm" autocomplete="name" required></p>
+     </div>
+   </div>
+   <div class="row">
+     <div class="col-lg-6">
+       <label for="email"><b>EMail *</b></label>
+       <p><input type="email" style="width: 100%" name="eml" autocomplete="email" required></p>
+     </div>
+     <div class="col-lg-6">
+       <label for="phone">Phone</label>
+       <p><input type="tel" style="width: 100%" name="phone" autocomplete="tel"></p>
+     </div>
+   </div>
+   <div class="row">
+     <div class="col">
+       <label for="message">Message</label>
+       <p><textarea name="message" style="width: 100%"></textarea></p>
+     </div>
+   </div>
+   <div class="row">
+     <div class="col">
+       <input type="submit" value="Send">
+     </div>
+   </div>
+ </form>
+</div>'}
+  }
+  
+  impl view form = nav{grid(labels = Top){
+    issuesView
+    serviceState
+    errorsCount >> field(editMode = AlwaysRead)
+    contactRole
+    redirectPath
+    receivedNotification
+    endpointUrl
+    htmlForm
+  }}
+}
+
+

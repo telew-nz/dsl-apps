@@ -1,0 +1,183 @@
+trait ExtIdSource[T] extends RefEntity {
+  const system field sourceIds: [ExtId]? inline by source {
+    availableFor = Overall
+  }
+  back func extId(item: HasExtId): T? = {
+    sourceIds.find(e => e.item == item && e.hasId)?.extId?.as[T]
+  }
+  back func updateExtId(item: HasExtId, extId: T?): T? = {
+    item.updateExtId(this, extId)
+  }
+  back func addExtId(item: HasExtId, extId: T): ExtId = {
+    item.addExtId(this, extId)
+  }
+  back func updateExtCode(item: HasExtId, extCode: String?): String? = {
+    item.updateExtCode(this, extCode)
+  }
+  back func updateExtUrl(item: HasExtId, extUrl: Url?): Url? = {
+    item.updateExtCode(this, extUrl)
+  }
+  back func deleteExtItem(item: IHasExtId): Void = {
+    let i = item.extIdItem
+    sourceIds.find(e => e.item == i)?.delete
+  }
+  back func findExtId[R](extId: T?, map: HasExtId => R?): R? = {
+    if (let ei = extId) {
+      ExtId.all.filter(i => i.source == this && i.hasId && i.extIds.contains(ei))
+        .map(map(item))
+        .find(_).map(_!)
+        .result.get
+    } else {
+      null
+    }
+  }
+  back func findExtUrl[R](extUrl: Url?, map: HasExtId => R?): R? = {
+    if (let ei = extUrl) {
+      ExtId.all.filter(i => i.source == this && i.extUrl == ei)
+        .map(map(item))
+        .find(_).map(_!)
+        .result.get
+    } else {
+      null
+    }
+  }
+  back func findExtCode[R](extCode: Url?, map: HasExtId => R?): R? = {
+    if (let ei = extCode) {
+      ExtId.all.filter(i => i.source == this && i.extCode == ei)
+        .map(map(item))
+        .find(_).map(_!)
+        .result.get
+    } else {
+      null
+    }
+  }
+  
+  back func extUrl(item: HasExtId): Url? = {
+    sourceIds.find(e => e.item == item)?.extUrl
+  }
+  back func extCode(item: HasExtId): String? = {
+    sourceIds.find(e => e.item == item)?.extCode
+  }
+}
+  
+interface IHasExtId {
+  func extIdItem: HasExtId
+  func deleted: Bool
+  back func deleteExtItem[T](source: ExtIdSource[T]): Void = {
+    source.deleteExtItem(this)
+  }
+  back func extId[T](source: ExtIdSource[T]): T?
+  back func updateExtId[T](source: ExtIdSource[T], extId: T?): T?
+  back func addExtId[T](source: ExtIdSource[T], extId: T): ExtId
+  back func deleteExtId[T](source: ExtIdSource[T]): T? = updateExtId(source, null)
+  back func extUrl[T](source: ExtIdSource[T]): Url?
+  back func updateExtUrl[T](source: ExtIdSource[T], extUrl: Url?): Url?
+  back func deleteExtUrl[T](source: ExtIdSource[T]): Url? = updateExtUrl(source, null)
+  back func extCode[T](source: ExtIdSource[T]): String?
+  back func updateExtCode[T](source: ExtIdSource[T], extCode: String?): String?
+  back func deleteExtCode[T](source: ExtIdSource[T]): String? = updateExtCode(source, null)
+}
+
+interface IHasExtIdDecorator extends IHasExtId {
+  impl func extIdItem: HasExtId
+  impl func deleted: Bool = extIdItem.deleted
+  impl back func extId[T](source: ExtIdSource[T]): T? = extIdItem.extId(source)
+  impl back func updateExtId[T](source: ExtIdSource[T], extId: T?): T?  = {
+    extIdItem.updateExtId(source, extId)
+  }
+  impl back func addExtId[T](source: ExtIdSource[T], extId: T): ExtId = {
+    extIdItem.addExtId(source, extId)
+  }
+  impl back func extUrl[T](source: ExtIdSource[T]): Url? = extIdItem.extUrl(source)
+  impl back func updateExtUrl[T](source: ExtIdSource[T], extUrl: Url?): Url? = {
+    extIdItem.updateExtUrl(source, extUrl)
+  }
+  
+  impl back func extCode[T](source: ExtIdSource[T]): Url? = extIdItem.extCode(source)
+  impl back func updateExtCode[T](source: ExtIdSource[T], extCode: String?): String? = {
+    extIdItem.updateExtCode(source, extCode)
+  }
+}
+
+trait HasExtId extends AnyEntity with IHasExtId {
+  impl func extIdItem: HasExtId = this
+  
+  const system field extIds: [ExtId]? inline by item 
+
+  impl back func extId[T](source: ExtIdSource[T]): T? = {
+    extIds.find(e => e.source == source)?.extId?.as[T]
+  }
+  impl back func extUrl[T](source: ExtIdSource[T]): Url? = {
+    extIds.find(e => e.source == source)?.extUrl
+  }
+  impl back func extCode[T](source: ExtIdSource[T]): String? = {
+    extIds.find(e => e.source == source)?.extCode
+  }
+  impl back func updateExtId[T](source: ExtIdSource[T], extId: T?): T? = {
+    if (let i = extIds.find(e => e.source == source)) {
+      let r = i.extId?.as[T]
+      if (let e = extId) {
+        i.extIds = [e]
+        i.save
+      } else {
+        i.extIds = []
+        i.deleteIfEmpty
+      } 
+      r
+    } else if (let e = extId) {
+      ExtId(item = this, source = source, extIds = [e]).save
+      null
+    }
+  }
+  impl back func addExtId[T](source: ExtIdSource[T], extId: T): ExtId = {
+    let r = if (let i = extIds.find(e => e.source == source)) {
+      if (!i.extIds.contains(extId)) {
+        i.extIds = i.extIds + extId
+        i.save
+      }
+      i
+    } else {
+      ExtId(item = this, source = source, extIds = [extId]).save
+    }
+  }
+  impl back func updateExtUrl[T](source: ExtIdSource[T], extUrl: Url?): Url? = {
+    if (let i = extIds.find(e => e.source == source)) {
+      i.extUrl = extUrl
+      i.deleteIfEmpty
+    } else if (let e = extUrl) {
+      ExtId(item = this, source = source, extUrl = e).save
+    }
+    extUrl
+  }
+  impl back func updateExtCode[T](source: ExtIdSource[T], extCode: String?): String? = {
+    if (let i = extIds.find(e => e.source == source)) {
+      i.extCode = extCode
+      i.deleteIfEmpty
+    } else if (let e = extCode) {
+      ExtId(item = this, source = source, extCode = e).save
+    }
+    extCode
+  }
+  
+  view extView = nav {grid{
+    extIds >> table {
+      source extId extUrl extCode
+    }
+  }}
+}
+
+inline entity ExtId {
+  system field item: HasExtId by extIds {deleteCascade = false}
+  system field source: ExtIdSource by sourceIds
+  field extIds: [Any]?
+  func extId: Any? = extIds.first
+  func hasId: Bool = extIds
+  field extUrl: Url?
+  field extCode: String?
+  func isEmpty = !extIds && !extUrl && !extCode
+  func deleteIfEmpty = if (isEmpty) delete else save
+  impl view form = grid(labels = None) {
+    row {source source extId extUrl}
+  }
+}
+

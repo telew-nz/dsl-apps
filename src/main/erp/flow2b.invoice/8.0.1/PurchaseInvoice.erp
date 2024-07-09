@@ -1,0 +1,39 @@
+trait IPurchaseInvoice extends IInvoice with DebtCredit {
+  func isPurchase: Bool = true
+  func cashFlowCategory: CashFlowCategory = Purchases
+  func startingBalance: Money[currency]? = total
+  func paidAmount = creditRepaid
+  func cancelable = true    
+  func setoffs: [Setoff]? = debits
+  func cancel(): Void = cancelationDate = Date.now
+  compute vendor = counterparty
+  compute customer = legalEntity
+
+  func creditOriginLedger(setoff: Setoff): Future[Ledger] = {
+    LDebt(account = AccountsPayable, origin = this, journal = setoff.journal, date = setoff.date, 
+          trAmount = setoff.amount, counterparty = vendor, currency = currency)
+  }
+  register payableLedger = LDebt(account = AccountsPayable, origin = this, journal = this, trAmount = -total, counterparty = vendor, currency = currency)
+  register prepaidLedgers: [LDebt]? = items
+    .groupBy(delivery).agg(orderAmount.sum).toSeq
+    .filter(orderAmount)
+    .map{
+      LDebt(account = PrepaidExpenses, origin = _.delivery?.as[Journal].alt(this), journal = this, 
+            trAmount = orderAmount, counterparty = customer, currency = currency)
+    }
+  func debtLedger: LDebt = payableLedger  
+  register payableCancelLedger: LDebt? = if (let d = cancelationDate) payableLedger.copy(date = d, trAmount = -payableLedger.trAmount) else null
+  register prepaidCancelLedger: [LDebt]? = if (let d = cancelationDate) prepaidLedgers.map(_.copy(date = d, trAmount = -_.trAmount)) else null  
+  
+  view statusesView = x {
+    issueState
+    creditPaymentState
+    creditUnpaid + " unpaid" >> field(visible = creditState == PartiallyReconciled)
+  }
+  view ref = x{title statusesView}
+  
+  func addPayment(): Void = {
+    let a = creditUnpaid
+    OutgoingPayment(amount = a, credits = [Setoff(credit = this, amount = a)]).form.open
+  }
+}

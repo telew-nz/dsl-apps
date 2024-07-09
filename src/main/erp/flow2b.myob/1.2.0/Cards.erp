@@ -1,0 +1,72 @@
+trait CardsImport extends Entity with SheetImportSchema {
+  back func addAddresses(d: [String?]?, le: LegalEntity, i: UInt, n: UInt): Void = {
+    if (let loc = le.addLocation(null, Address(
+      street = [d(i), d(i + 1), d(i + 2), d(i + 3)].mapOpt(_).join("\n") 
+      city = d(i + 4), region = d(i + 5), postcode = d(i + 6), country = d(i + 7)
+    ))) {
+      let a: Addressee = {
+        if (let contactName = d(i + 14).trim where !(contactName =%= le.title)) {
+          le.addPerson(contactName)!.save.as[Addressee]
+        } else if (n == 5){
+          le.as[Addressee]
+        } else {
+          loc
+        }
+      }
+      a.addPhone(Phone, d(i + 8))
+      a.addPhone(Phone, d(i + 9))
+      a.addPhone(Phone, d(i + 10))
+      a.addPhone(Fax, d(i + 11))
+      a.addEmail(d(i + 12))
+      a.addWebsite(d(i + 13))
+    }
+    if (let n1 = (n - 1).positive) {
+      addAddresses(d, le, i + 15, n1)
+    }
+  }
+  
+  func unum(s: String?): UMoney? = {
+    s.dropSuffix(" ₽").replace(",", ".").replace(" ", "").toUNum
+  }
+  impl func headerRow = 2
+}
+
+object CustomersImport extends CardsImport {
+  impl func title = "MYOB: Customers Import"
+  impl back func process(file: File, data: [String?]?) = {
+    data.drop(2)
+      .map(split(rules = CSV))
+      .foreach{d =>
+        let le = if (let name = d("B")) {
+          Person(name = "$(d('A')) $name").saveBy(title).as[LegalEntity]
+        } else {
+          Company(title = d("A")!).saveBy(title)
+        }
+        le.makeCustomer
+        addAddresses(d, le, 5, 5)
+      }
+  } 
+  
+  impl func header = "Co./Last Name,First Name,Card ID,Card Status,Addr 1 - Line 1,Addr 1 - Line 2,Addr 1 - Line 3,Addr 1 - Line 4,Addr 1 - City,Addr 1 - State,Addr 1 - Postcode,Addr 1 - Country,Addr 1 - Phone No. 1,Addr 1 - Phone No. 2,Addr 1 - Phone No. 3,Addr 1 - Fax No.,Addr 1 - Email,Addr 1 - WWW,Addr 1 - Contact Name,Addr 1 - Salutation,Addr 2 - Line 1,Addr 2 - Line 2,Addr 2 - Line 3,Addr 2 - Line 4,Addr 2 - City,Addr 2 - State,Addr 2 - Postcode,Addr 2 - Country,Addr 2 - Phone No. 1,Addr 2 - Phone No. 2,Addr 2 - Phone No. 3,Addr 2 - Fax No.,Addr 2 - Email,Addr 2 - WWW,Addr 2 - Contact Name,Addr 2 - Salutation,Addr 3 - Line 1,Addr 3 - Line 2,Addr 3 - Line 3,Addr 3 - Line 4,Addr 3 - City,Addr 3 - State,Addr 3 - Postcode,Addr 3 - Country,Addr 3 - Phone No. 1,Addr 3 - Phone No. 2,Addr 3 - Phone No. 3,Addr 3 - Fax No.,Addr 3 - Email,Addr 3 - WWW,Addr 3 - Contact Name,Addr 3 - Salutation,Addr 4 - Line 1,Addr 4 - Line 2,Addr 4 - Line 3,Addr 4 - Line 4,Addr 4 - City,Addr 4 - State,Addr 4 - Postcode,Addr 4 - Country,Addr 4 - Phone No. 1,Addr 4 - Phone No. 2,Addr 4 - Phone No. 3,Addr 4 - Fax No.,Addr 4 - Email,Addr 4 - WWW,Addr 4 - Contact Name,Addr 4 - Salutation,Addr 5 - Line 1,Addr 5 - Line 2,Addr 5 - Line 3,Addr 5 - Line 4,Addr 5 - City,Addr 5 - State,Addr 5 - Postcode,Addr 5 - Country,Addr 5 - Phone No. 1,Addr 5 - Phone No. 2,Addr 5 - Phone No. 3,Addr 5 - Fax No.,Addr 5 - Email,Addr 5 - WWW,Addr 5 - Contact Name,Addr 5 - Salutation,Notes,Identifiers,Custom List 1,Custom List 2,Custom List 3,Custom Field 1,Custom Field 2,Custom Field 3,Billing Rate,Terms - Payment is Due,           - Discount Days,           - Balance Due Days,           - % Discount,           - % Monthly Charge,GST Code,Credit Limit,GST ID No.,Volume Discount %,Sales/Purchase Layout,Price Level,Payment Method,Payment Notes,Name on Card,Card Number,Bank and Branch,Account Number,Account Name,Account,Salesperson,Salesperson Card ID,Comment,Shipping Method,Printed Form,Freight GST Code,Use Customer's GST Code,Receipt Memo,Invoice/Purchase Order Delivery,Record ID"
+}
+
+
+object SuppliersImport extends CardsImport {
+  impl func title = "MYOB: Suppliers Import"
+  impl back func process(file: File, data: [String?]?) = {
+    data.drop(2)
+      .map(split(rules = CSV))
+      .foreach{d =>
+        let le = if (let name = d("B")) {
+          Person(name = "$(d('A')) $name").saveBy(title).as[LegalEntity]
+        } else {
+          Company(title = d("A")!).saveBy(title)
+        }
+        le.makeVendor
+        addAddresses(d, le, 5, 5)
+      }
+  } 
+  
+  impl func header = "Co./Last Name,First Name,Card ID,Card Status,Addr 1 - Line 1,Addr 1 - Line 2,Addr 1 - Line 3,Addr 1 - Line 4,Addr 1 - City,Addr 1 - State,Addr 1 - Postcode,Addr 1 - Country,Addr 1 - Phone No. 1,Addr 1 - Phone No. 2,Addr 1 - Phone No. 3,Addr 1 - Fax No.,Addr 1 - Email,Addr 1 - WWW,Addr 1 - Contact Name,Addr 1 - Salutation,Addr 2 - Line 1,Addr 2 - Line 2,Addr 2 - Line 3,Addr 2 - Line 4,Addr 2 - City,Addr 2 - State,Addr 2 - Postcode,Addr 2 - Country,Addr 2 - Phone No. 1,Addr 2 - Phone No. 2,Addr 2 - Phone No. 3,Addr 2 - Fax No.,Addr 2 - Email,Addr 2 - WWW,Addr 2 - Contact Name,Addr 2 - Salutation,Addr 3 - Line 1,Addr 3 - Line 2,Addr 3 - Line 3,Addr 3 - Line 4,Addr 3 - City,Addr 3 - State,Addr 3 - Postcode,Addr 3 - Country,Addr 3 - Phone No. 1,Addr 3 - Phone No. 2,Addr 3 - Phone No. 3,Addr 3 - Fax No.,Addr 3 - Email,Addr 3 - WWW,Addr 3 - Contact Name,Addr 3 - Salutation,Addr 4 - Line 1,Addr 4 - Line 2,Addr 4 - Line 3,Addr 4 - Line 4,Addr 4 - City,Addr 4 - State,Addr 4 - Postcode,Addr 4 - Country,Addr 4 - Phone No. 1,Addr 4 - Phone No. 2,Addr 4 - Phone No. 3,Addr 4 - Fax No.,Addr 4 - Email,Addr 4 - WWW,Addr 4 - Contact Name,Addr 4 - Salutation,Addr 5 - Line 1,Addr 5 - Line 2,Addr 5 - Line 3,Addr 5 - Line 4,Addr 5 - City,Addr 5 - State,Addr 5 - Postcode,Addr 5 - Country,Addr 5 - Phone No. 1,Addr 5 - Phone No. 2,Addr 5 - Phone No. 3,Addr 5 - Fax No.,Addr 5 - Email,Addr 5 - WWW,Addr 5 - Contact Name,Addr 5 - Salutation,Notes,Identifiers,Custom List 1,Custom List 2,Custom List 3,Custom Field 1,Custom Field 2,Custom Field 3,Billing Rate,Cost Per Hour,Terms - Payment is Due,           - Discount Days,           - Balance Due Days,           - % Discount,GST Code,Credit Limit,GST ID No.,Payment Method,Payment Notes,Name on Card,Card Number,Account Number,Account Name,Particulars,Code,Reference,Remittance Method,Remittance Address,Volume Discount %,Sales/Purchase Layout,Account,Comment,Shipping Method,Printed Form,Freight GST Code,Use Supplier's GST Code,Payment Memo,Invoice/Purchase Order Delivery,Record ID"
+}
+

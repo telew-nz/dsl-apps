@@ -1,0 +1,27 @@
+back interface EIncomingPayment[ID] {
+  func extId: ID
+  func paymentDate: Date
+  func amount: Money
+  func paymentMethod: String
+  
+  func make(pr: ISalesOrderImportProvider[ID], so: SalesOrder): IncomingPayment = {
+    pr.service.findExtId(extId, _.as[IncomingPayment]).alt {
+      if (let si = so.invoices.first) {
+        let ip = IncomingPayment(
+          date = paymentDate,
+          currency = so.currency,
+          payer = so.customer?.legalEntity,
+          payee = pr.legalEntity,
+          account = pr.paymentMethodAccounts.apply(paymentMethod).alt(throw "Cannot find account for payment method $paymentMethod"),
+          amount = amount,
+          source = si
+        )
+        ip.updateExtId(pr.service, extId)
+        ip
+      } else {
+        throw "No SI for $so"
+      }
+    }
+  }
+}
+ 

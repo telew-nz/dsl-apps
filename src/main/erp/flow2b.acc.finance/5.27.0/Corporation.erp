@@ -1,0 +1,7 @@
+inline trait ICorporation extends LegalStructure {
+  impl func specificAccounts: [LedgerAccount] = [RetainedEarnings, Dividends, DividendsPayable] //, TreasuryStocks
+  impl func canCloseIncomeSummary = true
+  impl func incomeSummaryClosing(journal: Journal, balance: Money[currency]): [Ledger]? = {
+    [LBasic(account = RetainedEarnings, journal = journal, trAmount = -balance)]
+  }
+}

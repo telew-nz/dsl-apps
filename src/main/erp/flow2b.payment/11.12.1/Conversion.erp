@@ -1,0 +1,10 @@
+back object Conversion extends IConversion {
+  func do(version: [Int?]?) = {
+    if (version < [11,7,0]) {
+      Payment.all*.updateDashboard
+    }
+    if (version < [11,10,0]) {
+      all("flow2b.payment.Loan").flatMap(field[[Setoff]?]("credits") + field[[Setoff]?]("debits"))*.delete
+    }
+  }  
+}   

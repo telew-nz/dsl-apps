@@ -1,0 +1,138 @@
+entity ImportedOrder extends Entity with NewEngine {
+  field type: ImportedOrderType?
+  
+  func number = "$(poi.number).$n"
+  impl func title = "$number $docNumber"
+  impl func itemRoles = [BusAdmin]
+  func isEmpty = !items && !totalNoGst && !type
+  
+  ref field poi: OrderImport {label = "Import"}
+  ref const field n: UInt = {
+    poi.invGen += 1
+    poi.save
+    poi.invGen!
+  }
+  func success: Bool = !issues*.as[IssueType[Entity] with IPoiInvoiceIssueType] && !poi.issues*.as[IssueType[Entity] with IPoiIssueType]
+  
+  field orderDate: Date?
+  
+  ref compute file: File = poi.file
+  
+  ref compute date = orderDate.alt(poi.date)
+  ref field theirNumber: String?
+  system field invNumSrc: Dec[2]?
+  ref field ourNumber: String? {label = "Purchase Order Number"}
+  compute docNumber = (ourNumber+ " " + theirNumber).trim
+  const field vendorNumber: String?
+  field vendor: Vendor? {
+    default = poi.vendor
+    init = {
+      new?.legalEntity?.legalInfo?.gstNumber = vendorNumber
+      new?.gstStatus = Registered
+    }
+  }
+  impl event onSave = {
+    if (updated(vendor) || updated(type) let vendor) {
+      if (let vendorNumber) {
+        vendor.legalEntity.legalInfo?.gstNumber = vendorNumber
+        vendor.legalEntity.save
+      }
+      if (type in [TaxInvoice, DebitNote, AdjustmentNote, CreditNote]) {
+        vendor.gstStatus = Registered
+        vendor.save
+      }
+    }
+  }
+  func vendorId: String? = if (let vendor) vendor.id.toString else vendorNumber
+  field dueDate: Date?
+  
+  field rowsWithGst: Bool { label = "Rows include GST"}
+  field currency: Currency = our
+  field totalNoGst: Money[currency]?
+  field gst: Money[currency]?
+  ref compute totalWithGst: Money[currency]? = totalNoGst + gst
+  
+  field items: [ImportedOrderItem]? inline by order
+  
+  impl view ref = x {title date.date totalWithGst}
+  
+  impl view form = nav{grid(width = 1.2){
+    issuesView
+    x { poi >> field(stretch = 1) number >> field(fontStyle = Label)}
+    stateView
+    file
+    row {
+      theirNumber orderDate dueDate
+    }
+    row {
+      ourNumber 
+      y (label = "Vendor") {
+        vendorNumber >> field(fontStyle = Label)
+        vendor
+      } rowsWithGst 
+    }
+    extension
+    row {
+      totalNoGst gst totalWithGst 
+    }
+    items >> table {
+      y (label = "Description", width = 0.56, margin = None) {
+        code >> field(fontStyle = Label) 
+        desc
+      }
+      qty >> field(width = 0.2) 
+      gstRateEditor >> field(width = 0.2, label = "GST") 
+      amount >> field(width = 0.24) 
+    }    
+  }}
+  impl view traitItem = y {
+    x {
+      stateView >> field(stretch = 0)  
+      number >> field (fontStyle = Label)
+      docNumber >> field (fontStyle = Label)
+      vendor totalWithGst
+    }
+    poi.fileName >> field(visible = !theirNumber && !ourNumber)
+  }
+  view stateView = x {type >> field(label = "")}
+  report Report {
+    impl view list = ImportedOrder.all >> nav{list(canAdd = false){traitItem}}
+  }
+}
+ 
+enum ImportedOrderType {
+  case TaxInvoice {background = "#ed9"}
+  case DebitNote {background = "#ffb57f"}
+  case CreditNote {background = "#ffb57f"}
+  case AdjustmentNote {background = "#ffb57f"}
+  case Order {background = "#cce0ff"}
+}
+
+inline entity ImportedOrderItem {
+  field order: ImportedOrder by items
+  
+  field code: String?
+  field desc: PlainText? {
+    label = "Description"
+  }
+  field qty: Qty?
+  field amount: Money[order.currency]?
+  field gstRate: UPercent[2]??  
+  compute gstAmount: Money[order.currency]? = if (let gstRate) {
+    if (order.rowsWithGst) {
+      (amount.as[Dec[8]]*gstRate/(gstRate + 1)).as[Money[order.currency]] 
+    } else {
+      amount*gstRate
+    }
+  }
+  compute amountNoGst = if (order.rowsWithGst) amount - gstAmount else amount
+  compute amountWithGst = if (order.rowsWithGst) amount else amount + gstAmount
+  field gstIssue: Bool
+  compute gstRateEditor: UPercent[2]? {
+    value = gstRate.alt(0).as[UPercent[2]]
+    update = {
+      gstRate = new
+      gstIssue = false
+    }
+  }
+}

@@ -1,0 +1,71 @@
+trait IPriceModOwner extends AnyEntity {
+  field mods: [IPriceMod]? inline by owner {
+    label = "Price Modifiers"
+  }
+
+  func applyMods(request: PriceRequest, item: PriceOrderItem, amount: UMoney?): Future[UMoney?] = {
+    goApplyMods(request, item, amount, mods)
+  }
+  
+  func applyMods(rounding: Rounding?, request: PriceRequest, item: PriceOrderItem, prevPrice: SalesPrice): Future[SalesPrice] = {
+    let newPrice <- applyMods(request, item, prevPrice.regular)
+    let np1 = if (let rounding) {
+      rounding.apply(newPrice / item.qty) * item.qty
+    } else newPrice
+    if (np1 < prevPrice.current) prevPrice.withCurrent(np1) else prevPrice
+  }
+  
+  func applyMods(rounding: Rounding?, request: PriceRequest, product: IBaseProduct, pss: [DurPrice]?): Future[[DurPrice]?] = {
+    pss.oneByOne{ps =>
+      let newPrice <- applyMods(request, PriceOrderItem(prod = product, qty = 1), ps.price.regular)
+      let np1 = if (let rounding) rounding.apply(newPrice) else newPrice
+      if (np1 < ps.price.current) DurPrice(unit = ps.unit, dur = ps.dur, price = ps.price.withCurrent(np1)) else ps
+    }
+  }
+  func applyMods(rounding: Rounding?, request: PriceRequest, product: IBaseProduct, prevPrice: SalesPrice): Future[SalesPrice] = {
+    let newPrice <- applyMods(request, PriceOrderItem(prod = product, qty = 1), prevPrice.regular)
+    let np1 = if (let rounding) rounding.apply(newPrice) else newPrice
+    if (np1 < prevPrice.current) {
+      prevPrice.withCurrent(np1) 
+    } else {
+      prevPrice
+    }
+  }
+  
+  func goApplyMods(request: PriceRequest, item: PriceOrderItem, amount: UMoney?, mods: [IPriceMod]?): Future[UMoney?] = {
+    if (let d = mods.first) {
+      let nextAmount <- d.apply(request, item, amount)
+      goApplyMods(request, item, nextAmount, mods.drop(1))
+    } else {
+      amount
+    }
+  }
+}
+
+trait IPriceMod extends InlineEntity {
+  system field owner: IPriceModOwner
+  
+  func apply(request: PriceRequest, item: PriceOrderItem, amount: UMoney?): Future[UMoney?]
+}
+
+entity PriceModDiscountPercent extends IPriceMod {
+  singular = "Percentage Discount"
+  field discount: UPercent[2]
+  impl func apply(request: PriceRequest, item: PriceOrderItem, amount: UMoney?): Future[UMoney?] = {
+    amount * (1.0000 - discount).positive
+  }
+  impl view form = x{label("Percentage Discount") discount >> field(align = Left)}
+}
+
+entity PriceModDiscountFixed extends IPriceMod {
+  singular = "Fixed Discount"
+  field currency: Currency = default
+  field discount: Money[currency] {canEditUnit}
+  impl func apply(request: PriceRequest, item: PriceOrderItem, amount: UMoney?): Future[UMoney?] = {
+    let d <- discount.to[Money[amount.unit!]](now)
+    (amount - d).positive
+  }
+  
+  impl view form = x{label("Fixed Discount") discount >> field(align = Left)}
+}
+

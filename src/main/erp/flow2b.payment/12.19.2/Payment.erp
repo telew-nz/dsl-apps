@@ -1,0 +1,173 @@
+account UnreconciledCredits(template = "Currency", credit = acc(Error, 0)) 
+account UnreconciledDebits(template = "Currency", credit = acc(Error, 1)) 
+  
+extend enum DashboardIssue {
+  case UnreconPayment(role = Accountant, priority = major) = "Unreconciled Payment"
+  case MissingInBSU(role = Accountant, priority = critical) = "Missing in the uploaded bank statement"
+}
+
+trait IReason extends AnyEntity {
+  func payment: Payment
+  func cashFlows: [CashFlowAmount]?
+  func ledgers: Future[[Ledger]?]
+  func gstLedger: Ledger? = null
+  func refs: [RefEntity]? = []
+  var amount: UMoney?
+}
+
+trait PaymentSource extends DebtOrigin {
+  field payments: [Payment]? inline by source
+  override func allManLinks: [DebtOrigin]? = payments + manLinks
+}
+
+trait Payment extends CashMovement with DebtOrigin {
+  background = "#d68400"
+  
+  func number: String
+  func isIncoming: Bool
+  func reasons: [IReason]?
+  func toTransfer: CashTransfer
+  
+  override func allManLinks: [DebtOrigin]? = source + manLinks
+  impl func hasSource: Bool = source
+  field source: PaymentSource? {visible = source}
+  field refNum: String? {label = "Reference Number"} 
+  field desc: Text? {label = "Description"}
+  
+  impl func entityNumbers = [number, refNum]
+  impl func debtCurrency = currency
+  impl func isInstant: Bool = source?.isInstant
+  
+  system stored compute sReconState: ReconState {
+    label = "Reconciliation State"
+  }
+  ref compute eReconState: ReconState {
+    label = "Reconciliation State"
+    value = if (debtAmount) (try? sReconState).alt(reconState) else Recon
+  }
+  impl event onSave = {
+    if (moneyCalced) {
+      sReconState = reconState
+    } else if (!try? eReconState) {
+      sReconState = Unrecon
+    }
+  }
+  
+  back func moneyCalced: Bool = {
+    ledgers*.as[LMoneyDebt].all(calced)
+  }
+  
+  impl func issues = {
+    (if (moneyCalced && sReconState.isIssue) [DashboardIssue.UnreconPayment]) 
+    +
+    (if (uploadState == Missing) [DashboardIssue.MissingInBSU])
+  }.toSet
+  impl func fixes(issue: DashboardIssue) = {
+    if (issue == UnreconPayment) {
+      [Fix(text = "Add a reason for the payment into the Origin field to match $amount")]
+    } else if (issue == MissingInBSU) {
+      [Fix(text = "Usually the payment should be deleted")]
+    }
+  }
+  
+  func debtDueDate: Date? = null
+  func origin = allManLinks.first
+  ref field amount: UMoney[currency] {
+    default =? try? origin?.unreconAmount!.abs.positive!
+    label = "Paid Amount"
+    validate = if (back) if (debtAmount && (debtAmount > 0) == isIncoming) "$amount is larger than reconciled amount $(reasons*.amount.sum)"
+    update = {
+      amountUpdated()
+    }
+  }
+  compute mAmount: Money[currency] {
+    label = "Paid Amount"
+    value = -amount
+    update = {
+      amount =? new.abs.positive
+    }
+  }
+  func amountUpdated(): Void = {
+    if (reasons.count == 1 && !source && !manLinks) reasons.first!.amount = amount 
+  }
+  field bankData: BankData {
+    visible = hasBankAccount
+  }
+  impl back func debtLedgers = try? ledgers*.as[LMoneyDebt]!
+ 
+  func paidAmount = amount
+  
+  object field gen: Int?
+  const ref field n: Int? = increment(Payment.gen)
+  
+  impl ref field date: Date = now
+  func counterparty: LegalEntity?
+  ref field account: FinAccount {
+    default =? BankAccount.default
+    update = {
+      if (!try? this.currency) this.currency = new.currency
+    }
+  }
+  impl compute hasBankAccount: Bool = account.hasBankData
+  ref field currency: Currency {
+    default =? try? (origin?.debtCurrency).alt(account.currency)
+    update = {
+      if (currency != account.currency && !accountAmount) {
+        if (let a = try? paidAmount) {
+          accountAmount = a.as[UMoney[account.currency]]
+        }
+      }
+    }
+  }
+  compute recRefs: [RefEntity]? {
+    availableFor = List
+    value = back{reasons*.refs + debtOrigins}
+  }
+  field accountAmount: UMoney[account.currency]? {
+    visible = currency != account.currency
+  }   
+  compute accountAmountEditor: UMoney[account.currency] {
+    value = if (currency == account.currency) amount else accountAmount!
+    update = {
+      if (currency == account.currency) {
+        amount = new
+      } else {
+        accountAmount = new
+      }
+    }
+  }
+  
+  register ledgers: [Ledger]? <- back{
+    if (!canceled) {
+      let insts <- if (isInstant && !manLinks) {
+        source!.instantLedgers(this, date)
+      }
+      var ledgers: [Ledger]? = insts
+      if (!ledgers) if (let b = debtAmount) {
+        if (let cp = counterparty) {
+          ledgers = ledgers + LMoneyDebt(
+                journal = this, date = date,
+                legalEntity = this.legalEntity, trAmount = b, 
+                counterparty = cp, currency = currency)
+        } else {
+          ledgers = ledgers + LCurrency(account = if (isIncoming) UnreconciledCredits else UnreconciledDebits, 
+                    contraAccount = account.ledgerAccount, currency = currency, journal = this, 
+                    trAmount = b)
+        }
+      } 
+      let a = if (currency != account.currency) accountAmount else amount
+      let cashLedger = LCash(
+        journal = this, 
+        account = account.ledgerAccount, legalEntity = account.legalEntity, 
+        finAccount = account, trAmount = if (isIncoming) a else -a)
+      let reasonLedgers <- if (let reasons) {
+        let es <- reasons*.ledgers.allCompleted
+        es.flatMap(_) + reasons*.gstLedger
+      } 
+      ledgers = ledgers + reasonLedgers
+      procLedgers(cashLedger + ledgers!)
+    }
+  }
+}
+
+

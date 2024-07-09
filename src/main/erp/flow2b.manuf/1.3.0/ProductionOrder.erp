@@ -1,0 +1,91 @@
+entity ProductionOrder extends IProductionOrder {
+  func number = "PRO" + n
+  
+  field method: Method {
+    available(Inline).for(Inline)
+    update = {
+      this.qty = this.qty.as[Qty[method.unit]]!
+    }
+  }
+  field qty: Qty[method.unit] = 1
+  ref compute title: String = "$number $method"
+  func items = materials
+  compute materials = method.materials.map(mm => ProMaterial(pro = this, mm = mm, qty = mm.qty*qtyK))
+  compute resources = method.resources.map(mr => ProResource(pro = this, mr = mr, duration = mr.scale(qtyK)))
+  compute outputs = method.outputs.map(mo => ProOutput(pro = this, mo = mo, qty = mo.qty*qtyK))
+  
+  register outStocks: [StockRegister]? {
+    value = materials*.makeOutStocks
+    availableFor = Inline
+    available(Inline).for(Inline)
+    autoRecalc = true
+  }
+  register inStocks: [StockRegister]? {
+    value = outputs*.makeInStocks
+  }
+  
+  view form = nav {
+    grid{
+      issuesView
+      row{number method qty}
+      x {status >> field(editMode = AlwaysEdit) availability}
+      row {dispatchDate deliveryDate space}
+      row {legalEntity supplier >> field(visible = ui.edit || sSupplier || sReceiver) receiver >> field(visible = ui.edit || sSupplier || sReceiver)}
+      row {factory materialStore >> field(visible = ui.edit || sMaterialStore || sOutputStore) outputStore >> field(visible = ui.edit || sMaterialStore || sOutputStore)}
+      outputs >> table{
+        outputProduct >> field(width = 0.5, rowSpan = 3) qty >> field(width = 0.25) costWeight  >> field(width = 0.25)
+      }
+      materials >> table{
+        header{label("Product", width = 0.5)  label("Quantity", align = Right, width = 0.25) label("", width = 0.25) }
+        body{
+          row {material >> field(rowSpan = 3) qty space}
+          row {y(span = 2, visible = status == Planned || !isAvailableNow){stockDesc}}
+          row {y(span = 2, visible = !isAvailableNow){availableView}}
+        }
+      }
+      resources >> table{
+        resource >> field(width = 0.5) duration >> field(width = 0.25) space(width = 0.25, label = "")
+      }
+    }
+    generalLedgerButton
+  }
+  view ref = x{status >> field(editMode = AlwaysEdit) availability title}
+}
+ 
+class ProMaterial extends IIOutgoingDeliveryItem {
+  field pro: ProductionOrder
+  field mm: MethodMaterial inline
+  compute material = mm.material
+  field qty: Qty[unit]
+
+  func stockItem = mm
+  func product = material.product
+  func unit = mm.unit
+  func itemDelivery = pro
+  func active = pro.status != Canceled
+  compute outStocks = pro.outStocks.filter(_.item == mm)
+}
+
+class ProResource {
+  field pro: ProductionOrder
+  field mr: MethodResource inline
+  compute resource = mr.resource
+  field duration: Duration[DateUnit.hour]
+}
+
+class ProOutput extends IIIncomingDeliveryItem {
+  field pro: ProductionOrder
+  field mo: MethodOutput inline
+  compute outputProduct {
+    label = "Product" 
+    value = mo.outputProduct
+  }
+  compute costWeight = mo.costWeight
+  field qty: Qty[unit]
+
+  func stockItem = mo
+  func product = outputProduct.product
+  func unit = mo.unit
+  func itemDelivery = pro
+  func active = pro.status != Canceled
+}

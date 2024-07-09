@@ -1,0 +1,9 @@
+back object Conversion extends IConversion {
+  func do(version: [Int?]?) = {
+    if (version < [6,4,0]) {
+      renameEntity(PriceList, "flow2b.price.PriceList")
+      renameEntity(PriceListProduct, "flow2b.price.ProductPrice")
+      fixBackRefs(PriceListProduct, product)
+    }
+  }
+}

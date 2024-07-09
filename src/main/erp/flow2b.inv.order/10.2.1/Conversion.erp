@@ -1,0 +1,62 @@
+back object Conversion extends IConversion {
+  func convert(version: [Int?]): Future[Any] = {
+    if (version < [10,0,0]) {
+      renameField(IPurchaseDelivery, _supplier, "supplier")
+      renameField(PurchaseDelivery, store, "destination")
+      renameField(PurchaseDelivery, _state, "status")
+      
+      renameField(ISalesDelivery, _receiver, "receiver")
+      renameField(SalesDelivery, store, "source")
+      renameField(SalesDelivery, _state, "status")
+
+      renameField(DropShipDelivery, _state, "status")
+      
+      PurchaseDelivery.all.foreach{d =>
+        if (field[String](d, "_state") == "Delivered") {
+          d._state = Complete
+        }
+        let pickUp = field[ILocation?](d, "pickUpLocation")
+        let dd = field[Date](d, "dispatchDate")
+        if (pickUp || dd != d.deliveryDate) {
+          PDShipping(dlv = d, src = pickUp, dispatchDate = dd)
+        }
+        d.retDispatchDate = d.deliveryDate
+        d.save
+      }
+      SalesDelivery.all.foreach{d =>
+        if (field[String](d, "_state") == "Delivered") {
+          d._state = Complete
+        }
+        let shipTo = field[ILocation?](d, "shipTo")
+        let dd = field[Date](d, "deliveryDate")
+        if (shipTo || dd != d.dispatchDate) {
+          SDShipping(dlv = d, dst = shipTo, deliveryDate = dd)
+        }
+        d.retDeliveryDate = field(d, "deliveryDate")
+        d.save
+      }
+      DropShipDelivery.all.foreach{d =>
+        if (field[String](d, "_state") == "Delivered") {
+          d._state = Complete
+        }
+      }
+      
+      Order.all.foreach{o =>
+        let s = field[String](o, "_state")
+        if (s == "Dispatched") {
+          o._state = InTransit
+        } else if (s == "Delivered") {
+          o._state = Complete
+        } else if (s == "Returned") {
+          o._state = Complete
+        } else if (s == "Complete") {
+          o._state = Closed
+        }
+      }
+      recreateAllRegisters
+    }
+    if (version == [10,2,0]) {
+      IProdMove.all*.updateDashboard
+    }
+  } 
+}    

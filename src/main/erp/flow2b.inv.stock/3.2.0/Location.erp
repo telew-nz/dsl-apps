@@ -1,0 +1,40 @@
+trait Location {
+  ref field actor: Actor by locations
+  func address: Address?
+  func mutual: Bool = false
+  object func ours: [Location]? = Actor.our?.locations
+  object func forceOur: Location = our.alt(throw "Please enter a store for your company")
+  object func our: Location? = ours.first
+}
+
+entity GeneralLocation extends Location {
+  singular = "Location"
+  ref field nickName: String? {isValid = nickName || address}
+  ref field address: Address? {isValid = nickName || address}
+  func title = if (let n = nickName) "$n: $address" else if (let a = address) a else "Unknown"
+}
+
+entity PickUpPoint extends Location {
+  ref field nickName: String? {isValid = nickName || address}
+  ref field address: Address? {isValid = nickName || address}
+  func title = if (let n = nickName) "$n: $address" else if (let a = address) a else "Unknown"
+  func mutual: Bool = true
+}
+
+extend entity Actor {
+  ref field locations: [Location]? inline by actor
+  func stores: [Store]? = locations*.as[Store]
+}
+
+extend entity Person {
+  extend view form = locations
+}
+
+extend entity Company {
+  extend view form = locations
+}
+
+extend entity CompanyGroup {
+  extend view form = locations
+}
+

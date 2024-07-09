@@ -1,0 +1,15 @@
+extend trait PaymentSource {
+  override func allManLinks: [DebtOrigin]? = payments + manLinks
+}
+
+extend trait Payment {
+  override func allManLinks: [DebtOrigin]? = source + manLinks
+}
+
+extend entity IncomingPayment {
+  extend view form = manLinks
+}
+
+extend entity OutgoingPayment {
+  extend view form = manLinks
+}

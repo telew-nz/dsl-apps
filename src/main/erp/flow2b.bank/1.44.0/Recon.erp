@@ -1,0 +1,45 @@
+entity ReconExpense extends IRecon {
+  singular="Expense"
+  icon = "book"
+  
+  field payee: LegalEntity?
+  field expense: ExpenseType
+  impl view form = grid {
+    payee
+    expense
+  }
+  impl func apply(movements: [CashMovement]?, payment: Payment) = {
+    if (let op = payment.as[OutgoingPayment]) {
+      if (let payee) op.payee = payee
+      op.reasons = [PaymentExpense(expense = expense, amount = op.amount)]
+      op.save
+    }
+  }
+}
+
+entity ReconMakeTransfer extends IRecon {
+  singular="Transfer"
+  icon = "exchange-alt"
+  
+  field account: FinAccount
+  impl view form = grid {
+    account
+  }
+  impl func apply(movements: [CashMovement]?, payment: Payment) = {
+    ReconTransfer.make(movements, payment, account)
+  }
+}
+
+entity ReconCp extends IRecon {
+  singular="Counterparty"
+  icon = "handshake"
+  
+  field counterparty: LegalEntity
+  impl view form = grid {
+    counterparty
+  }
+  impl func apply(movements: [CashMovement]?, payment: Payment) = {
+    payment.debtCounterparty = counterparty
+    payment
+  }
+}

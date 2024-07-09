@@ -32,8 +32,8 @@ extend trait ECommerceIntegration {
   back func uploadBrandJobs(change: BatchChange[IBrand]): [SystemJob]? = [] 
   back func uploadTagJobs(change: BatchChange[IProductTag]): [SystemJob]? = [] 
   
-  back func uploadAttrJobs(change: BatchChange[ProductAttr]): [SystemJob]? = [] 
-  back func uploadAttrTermJobs(change: BatchChange[ProductAttrTerm]): [SystemJob]? = [] 
+  back func uploadAttrJobs(change: BatchChange[IProductAttr]): [SystemJob]? = [] 
+  back func uploadAttrTermJobs(change: BatchChange[IProductAttrTerm]): [SystemJob]? = [] 
 
   back func downloadCustomersJobs: [SystemJob]? = []
   back func downloadOrdersJobs(from: Date?) : [SystemJob]? = []

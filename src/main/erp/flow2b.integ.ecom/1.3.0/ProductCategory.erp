@@ -1,0 +1,22 @@
+extend trait ProductCategory extends HasExtId {
+  event onSave = {
+    if (dataUpdated || deleted) {
+      ECommerceIntegration.all.map {service =>
+        if (service.userEnabled) service.updateCategoryJobs(BatchChange.create(service, [this]))*.run
+      }.result
+    }
+  }
+}
+
+extend trait ECommerceIntegration {
+  back func updateAllCategories(): Void = { 
+    BatchChange.hierarchy(
+        this, 
+        if (categories) categories else ProductCategory.all.result.get, 
+        _.superCategory
+      )
+      .filter(!_.isEmpty)
+      .flatMap(updateCategoryJobs(_))
+      *.run()
+  }
+}

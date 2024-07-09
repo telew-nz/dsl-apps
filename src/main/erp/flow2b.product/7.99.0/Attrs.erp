@@ -1,0 +1,83 @@
+enum ECommerceSyncStatus {
+	case NotSynced {color = "white" background = "#333" icon = "exclamation-circle"}
+    case Syncing {background = "#8bf" icon = "spinner"}
+    case Synced {background = "#dea" icon = "check-circle"}
+}
+
+
+trait IProductAttr extends Entity {
+
+	field syncStatus: ECommerceSyncStatus {
+    	default = NotSynced
+    }
+
+	ref field attrTerms: [IProductAttrTerm]? inline by attr
+	field attrName: String { label = "Attribute name" }
+  	field attrSlug: String?
+
+}
+
+
+trait IProductAttrTerm extends Entity {
+
+	field syncStatus: ECommerceSyncStatus {
+    	default = NotSynced
+    }
+
+	ref field attr: IProductAttr by attrTerms
+    func attrName: String = attr.attrName
+    func attrSlug: String? = attr.attrSlug
+
+}
+
+
+entity ProductAttr extends IProductAttr {
+
+	impl stored compute title: String = "$attrName"
+    
+    impl view form = nav {
+    	grid {
+        	x {
+            	syncStatus >> field(label = "", visible = id, editMode = AlwaysRead)
+        		attrName
+            }
+            if (!id) "Save attribute first before adding any terms to it"
+            grid(width = 0.6, visible = id) {
+            	attrTerms >> list(canAdd = false)
+                button("+ Add new term", visible = ui.edit) {
+                	attrTerms += ProductAttrTerm.incomplete(attr = this)
+                }
+            } 
+        }
+    }
+    
+    impl event onDelete = {
+    	if (attrTerms.nonEmpty) throw "All attribute terms should be deleted first"
+    }
+
+}
+
+
+inline entity ProductAttrTerm extends IProductAttrTerm {
+
+	impl field title: String {
+    	label = "Term value"
+    }
+    
+    impl view form = grid { x {
+    	syncStatus >> field(label = "", visible = id, editMode = AlwaysRead)
+    	title
+    } }
+    
+}
+
+extend role BusAdmin {
+
+	extend view menu = menu("Attributes") {
+    	ProductAttr >> item("Product Attributes")
+    }
+
+}
+
+
+class ProductAttrOptions(system field attr: IProductAttr, options: [IProductAttrTerm]?) 

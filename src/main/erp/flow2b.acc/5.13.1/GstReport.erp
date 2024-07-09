@@ -1,0 +1,132 @@
+report GstReport {
+  plural = "GST"
+  field legalEntity: OurLegalEntity =? onlyOne
+  field start: Date = Date.now[Date[millisecond]].start(year)
+  field end: Date = Date.now[Date[millisecond]].end(year)
+  back object func processOrigin(legalEntity: OurLegalEntity, start: Date, end: Date, origin: DebtOrigin?, items: [LTax]) = {
+    var taxes: [Percent[2]?? : TaxedAmount]? = (null)
+    var fullAmount: Money? = 0
+    var paidAmount: Money? = 0
+    var needsAdjustments = false
+    var hasAdjustments = false
+    var ret: [(date: Date, journal: Journal, category: GstReturnCategory, amount: TaxedAmount)]? = []
+    (items*.as[HasDate] + origin?.allOrigins*.debtOriginAmounts).sortBy(date, _.is[OriginAmount]).foreach{i =>
+      if (let debt = i.as[OriginAmount]) {
+        let newPaidAmount = paidAmount + debt.amount
+        if (let a = fullAmount) {
+          if (start <= debt.date && debt.date <= end) {
+            let p1 = (paidAmount.as[Dec[16]]/a).min(1)
+            let p2 = (newPaidAmount.as[Dec[16]]/a).min(1)
+            ret = ret + taxes.values.map(t => (
+              debt.date, 
+              debt.origin!,
+              GstReturnCategory(origin!.isPurchase, hasAdjustments && needsAdjustments), 
+              t.mul(p2) + t.mul(-p1)
+            ))
+          } else {
+            needsAdjustments = true
+          }
+        } 
+        paidAmount = newPaidAmount
+      } else if (let tax = i.as[LTax]) {
+        if (tax.isAdjustment) hasAdjustments = true
+
+        if (tax.trType == GstOnImport) {
+          if (start <= tax.date && tax.date <= end) {
+            ret = ret + (
+              tax.date, 
+              tax.journal,
+              GstReturnCategory.GstOnImport, 
+              tax.toTaxedAmount
+            )
+          }
+        } else if (tax.isInstantPayment) {
+          if (start <= tax.date && tax.date <= end) {
+            ret = ret + (
+              tax.date, 
+              tax.journal,
+              GstReturnCategory(tax.taxedAmount > 0, false), 
+              tax.toTaxedAmount.mul(-1)
+            )
+          }
+        } else {
+          let newFullAmount = fullAmount + tax.taxedAmount + tax.amount
+          taxes = taxes.updated(tax.rate, {old =>
+            let n = if (let o = old) o + tax.toTaxedAmount else tax.toTaxedAmount
+            if (paidAmount && tax.rate && start <= tax.date && tax.date <= end) {
+              let p1 = if (let oa = fullAmount) (paidAmount.as[Dec[16]]/oa).min(1)
+              let p2 = if (let na = newFullAmount) (paidAmount.as[Dec[16]]/na).min(1)
+              ret = ret + (
+                tax.date, 
+                tax.journal,
+                GstReturnCategory(origin!.isPurchase, needsAdjustments && tax.isAdjustment), 
+                if (let o = old) n.mul(p2) + o.mul(-p1) else n.mul(p2)
+              )
+            }
+            n
+          })
+          fullAmount = newFullAmount
+        }
+      }
+    }
+    ret
+  }
+  func baseQuery = LTax.all
+    .filter(tax == Gst && !isTaxPayment && legalEntity == this.legalEntity && 
+            (journal.is[DebtOrigin] || isInstantPayment))
+    .groupBy(mainOrigin = if (let mo = journal.as[DebtOrigin]?.mainOrigin) mo else journal)
+    .flatMap{o =>
+      GstReport.processOrigin(legalEntity, start, end, o.mainOrigin.as[DebtOrigin], o.items)
+    }
+    .groupBy(category, rateName = if (category == GstOnImport) "Import" else if (!amount.rate) "Exempt" else amount.rate!.as[UPercent[2]].toString, rate = amount.rate)
+    .agg(tax = amount*.baseTax.sum, taxedAmount = amount*.baseTaxedAmount.sum)
+    .query
+  
+  back func rateTaxes: Future[[GstRateTax]?] = {
+    baseQuery.map(GstRateTax(category = category, rate = rate, tax = tax, taxedAmount = taxedAmount))
+  }
+  
+  impl view list = baseQuery
+    .sortBy(category, rate)
+    .groupBy(category).subtotal(tax.sum, _.filter(i => i.rate)*.taxedAmount.sum)
+    .total(tax.sum, taxedAmount.sum)
+  >>  
+  nav {
+    total {
+      row {space, taxedAmount >> field(showPlus = true), tax >> field(showPlus = true), taxedAmount + tax  >> field(showPlus = true)}
+      subtotal {
+        row {category, taxedAmount >> field(showPlus = true), tax >> field(showPlus = true), taxedAmount + tax  >> field(showPlus = true)}
+        table (action = GstAudit(legalEntity = this.legalEntity, start = this.start, end = this.end, gstFilter = true, rate = rate, category = category).list.open) {
+          rateName >> field(width = 0.4, showEmpty = true, align = Right) 
+          taxedAmount >> field(width = 0.3, showEmpty = true showPlus = true, label = "Taxed Amount excl GST")
+          tax >> field(width = 0.3, showEmpty = true, label = "GST Amount", showPlus = true)
+          taxedAmount + tax >> field(width = 0.3, showEmpty = true, label = "Amount incl GST", showPlus = true)
+        }
+      }
+    }
+  }
+}
+
+class GstRateTax {
+  field category: GstReturnCategory
+  field rate: Percent[2]??
+  field tax: Money?
+  field taxedAmount: Money?
+}
+
+ 
+enum GstReturnCategory {
+  case Sales {background = "#fcc"}
+  case SalesNotes {background = "#fcc"}
+  case Purchases {background = "#dea"}
+  case PurchaseNotes {background = "#dea"}
+  case GstOnImport {background = "#dea"}
+  
+  object func apply(isPurchase: Bool, isNote: Bool): GstReturnCategory = {
+    if (isPurchase) {
+      if (isNote) PurchaseNotes else Purchases
+    } else {
+      if (isNote) SalesNotes else Sales
+    }
+  }
+}

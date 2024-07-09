@@ -1,0 +1,8 @@
+extend entity AppVersion {
+
+	func addFile(title: String, content: Dsl): Void = {
+    	files = [AppFile(title = title, content = content)]
+        save
+    }
+
+}

@@ -1,0 +1,48 @@
+entity PriceList extends PriceModel {
+  func title = "PL $vendor $date"
+  ref field date: Date[day] = now
+  field pricesIncludingGst: Bool = (try? vendor.pricesIncludingGst).alt(true)
+  
+  field products: [ProductPrice]? inline by priceList 
+  back func price(product: IBaseProduct): IPrice? = {
+    products.find(p => p.product == product || p.product == product.superProduct)
+  }
+  view form = nav{grid{
+    date
+    vendor
+    pricesIncludingGst
+    products >> table {
+      product >> field(width = 0.5) 
+      regular >> field(width = 0.25, fontStyle = if (current == regular) Normal else Strikeout) 
+      current >> field(width = 0.25)
+    }
+  }}
+} 
+  
+inline entity ProductPrice extends IPrice {
+  func vendor: Actor = priceList.vendor
+  func currency = priceList.vendor.getCurrency
+  system field priceList: PriceList inline by products
+  field product: IBaseProduct
+  field regular: Money[currency]? {
+    update = {
+      if (old == current) current = new
+    }
+  }
+  field current: Money[currency]?
+  
+  compute gstRate: Percent[2]? = product.forceGstRate(priceList.vendor).alt(0)
+  event onSave = product.touch
+  func salesPrice(currency: Currency, inclGst: Bool): Future[SalesPrice] = {
+    let rp <- regular.to[Money[currency]](now)
+    let cp <- {
+      if (regular != current) {
+        current.to[Money[currency]](now)
+      } else Future(rp)
+    }
+    SalesPrice(regular = rp, current = cp)
+      .convertGst(gstRate, priceList.pricesIncludingGst, inclGst)
+  }
+  view form = salesPrice >> field(frame = false)
+}
+

@@ -1,0 +1,71 @@
+entity OutgoingPayment extends Payment with IOutgoingPayment {
+  background = "#d68400"
+  func legalEntity = payer
+  func sourceAccount: FinanceAccount? = account
+  func destinationAccount: FinanceAccount? = null
+  ref field amount: Money[currency] {
+    default =? try? origin?.balance!
+    label = "Paid Amount"
+  }
+  func paidAmount = amount
+  func startingBalance: Money[currency]? = expenses*.amount.sum - amount
+  compute unrecociledAmount: Money[currency]? = -balance
+    
+  func title = "$number $payee"
+  func number: String = "OP" + n 
+  
+  func counterparty: LegalEntity = payee
+  ref field payer: LegalEntity {
+    available(Ref).with(accounts)
+    default =? (try? origin!.legalEntity).or(LegalEntity.ours.onlyOne)
+    from = LegalEntity.ours
+    update = {
+      this.account =? new.accounts.onlyOne
+    }
+  }
+  field expenses: [PaymentExpense]? inline by payment
+  ref field payee: LegalEntity =? try? origin!.counterparty!
+  func isTheir = payee.isTheir
+  
+  func onSave = {
+    credits*.credit*.touch
+  }
+    
+  object view list = OutgoingPayment.all >> nav{list{grid(labels = None){
+    row{number, date.as[Date[day]]!, payee, account, space}
+    row{stateView >> field(width = 0.6), -amount >> field(width = 0.2), space(width = 0.2)}
+  }}}
+  
+  view form = nav{grid{
+      number
+      date
+      stateView >> field(label = "State")
+      unrecociledAmount
+      payer
+      payee
+      account
+      amount >> field(canEditUnit = true)
+      accountAmount
+      expenses >> list {grid(labels = None){
+        row{expense amount}
+      }}
+      credits >> field(label = "Origins" singular = "Origin")
+      debits >> field(label = "Returns" singular = "Return")
+      button("Convert to Transfer", visible = !origin) {
+        let from = account
+        let outcome = amount
+        let r = convertTo(CashTransfer)
+        r.from = from
+        r.outcome = outcome
+      }    
+    }
+    generalLedgerButton
+  }
+  view stateView = x{reconcileState}
+  
+  func originLedger(setoff: Setoff, amount: Money): Future[Ledger] = {
+    LCash(journal = setoff.journal, date = setoff.date, account = account.ledgerAccount,
+          financeAccount = account, trAmount = if (account.currency == currency) amount else -accountAmount, 
+          cashFlowCategory = setoff.credit.cashFlowCategory)
+  }
+}

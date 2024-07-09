@@ -1,0 +1,17 @@
+extend role Salesperson {
+  entity OpportunitySource = readOnly
+  extend view menu = extend("Sales") {
+    IOpportunity >> item(fastSearch, fastAdd)
+  }
+}
+
+extend role Marketer {
+  entity OpportunitySource = readWrite
+  entity CustomerProfile = readWrite
+  extend view menu = menu("Marketing") {
+    CustomerProfile
+    OpportunitySource
+    SourceEfficiency
+    extension("Marketing")
+  }
+}

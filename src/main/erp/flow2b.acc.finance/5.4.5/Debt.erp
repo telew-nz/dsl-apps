@@ -1,0 +1,24 @@
+analytic Counterparty(dataType = "LegalEntity")
+
+acctemplate Counterparty {
+  key field counterparty: LegalEntity?
+}
+acctemplate InterDebts(type = singleAccount) {
+  key field currency: Currency
+  key field counterparty: LegalEntity?
+}
+
+
+class DebtItem(origin: Journal, amount: Money, dueDate: Date?) {
+  compute overdueState: OverdueState = if (debtOverdue > 0) Overdue else NoOverdue
+  compute debtOverdue: Duration[day]? {
+    value = if (let d = dueDate) (Date.now - d).days.round(floor, 0)
+  }
+}
+
+trait LDebt extends Ledger {
+  func origin: Journal = journal  
+  func counterparty: LegalEntity
+  func debtItems: [DebtItem]?
+}
+

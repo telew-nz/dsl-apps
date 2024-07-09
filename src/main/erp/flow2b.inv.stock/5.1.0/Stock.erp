@@ -1,0 +1,34 @@
+class Stock {
+  field unit: ProductUnit {views = []}
+  field fact: Dec[unit]?
+  field reserve: Dec[unit]?
+  
+  compute available: Dec[unit]? = ((fact - reserve).max(0)) 
+  field expectation: Dec[unit]?
+  compute outlook: Dec[unit]? = fact - reserve + expectation 
+    
+  object func sum(unit: ProductUnit, items: [StockRegister]?): Stock = {
+    Stock(
+      unit = unit,
+      fact = items*.fact.sum, 
+      reserve = items*.reserve.sum, 
+      expectation = items*.expectation.sum)
+  }
+
+  view shortView = x(label = "Stock"){
+    (fact.toString)
+    ("− " + reserve.withoutUnit + " reserved") >> field(style = CommerceStyle.reserve, visible = reserve)
+    ("= " + available.withoutUnit + " available") >> field(visible = reserve)
+    ("+ " + expectation.withoutUnit  + " expected") >> field(style = CommerceStyle.expectation, visible = expectation)
+    ("= " + outlook.withoutUnit + " outlook") >> field(visible = expectation)
+  }
+  func title = fact + 
+    (if (reserve) " − " + reserve.withoutUnit + " reserved = " + available.withoutUnit + " available" else "") + 
+    (if (expectation) " + " + expectation.withoutUnit + " expected = " + outlook.withoutUnit + " outlook" else "")
+    
+  view availableView(out: Bool, product: IProduct, qty: Qty) = x(product.isTangible) {
+    available + " available" >> field(visible = available >= qty && !out, style = CommerceStyle.available),
+    outlook + " will be available" >> field(visible = available < qty && outlook >= qty, style = CommerceStyle.incomplete)
+    title + " only" >> field(visible = outlook < qty && product.isTangible, style = CommerceStyle.unavailable) 
+  }
+}

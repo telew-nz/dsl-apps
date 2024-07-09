@@ -1,0 +1,106 @@
+extend enum PaymentTrigger {
+  case Returned(state = Returned, date = _.as[SalesOrder]?.returnDate){background = "#dea", label = "Order Returned"}
+}
+
+extend entity SalesOrder {
+  field assetReturns: [SalesAssetReturn]? inline by salesOrders {
+    visible = preEntered && items*.as[SalesRentItem]
+    views = []
+  }
+  func returned: Bool = assetReturns && assetReturns.all(status == Delivered)
+  func returnDate: Date? = if (returned) assetReturns*.deliveryDate.max
+
+  func deliveryStates: [OrderState] = {
+    if (assetReturns) {
+      [OrderState.Dispatched, OrderState.Delivered, OrderState.Returned]
+    } else {
+      super.deliveryStates
+    }
+  }
+  func updateState(newState: OrderState): Void = {
+    super.updateState(newState)
+    let returnStatus: DeliveryStatus = {
+      if (newState == OrderState.Returned) Delivered
+      else if (newState == OrderState.Canceled) Canceled
+      else if (newState == OrderState.Complete) Delivered
+      else Planned
+    }
+    assetReturns.foreach{d => d.status = returnStatus}
+  }
+  func orderStateDelivery: OrderState? = {
+    if (returned) Returned
+    else if (delivered) Delivered
+    else if (dispatched) Dispatched 
+  }
+  func deliveryComplete = !assetReturns && delivered || assetReturns && returned
+  
+  compute ar {
+    views = []
+    value = assetReturns.onlyOne
+    update = {
+    }
+  }
+  extend view form = extend("deliveries") {
+    assetReturns >> list{nav{
+      inline{returnHeader}
+      generalLedgerButton
+    }}
+  }
+  extend view posView = extend("delivery") {
+    row {
+      ar!.destination >> field(visible = ar, label = "Return Store") ar!.dispatchDate >> field(visible = ar) ar!.deliveryDate >> field(visible = ar && ar!.pickUpLocation)
+    }
+  }
+  
+  system ref compute hasRents = items.exists(_.is[SalesRentItem])
+  ref stored compute assetReturnState: OrderAssetReturnState {
+    value = {
+      let items = this.items*.as[SalesRentItem]
+      if (!active || !items) NotReturned
+      else if (items.all(assetReturned)) Returned
+      else if (items.exists(assetReturned)) PartiallyReturned
+      else if (items.exists(assetReturnInTransit)) ReturnedInTransit
+      else ReturnPlanned
+    } 
+    views = []
+    visible = hasRents && assetReturnState == PartiallyReturned
+    update = {
+      if (new != assetReturnState) {
+        assetReturns.foreach{d => 
+          d.status = if (new == OrderAssetReturnState.NotReturned) DeliveryStatus.Planned else DeliveryStatus.Delivered
+        }
+      }
+    }
+    from = [OrderAssetReturnState.NotReturned, OrderAssetReturnState.Returned].toSet + assetReturnState
+  }
+  extend view statusesView = assetReturnState
+ 
+  func updateBond(): Future[Void] = {
+    let bb <- items*.orderDeliveryItem*.as[RentDeliveryItem]
+      .map{i => 
+        let pp <- i.productPrice
+        if (let pp) pp.bond*i.qty
+      }
+      .allCompleted
+   
+    if (let b = bb.sum) {
+      if (let bondItem = items*.as[SalesBondItem].first) {
+        bondItem.amountEditor = b
+      } else {
+        SalesBondItem(order = this, amountEditor = b)
+      }
+    } else {
+      items*.as[SalesBondItem]*.delete
+    }
+  }
+}
+
+
+
+enum OrderAssetReturnState {
+  case NotReturned {background = "#ddd"}
+  case ReturnPlanned {background = "#ed9"}
+  case PartiallyReturned {background = "#ed9"}
+  case ReturnedInTransit {background = "#dea"}
+  case Returned {color = "white" background = "#090"}
+}

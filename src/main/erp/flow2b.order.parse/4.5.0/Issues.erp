@@ -1,0 +1,62 @@
+extend enum DashboardIssue {
+  case POINoInvoiceType(role = BusAdmin, priority = major) = "The document does not seem to be a Tax Invoice or Debit/Credit note or Purchase order"
+  case POINoTotal(role = BusAdmin, priority = major) = "Unable to extract total amount"
+  case POINoItems(role = BusAdmin, priority = major) = "Unable to extract items"
+  case POINoTotalMatch(role = BusAdmin, priority = major) = "Total does not match to the sum of the items amount"
+  case POIGstRate(role = BusAdmin, priority = major) = "GST rate is not correct"
+}
+
+extend entity PurchaseOrderImport {
+  override func issues = {
+    if (state == Complete) {
+      if (!invoices) {
+        [POINoInvoiceType]
+      } else {
+        super.issues
+      }
+    }
+  }
+  override func fixes(issue: DashboardIssue) = {
+    if (issue == POINoInvoiceType) {
+      [
+        Fix(text = "Make sure the uploaded field is a valid tax invoice"),
+        Fix(text = "Edit and select the invoice type")
+      ]
+    } else {
+      super.fixes(issue)
+    }
+  }
+}
+
+extend entity POIInvoice {
+  override func issues = {
+    if (poi.state == Complete) {
+      issues0
+    }
+  }
+  func issues0: [DashboardIssue]? = {
+    if (!invoiceType) {
+      [POINoInvoiceType]
+    } else if (!totalNoGst){
+      [POINoTotal]
+    } else if (!items) {
+      [POINoItems]
+    } else if (
+         (rowsWithGst && items*.amount.sum != totalWithGst)
+      || (!rowsWithGst && items*.amount.sum != totalNoGst)
+    ) {
+      [POINoTotalMatch]
+    } else if (items.exists(gstIssue)) {
+      [POIGstRate]
+    }
+  }
+  override func fixes(issue: DashboardIssue) = fixes0(issue)
+  func fixes0(issue: DashboardIssue) = {
+    if (issue == POINoInvoiceType) {
+      [
+        Fix(text = "Make sure the uploaded field is a valid tax invoice"),
+        Fix(text = "Edit and select the invoice type")
+      ]
+    } 
+  }
+}

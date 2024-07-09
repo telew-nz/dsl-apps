@@ -1,0 +1,39 @@
+class WebhookMailStatusEvent {
+  field event: WebhookEventType
+  field payload: MailStatusData
+}
+enum WebhookEventType {
+  case MessageSent
+  case MessageDelayed
+  case MessageDeliveryFailed
+  case MessageHeld
+  case MessageBounced
+  case MessageLinkClicked
+  case MessageLoaded
+  case DomainDNSError
+  case SendLimitApproaching
+  case SendLimitExceeded
+}
+
+class MailStatusData{
+  extFieldNaming = Underscore
+  field status: String
+  field details: String?
+  field output: String?
+  field time: Dec?
+  field sentWithSsl: Bool
+  field message: MailStatusMessage
+}
+class MailStatusMessage {
+  extFieldNaming = Underscore
+  field id: Int
+  field token: String
+  field direction: String
+  field messageId: String?
+  field to: Email
+  field from: Email
+  field subject: String?
+  field timestamp: Dec
+  field spamStatus: String
+  field tag: String?
+}

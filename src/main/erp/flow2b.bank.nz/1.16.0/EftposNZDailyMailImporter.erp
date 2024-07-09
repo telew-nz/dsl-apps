@@ -1,0 +1,27 @@
+entity EftposNZDailyMailImporter extends MsgProc with SystemService with Contact {
+  impl func title: String = "Eftpos NZ Daily Mail Importer"
+  impl func roles: [Role]? = [Admin]
+  
+  impl func priority = 1.0
+  field address = "i.wlg.mis@smokestack.verifone.com"
+  
+  impl func proc(msg: ExtMsg): ExtMsg?  = {
+    guard(
+       msg.subject.startsWith("EFTPOS - ") 
+    && msg.subject.endsWith(" Transaction Listing")
+    && msg.from.address == this.address) else return msg
+    
+    guard (let attach = msg.attachs.onlyOne where attach.name.endsWith("csv")) else return msg
+ 
+    saveMain
+    Activity.current!.from = this
+    BankStatementUpload(
+      files = [attach.make]
+    ).saveMain
+    null
+  }
+  
+  impl view form = nav{grid(labels = Top){
+    address
+  }}
+}

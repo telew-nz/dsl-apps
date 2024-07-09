@@ -1,0 +1,118 @@
+trait IProductionOrder extends Entity with Journal with IProdMoveIn with IProdMoveOut with NewEngine {
+  plural = "Production Orders"
+  
+  func materials: [IProMaterial]?
+  func outputs: [IProOutput]?
+  
+  override func moveItems = materials*.as[IProdMoveItem] + outputs
+  
+  impl compute moveOutDate = dispatchDate
+  impl func moveOutState = status.out
+  impl func moveOutLE = supplier
+  impl func moveOutStore = materialStore
+  impl func moveOutItems = materials
+  
+  impl func moveInDate = deliveryDate
+  impl func moveInState = status.in
+  impl func moveInLE = receiver
+  impl func moveInStore = outputStore
+  impl func moveInItems = outputs
+  
+  override func itemRoles = [StoreOperative, BusAdmin]
+  
+  object field gen: Int?
+  const ref field n: Int? = increment(IProductionOrder.gen)
+  
+  field outputStockType: StockInvType = Inventory
+
+  field refNum: String? {label = "Reference Number"}
+  impl func entityNumbers = [number, refNum]
+  func number: String
+  override func itemOrder = ("Date", dispatchDate)
+  ref field dispatchDate: Date {
+    label = "Production Start"
+    default = now
+    update = {
+      if (new > deliveryDate) deliveryDate = new
+    }
+  } 
+  ref field deliveryDate: Date {
+    label = "Production End"
+    default = now
+    validate = if (deliveryDate < dispatchDate) "Delivery Date should be more or equal Dispatch Date"
+    update = {
+      if (new < dispatchDate) dispatchDate = new
+    }
+  }
+  impl field legalEntity: OurLegalEntity =? onlyOne
+  ref field status: ProductionOrderStatus {
+    default = Planned
+    update = {
+      if (new == InProgress) dispatchDate = now
+      else if (new == Produced) {        
+        deliveryDate = now
+        if (old != InProgress) dispatchDate = deliveryDate
+      }
+    }
+  }
+  field factory: IStore {
+    default =? onlyOne
+    label = "Store"
+  }
+  
+  impl func journalDate = dispatchDate
+
+  func qty: UQty
+  func mainProduct: OutputProduct 
+  
+  field sSupplier: OurLegalEntity?
+  compute supplier: OurLegalEntity = sSupplier.alt(legalEntity)
+
+  field sReceiver: OurLegalEntity?
+  compute receiver: OurLegalEntity = sReceiver.alt(legalEntity)
+
+  field sOutputStore: IStore?
+  compute outputStore: IStore = sOutputStore.alt(factory)
+
+  field sMaterialStore: IStore?
+  compute materialStore: IStore = sMaterialStore.alt(factory)
+  
+  register lWorkStart: LWorkInProgress? = if (status != Planned && status != Canceled) {
+    LWorkInProgress(journal = this, date = dispatchDate)
+  }
+  register lMaterials: [LInventory]? = if (status != Planned && status != Canceled) {
+    let sup = supplier
+    materials.map{item =>
+      LInventory(
+        journal = this, date = dispatchDate, legalEntity = sup, product = item.product,
+        gstRate = item.gstRate, 
+        qty = -item.baseQty, output = lWorkStart)
+    }
+  }
+  register lWorkEnd: LWorkInProgress? = if (status == Produced) {
+    LWorkInProgress(journal = this, date = deliveryDate, complete = true)
+  }
+  
+  
+  report Report {
+    impl view list = IProductionOrder.all >> nav{table{
+      status number factory mainProduct qty dispatchDate deliveryDate
+    }}
+  }
+}
+
+trait IProMaterial extends IProdAmountQtyItem with IProdMoveItemOut {
+  impl func product: IProductInv
+}
+trait IProOutput extends IProdMoveItemIn with IProdAmountQtyItem {
+  impl func product: IProductInv
+  func costWeight: Dec[2]? 
+}
+
+enum ProductionOrderStatus(out: ProdMoveState, in: ProdMoveState, started: Bool, active: Bool) {
+  case Draft(out = Draft, in = Draft, started = false, active = true) {background = "#ecd"}
+  case Planned(out = Planned, in = Planned, started = false, active = true) {background = "#ed9"}
+  case InProgress(out = Complete, in = Planned, started = true, active = true) {background = "#dea"}
+  case Produced(out = Complete, in = Complete, started = true, active = false) {color = "white", background = "#090"}
+  case Canceled(out = Canceled, in = Canceled, started = false, active = false) {background = "#ddd"}
+}

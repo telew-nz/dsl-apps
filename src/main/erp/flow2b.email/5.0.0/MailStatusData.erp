@@ -1,0 +1,29 @@
+class MailStatusData{
+  extFieldNaming = Underscore
+  field status: EmailStatus
+  field details: String?
+  field output: String?
+  field time: Dec?
+  field sentWithSsl: Bool
+  field timestamp: Dec
+  field message: MailStatusMessage
+}
+class MailStatusMessage {
+  extFieldNaming = Underscore
+  field id: Int
+  field token: String
+  field direction: String
+  field messageId: String
+  field to: Email
+  field from: Email
+  field subject: String?
+  field timestamp: Dec
+  field spamStatus: String
+  field tag: String
+}
+enum EmailStatus {
+  case Sent
+  case Delayed
+  case DeliveryFailed
+  case Held
+}

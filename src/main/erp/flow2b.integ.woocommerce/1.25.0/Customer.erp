@@ -1,0 +1,42 @@
+extend entity WooCommerceIntegration  {
+  back func customerUpdated(body: Data): Future[String?] = {
+    let customerData = body.parseJson[CustomerData]
+    let customer = customerData.make(this)
+    customer.id.toString
+  }
+}
+
+back class DownloadCustomersJob extends SystemJob {
+  impl field service: WooCommerceIntegration
+  impl func do: Future[Any] = {
+    procPage(1)
+  }
+  impl func dependsOnRegisters = false
+  func procPage(page: UInt): Future[Void] = {
+    let response <- service.https("/customers").param("page", page).param("per_page", "10").get
+    let customers = response.body!.parseJson[[CustomerData]?]
+    customers*.make(service)
+    if (customers.count == 10) {
+      procPage(page + 1)
+    } 
+  }
+}
+  
+
+back class CustomerData extends ECustomer[Int] {
+  extFieldNaming = Underscore
+  field id: Int
+  field email: String
+  field firstName: String?
+  field lastName: String?
+  field username: String?
+  field billing: WooAddress?
+  field shipping: WooAddress?
+
+  impl func extId = id
+  impl func personFullName: String? = "$firstName $lastName".trim.or(username)
+  impl func emails = [email]
+  impl func phones = []
+  impl func billingAddresses = billing.toSeq
+  impl func deliveryAddresses = shipping.toSeq
+}

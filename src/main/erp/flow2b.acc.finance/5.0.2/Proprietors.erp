@@ -1,0 +1,30 @@
+account Capital(template = "Counterparty", credit = acc(Equity, 0)) 
+account Withdrawals(template = "Counterparty", debit = acc(Equity, 50), contra = true, closeWithPeriod = true) 
+
+  
+extend entity Person {
+  func canCloseIncomeSummary = true
+  func incomeSummaryClosing(journal: Journal, balance: Money[getCurrency]): [Ledger]? = {
+    [LCounterparty(account = Capital, journal = journal, trAmount = -balance, counterparty = this)]
+  }
+}
+
+inline trait ISoleTrader extends LegalStructure {
+  ref field person: Person
+  func canCloseIncomeSummary = true
+  func incomeSummaryClosing(journal: Journal, balance: Money[currency]): [Ledger]? = {
+    [LCounterparty(account = Capital, journal = journal, trAmount = -balance, counterparty = person)]
+  }
+}
+
+inline trait IPartnership extends LegalStructure {
+  func canCloseIncomeSummary = false
+  //TODO:
+  func incomeSummaryClosing(journal: Journal, balance: Money[currency]): [Ledger]? = {
+    []
+    //LCapital.at(journal.journalDate - 1_millisecond)
+    //  .map(LCapital(journal = journal, owner = _.owner, trAmount = -balance))
+      //.distribute(balance, by = _.balance)
+      //.map(LCapital(journal = journal, owner = item.owner, trAmount = -value))
+  }
+}

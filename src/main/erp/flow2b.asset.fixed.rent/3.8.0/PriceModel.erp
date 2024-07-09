@@ -1,0 +1,32 @@
+extend interface IPriceModel {
+  func rentReturnDate(delivery: RentDeliveryDesc, returnSchedule: Schedule?, duration: Duration?): Date = {
+    let d = delivery.deliveryDate + duration
+    returnSchedule?.prevWorkingDate(d).alt(d)
+  }
+  func rentDuration(delivery: RentDeliveryDesc, assetReturn: RentDeliveryDesc): Duration? = {
+    assetReturn.deliveryDate - delivery.deliveryDate
+  }
+}
+
+class RentDeliveryDesc {
+  field dispatchDate: Date
+  field deliveryDate: Date
+  field schedule: Schedule?
+}
+
+extend trait IDelivery {
+  func storeSchedule = deliverySrc.or(deliveryDst)?.schedule
+  func toRentDeliveryDesc: RentDeliveryDesc = {
+    RentDeliveryDesc(dispatchDate = dispatchDate, deliveryDate = deliveryDate, schedule = storeSchedule)
+  }
+}
+
+trait BondPriceModel {
+  func bondAmount(items: [RentDeliveryItem]): Future[Money?]
+}
+
+extend interface IPrice {
+  func rentSalesAmount(currency: Currency, customer: LegalEntity?, itemsQty: Int, duration: Duration, inclGst: Bool): Future[Money?] = {
+    salesAmount(currency, customer, qty = (duration.days*itemsQty).as[Qty[ProductUnit.Day]], inclGst)
+  }
+}

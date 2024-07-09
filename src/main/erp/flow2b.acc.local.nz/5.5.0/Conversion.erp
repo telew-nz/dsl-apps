@@ -1,0 +1,9 @@
+back object Conversion extends IConversion {
+  func do(version: [Int?]?) = {
+    if (!version || version < [5,3,0]) {
+      ExpenseType.all.filter(!try? nzExpense).update(nzExpense = Unknown)
+      SalaryType.all.filter(!try? nzSalary).update(nzSalary = Unknown)
+      AssetType.all.filter(!try? nzAsset).update(nzAsset = Unknown)
+    }
+  }   
+}

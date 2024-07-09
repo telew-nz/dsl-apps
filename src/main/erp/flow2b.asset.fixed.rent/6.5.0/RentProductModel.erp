@@ -1,0 +1,67 @@
+trait TRentPriceModel extends IStaticPriceModel {
+  func currency: Currency
+  func products: [TRentProductPrice]?
+  func createProduct(product: IBaseProduct, prices: [DurationPrice]?, bond: Money?): TRentProductPrice
+}
+
+class DurationPrice {
+  field currency: Currency
+  field unit: RentDurationUnit = default
+  field duration: Qty[unit] {
+    canEditUnit
+    default = 1
+  }
+  field price: Money[currency]?
+}
+
+trait TRentProductPrice extends IStaticPrice {
+  field prices: [DurationPrice]? {
+    singular = "Price"
+    update = {
+      new.foreach(_.currency = this.currency)
+    }
+  }
+  
+  field bond: Money[currency]? 
+  compute gstRate: UPercent[2]? = product.gstRate(model.vendor).alt(0)
+  func superProduct = product.superProduct
+    
+  event onSave = product.touch
+  
+  back func addDuration(unit: RentDurationUnit, price: Money?): Void = {
+    addDuration(1.as[Qty[unit]]!, price)
+  }
+  back func addDuration(duration: Qty[RentDurationUnit], price: Money?): Void = if (let price) {
+    prices = prices + DurationPrice(currency = currency, unit = duration.unit!.as[RentDurationUnit]!, duration = duration, price = price)
+  }
+  
+  view form = grid(labels = None, spacing = false) {
+    prices >> list(frame = false, margin = None){grid(labels = None, margin = None){row{
+      unit.name.fromCamelCase >> field(fontStyle = H3) 
+      price >> field(align = Right) 
+    }}}
+    row{h3("Bond", visible = bond) bond >> field(align = Right) }
+  }
+  view formEx = grid(labels = None){
+    grid(labels = None, visible = !ui.isSelected) {
+      row {
+        product >> field(editMode = AlwaysRead, title = product) 
+        prices.first >> x{
+          duration >> field(stretch = 1, canEditUnit = false) 
+          price >> field(align = Right) 
+        }
+      }
+    }
+    read {
+      product >> field(visible = ui.isSelected, title = product)
+      form >> field(visible = ui.isSelected)
+    }
+    edit {
+      product >> field(visible = ui.isSelected, title = product)
+      prices >> list(frame = false, visible = ui.isSelected){grid(labels = None){row{
+        duration price
+      }}}
+      row{h3("Bond", visible = ui.isSelected) bond >> field(visible = ui.isSelected)}
+    }
+  }
+}

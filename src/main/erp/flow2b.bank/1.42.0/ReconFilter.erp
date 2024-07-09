@@ -1,0 +1,31 @@
+entity ReconFilterByData extends IReconFilter {
+  singular = "By Bank Data"
+  
+  field fld: BankDataField = AnyField
+  field op: StrBoolOp
+  field str: String {
+    label = "String"
+  }
+  
+  impl func filter(movements: [CashMovement]?, payment: Payment): Bool = {
+    let s = fld.str(payment.bankData)
+    op.applyFlex(s.flex, str)
+  }
+  impl view form = x {fld op str >> field(stretch = 1)}
+}
+
+enum BankDataField(str: BankData => String?) {
+  case AnyField(str = (BankDataField.all - AnyField).map(e => e.str(_)).join(" "))
+  case Memo(str = _.memo)
+  case CounterpartyName(str = _.thierName)
+  case CounterpartyAccountNumber(str = _.thierAccount)
+  case CardNumber(str = _.cardNumber)
+  case BankComment(str = _.bankComment)
+}
+
+enum StrBoolOp(apply: (x: String?, y: String?) => Bool, applyFlex: (x: FlexString, y: String?) => Bool) {
+  case Equal(apply = x == y, applyFlex = x == y.flex)
+  case Contains(apply = x.contains(y), applyFlex = x.contains(y))
+  case StartsWith(apply = x.startsWith(y), applyFlex = x.startsWith(y))
+  case EndsWith(apply = x.endsWith(y), applyFlex = x.endsWith(y))
+}

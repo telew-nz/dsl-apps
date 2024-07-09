@@ -1,0 +1,49 @@
+generator account {
+  field template: String
+  field taxable: Dec[4]? = 1
+  field closeWithPeriod: Bool
+  func calcCloseWithPeriod = closeWithPeriod || subs.exists(type.type.isIncome)
+  field structureSpecific: Bool
+  field money: Bool
+  field debit: SubAccountData?
+  field credit: SubAccountData?
+  field contra: Bool
+  
+  field debits: [SubAccountData]?
+  field credits: [SubAccountData]?
+  func allDebits = debits + debit
+  func allCredits = credits + credit
+  func subs = allDebits + allCredits
+     
+  compute fields = declarations*.as[Field].filter(name != "currency")
+  compute keyFields = fields.filter(isKey)
+  
+  
+  func generate: Dsl = '
+extend enum LedgerSubAccount {
+  $(allDebits*.generate(!contra, name)) 
+  $(allCredits*.generate(contra, name))
+}
+extend enum LedgerAccount {
+  case $name(template = AccTemplate.$template, debits = [$(allDebits*.dslName(name).join(", "))], credits = [$(allCredits*.dslName(name).join(", "))], taxable = $taxable, structureSpecific = $structureSpecific, closeWithPeriod = $calcCloseWithPeriod, money = $money) 
+}'
+}
+
+class SubAccountData(type: LedgerAccountSubType, number: Int?, name: String?, label: String?) {
+  object func acc(type: LedgerAccountSubType, number: Int?): SubAccountData = acc(type, number, "", "")
+  object func acc(type: LedgerAccountSubType, number: Int?, name: String?): SubAccountData = acc(type, number, name, "")
+  object func acc(type: LedgerAccountSubType, number: Int?, name: String?, label: String?): SubAccountData = SubAccountData(type = type, number = number, name = name, label = label)
+  
+  func dslName(supName: String): Dsl = "LedgerSubAccount." + this.name.alt(supName)
+  func generate(debit: Bool, supName: String): Dsl = {
+    let d = if (type.contra) !debit else debit
+    if (d && !type.type.debit) throw "$type cannot be debit"
+    if (!d && !type.type.credit) throw "$type cannot be credit"
+    if (number >= 100) throw "Number $number should < 100"
+    let n = type.type.number + number
+    let name = this.name.alt(supName)
+    'case $name(account = LedgerAccount.$supName, number = $n, subType = $(type.name)) {
+        label = "$n $(label.alt(name.fromCamelCase))" background = "$(type.type.props.background)"  color = "$(type.type.props.color)"
+    }'
+  }
+}

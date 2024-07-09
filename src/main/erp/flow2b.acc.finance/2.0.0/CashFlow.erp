@@ -1,0 +1,27 @@
+enum CashFlowCategory {
+  case Sales {background = "#dea"}
+  case Purchases {background = "#b6d7e2"}
+  case GeneralExpenses {background = "#fcc"}
+  case Exchange {background = "#ed9"}
+  case Notes {background = "#ed9"}
+  case Capital {background = "#dec4ee"}
+  case Errors {background = "#fb786d" color = "#500"}
+}
+
+report CashFlow {
+  field legalEntity: LegalEntity? = (LegalEntity.ours.onlyOne) {from = LegalEntity.ours}
+  field from: Date = Date.now[Date[millisecond]].start(year)
+  field to: Date = Date.now[Date[millisecond]].end(year)
+  field currency: Currency?
+    
+  view list = LCash.between(from, to)*.items
+    .filter(legalEntity ==? this.legalEntity && currency ==? this.currency && !isCorrection)
+    .groupBy(category = cashFlowCategory)
+    .agg(amount = baseAmount.sum)
+    .sortBy(category) 
+  >> nav{table {
+    category >> field(width = 0.3), amount
+  }}
+}
+
+

@@ -1,0 +1,7 @@
+trait AWSService extends SystemService with AWSAuth{
+
+  back func https(path: Url?): HttpRequest = {
+    HttpRequest(ssl = true, url = "$awsService.$awsRegion.amazonaws.com/$path").auth(this)
+  }
+  
+}

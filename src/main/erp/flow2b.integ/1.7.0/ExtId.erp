@@ -1,0 +1,70 @@
+trait ExtIdSource[T] extends RefEntity {
+  system field sourceIds: [ExtId]? inline by source
+  back func extId(item: HasExtId): T? = {
+    sourceIds.find(e => e.item == item)?.extId?.as[T]
+  }
+  back func updateExtId(item: HasExtId, extId: T?): T? = {
+    item.updateExtId(this, extId)
+  }
+  back func deleteExtId(item: HasExtId): T? = updateExtId(item, null)
+  back func findExtId[R](extId: T?, map: HasExtId => R?): R? = {
+    if (let ei = extId) {
+      ExtId.all.filter(i => i.source == this && i.extId == ei)
+        .map(map(item))
+        .find(_).map(_!)
+        .result.get
+    } else {
+      null
+    }
+  }
+}
+  
+interface IHasExtId {
+  func deleted: Bool
+  back func extId[T](source: ExtIdSource[T]): T?
+  back func updateExtId[T](source: ExtIdSource[T], extId: T?): T?
+  back func deleteExtId[T](source: ExtIdSource[T]): T? = updateExtId(source, null)
+}
+
+interface IHasExtIdDecorator extends IHasExtId {
+  func extIdItem: IHasExtId
+  func deleted: Bool = extIdItem.deleted
+  back func extId[T](source: ExtIdSource[T]): T? = extIdItem.extId(source)
+  back func updateExtId[T](source: ExtIdSource[T], extId: T?): T?  = extIdItem.updateExtId(source, extId)
+}
+
+trait HasExtId extends AnyEntity with IHasExtId {
+  system field extIds: [ExtId]? inline by item
+  back func extId[T](source: ExtIdSource[T]): T? = {
+    extIds.find(e => e.source == source)?.extId?.as[T]
+  }
+  back func updateExtId[T](source: ExtIdSource[T], extId: T?): T? = {
+    if (let i = extIds.find(e => e.source == source)) {
+      if (let e = extId) {
+        i.extId = e
+        i.save
+      } else {
+        i.delete
+      }
+    } else if (let e = extId) {
+      ExtId(item = this, source = source, extId = e).save
+    }
+    extId
+  }
+  
+  view extView = nav {grid{
+    extIds >> table {
+      source extId
+    }
+  }}
+}
+
+inline entity ExtId {
+  system field item: HasExtId by extIds {deleteCascade = false}
+  field source: ExtIdSource by sourceIds
+  field extId: Any
+  view form = grid(labels = None) {
+    row {source source extId}
+  }
+}
+

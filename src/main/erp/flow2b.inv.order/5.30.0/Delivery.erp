@@ -1,0 +1,34 @@
+trait Delivery extends IDelivery with DebtOrigin {
+  background = "#2e8e67"
+  field manualNumber: String?
+  func number: String
+  func defaultDate: Date = if (order.created) order.date else Date.now
+  func order: Order = orders.first
+  func orders: [Order]
+  field allItems: [IOrderDeliveryItem]? inline by delivery {deleteCascade = false}
+  compute items: [IOrderDeliveryItem]? {
+    value = allItems.filter(active)
+    update = {
+      allItems = new + allItems.filter(!active)
+    }
+  }
+  func journalDate = deliveryDate
+  func store: Store? = null
+    
+  func dueDate(orders: [Order], policy: IDeliveryPolicy?): Future[Date?] = {
+    if (status == Delivered || status == Canceled || !policy) null
+    else if (let invoices = items*.sales*.invoice.distinct) {
+      let canDispatch <- invoices.map(canDispatch).allCompleted
+      if (canDispatch.contains(false)) null
+      else if (let p = policy, let orderItems = orders*.items) {
+        if (let d = p.dueDate(orderItems, this, invoices.map(prepaymentDate!).max)) d.max(dispatchDate)
+        else dispatchDate
+      } 
+      else if (status == Planned) dispatchDate 
+      else deliveryDate
+    }
+    else null
+  }
+  func canCancel = false
+}
+

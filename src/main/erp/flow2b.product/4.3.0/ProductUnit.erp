@@ -1,0 +1,29 @@
+enum ProductUnit(symbol: String, scale: Int?, base: ProductUnit?, k: Number) extends Unit {
+  func position: UnitPosition = SuffixWithSpace
+  case Item(symbol = "item", scale = 0, base = null, k = 1)
+  case Gram(symbol = "g", scale = 0, base = null, k = 1)
+  case Kilogram(symbol = "kg", scale = 2, base = Gram, k = 1000)
+  case Litre(symbol = "L", scale = 2, base = null, k = 1)
+}
+
+class ProductAltUnit {
+  field unit: ProductUnit
+  field k: Number {label = "Multiplier"}
+}
+
+extend trait IBaseProduct {
+  func toBase(qty: Qty): Qty[unit] = {
+    if (!qty.unit || qty.unit == unit) qty.as[Qty[unit]]
+    else qty.as[Qty[unit]]*altUnits.find(_.unit == qty.unit)?.k
+      .alt(throw "Cannot convert " + qty.unit + " to " + unit + " for product " + this)
+  }
+  func fromBase(to: ProductUnit, qty: Qty): Qty[to] = {
+    if (!qty.unit || qty.unit == to) qty.as[Qty[to]]
+    else qty.as[Qty[to]]/altUnits.find(_.unit == to)?.k
+      .alt(throw "Cannot convert " + qty.unit + " to " + to + " for product " + this)
+  }
+  func convert(to: ProductUnit, qty: Qty): Qty[to] = {
+    if (!qty.unit || qty.unit == to) qty.as[Qty[to]]
+    else fromBase(to, toBase(qty))
+  }
+}

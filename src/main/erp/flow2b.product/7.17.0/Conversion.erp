@@ -1,0 +1,9 @@
+back object Conversion extends IConversion {
+  func do(version: [Int?]?) = {
+    if (version < [7,9,0]) {
+      Good.all.update(status = if (field[Bool](_, "alwaysAvailable")) AlwaysAvailableForSale else ForSale)
+      Service.all.update(status = ForSale)
+      Kit.all.update(status = if (field[Bool](_, "alwaysAvailable")) AlwaysAvailableForSale else ForSale)
+    }
+  }   
+}   

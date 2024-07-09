@@ -1,0 +1,49 @@
+back class UploadAttrTermsJob extends SystemJob {
+  impl field service: WooCommerceIntegration
+  system field attr: ProductAttr
+  field change: BatchChange[ProductAttrTerm] 
+  impl func do: Future[Any] = {
+    change.regroup(service)
+    let u = BatchAttrTermUpdate(
+      create = change.created.map(AttrTermData.create(service, _)),
+      update = change.updated.map(AttrTermData.create(service, _)),
+      delete = change.deleted*.extId(service)
+    )
+    let response <- service.https("/products/attributes/$(attr.extId(service))/terms/batch").post(u.json)
+    let r = response.body!.parseJson[BatchAttrTermResponse]
+    change.updateExtIds(service, r.create.map(id))
+    r.check(this, u, change) {
+      if (code == "invalid_taxonomy") {
+        service.findExtId(data.id, item)!.deleteExtItem(service)
+        UploadAttrTermsJob(service = service, attr = attr, change = BatchChange.create(service, [item])).enqueueFirst
+        true
+      } else {
+        false
+      }
+    }
+  }
+}
+
+back class BatchAttrTermUpdate {
+  field create: [AttrTermData]?
+  field update: [AttrTermData]?
+  field delete: [Int]?
+}
+
+back class BatchAttrTermResponse extends WooResponse[AttrTermData] {
+  impl field create: [AttrTermData]?
+  impl field update: [AttrTermData]?
+  impl field delete: [AttrTermData]?
+}
+back class AttrTermData extends WooData {
+  extFieldNaming = Underscore
+  field id: Int?
+  field name: String
+  field color: String?
+  
+  object func create(service: WooCommerceIntegration, u: ProductAttrTerm): AttrTermData = {
+    AttrTermData(
+      id = service.extId(u), name = u.title, color = u.as[ColorItem]?.color
+    )
+  }
+}

@@ -1,0 +1,36 @@
+entity BalanceCorrection extends MJournal {
+  func debitEntry: MLedger? = null
+  func creditEntry: MLedger? = null
+  
+  object field gen: Int?
+  system const ref field n: Int? = increment(BalanceCorrection.gen)
+  compute number = ("BALCOR" + n) {width = 0.15}
+  func title = "$number $legalEntity ${date.as[Date[day]]}"
+  func journalDate: Date = date 
+  ref field date: Date = Date.now[Date[millisecond]].start(day)
+  func isCorrection = true
+    
+  register trading: [Ledger]? <- CurrencyTrading.trade(journal = this, amounts = entries.groupBy(currency).agg(amount.sum).toSeq*.amount)
+  compute currencyTradingLedgerEntries = trading + trading*.as[LCurrencyTrading]*.ledgers
+  func defaultEntries = [MEmptyLedger(journal = this)]
+    
+  object view list = BalanceCorrection.all >> nav{table{number, date, legalEntity}}
+  view form = nav{grid(width = 1.0, labels = Top) {
+    number
+    date
+    legalEntity
+    entries >> table {
+      accountEditor >> field(label = "Account", width = 0.3)
+      aview >> field(label = "Analitics", width = 0.3, margin = None)
+      debitEditor >> field(label = "Debit", width = 0.2)
+      creditEditor >> field(label = "Credit", width = 0.2)
+    }
+    add("Item") {
+      entries = entries + MEmptyLedger(journal = this)
+    }
+    currencyTradingLedgerEntries >> table(mode = Static) {
+      account >> field(width = 0.6) debit >> field(width = 0.2) credit >> field(width = 0.2)
+    }
+  }}
+  
+}

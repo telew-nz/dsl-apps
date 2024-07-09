@@ -1,0 +1,5 @@
+trait IOrderDelivery extends IDeliveryPath {
+  func orders: [IOrder]
+  
+  func preComputeItems = orders
+}

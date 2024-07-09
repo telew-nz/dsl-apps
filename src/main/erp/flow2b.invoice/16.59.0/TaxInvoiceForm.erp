@@ -1,0 +1,233 @@
+extend entity Invoice extends NewEngine {
+  impl view form {
+    printable = true
+    layout = nav{grid (labels = None, width = 1.2) {
+      issuesView
+      y (margin = Around, visible = !isLastInvoice){
+        y(background = "#fff9e4", border = Around) {
+          x(margin = Around){
+            label ("Not the last invoice" color = "#ff6200")
+            button("Open last") {
+              order.invoices.last!.form.open()
+            }
+          }
+        }
+      }
+      x (margin = None) {
+        y (width = 0.75, margin = Bottom, spacing = false, yAlign = Top) {
+          h1(label = name)
+          x {label("Number") order >> field(title = this.number, editMode = AlwaysRead) date}
+        }
+        y ( margin = Bottom, stretch = 1, spacing = false, yAlign = Top) {
+          logo >> field(height = 4, margin = None, editMode = AlwaysRead, align = Right)
+          vendor.title >> field(fontStyle = H1, margin = None, visible = !logo, align = Right, editMode = AlwaysRead)
+          x {label("GST Number", stretch = 1, align = Right) vendor.legalEntity.legalInfo?.gstNumber >> field(editMode = AlwaysRead)}
+        }
+        
+      }
+      
+      nameDesc      
+      
+      grid(labels = Top, width = 1.2) {
+        row {
+          payer >> y (width = 0.4, spacing = false, label = "Bill to") {
+            _ >> field(title = legalEntity.legalName, editMode = AlwaysRead)
+            legalEntity.legalAddress >> field(frame = false, editMode = AlwaysRead)
+          }
+          y (width = 0.4, spacing = false, label = "Ship to", visible = receiver && (shipTo || receiver != payer?.legalEntity || receiver != customer?.legalEntity)) {
+            receiver >> field(title = legalName)
+            x (visible = shipTo?.locationActor && receiver != shipTo?.locationActor?.as[LegalEntity]) {
+              label ("C/O") shipTo?.locationActor?.as[LegalEntity] >> field(title = legalName)
+            }
+            shipTo?.locationAddress >> field(frame = false, editMode = AlwaysRead)
+          }
+          vendor >> y (width = 0.4, spacing = false label = "Vendor") {
+            _ >> field(title = legalEntity.legalName, label = "", editMode = AlwaysRead)
+            legalEntity.legalAddress >> field(frame = false, editMode = AlwaysRead)
+            legalEntity.contacts*.as[PhoneContact]*.phone.join(", ")
+            legalEntity.contacts*.as[EmailContact]*.email.join(", ")
+          }
+        }
+        row {
+          order.contactPerson >> field(title = person.title, width = 0.4)
+          customer >> y (label = "Order from Customer", visible = customer != payer, width = 0.4) {
+            _ >> field(title = legalEntity.legalName)
+            customerRefNum
+          }
+          space(width = 0.4)
+        }
+      }
+      
+      x (visible = order.references) {label("Reference") order.references.join(", ") }
+
+      label("", margin = Around)
+      
+      (items + prev?.deletedItems).filter(invoicePosition == Lines).groupBy(itemDlv).toSeq >> subtotal {
+        row{itemDlv!.invRow}
+        table {
+          header{
+            label("Code", width = 0.15) 
+            label("Product", width = 0.43) 
+            label("", align = Right, width = 0.12) 
+            label("Quantity", align = Right, width = 0.12) 
+            label("Price", align = Right, width = 0.19) 
+            label("Amount", align = Right, width = 0.19)
+          }
+          body{row{rowView(this)}}
+          //row{product qty price amount}
+          //row(visible = discount){label("Discount") space space discount}
+        }
+      }
+      
+      row {    
+        y (width = 0.4 visible = !isPurchase) {
+          grid (labels = Top, width = 0.4, spacing = false, margin = Right) {
+            paymentAccounts >> list(mode = Static, margin = None, frame = false, label = "Pay to Bank accounts") {
+              number 
+            }
+            order.number >> field(label = "Reference")
+          }
+        }
+        y (margin = Right, width = 0.8) {
+          grid (labels = None, align = Right, width = 0.8, spacing = false, margin = Right, visible = !sameTotals) {
+            row {
+              label("Subtotal excl GST", fontStyle = Label, width = 0.31)
+              x(margin = None) {
+                prev!.invoiceSubtotalNoGst >> field(showEmpty = true, stretch = 100, visible = prev && diffSubtotalWithoutGst)
+                diffSubtotalWithoutGst >> field(showPlus = true, visible = prev) 
+                label("=", visible = prev && diffSubtotalWithoutGst, fontStyle = Label)
+                invoiceSubtotalNoGst >> field(showEmpty = true, stretch = 1) 
+              }
+            }
+            (items + prev?.deletedItems).filter(invoicePosition == Subtotal) >> list(frame = false, label = "") {labelView(this)}
+               
+            row {
+              label("GST", fontStyle = Label, width = 0.31)
+              x(margin = None) {
+                prev!.gstAmount >> field(showEmpty = true, stretch = 100, visible = prev && diffGstAmount)
+                diffGstAmount >> field(showPlus = true, visible = prev)
+                label("=", visible = prev && diffGstAmount, fontStyle = Label)
+                gstAmount >> field(showEmpty, stretch = 1)   
+              }
+            }
+            row {
+              label("Total incl GST", fontStyle = Label, width = 0.31)
+              x(margin = None) {
+                prev!.invoiceTotal >> field(showEmpty = true, stretch = 100, visible = prev && diffTotal)
+                diffTotal >> field(showPlus = true, visible = prev)
+                label("=", visible = prev && diffTotal, fontStyle = Label)
+                invoiceTotal >> field(showEmpty, stretch = 1, fontStyle = Bold) 
+              }
+            }
+           
+          }
+          
+          grid (labels = None, align = Right, width = 0.8, spacing = false, margin = Right, visible = sameTotals) {
+            row {
+              label("Subtotal excl GST", fontStyle = Label)
+              x(width = 0.18, margin = None) {
+                diffSubtotalWithoutGst >> field(showPlus = true, stretch = 100, visible = prev) 
+                invoiceSubtotalNoGst >> field(showEmpty = true, stretch = 1) 
+              }
+            }
+            (items + prev?.deletedItems).filter(invoicePosition == Subtotal).sortBy(invoiceOrder) >> list(frame = false) {labelView(this)}
+            row {
+              label("GST", fontStyle = Label)
+              x(width = 0.18, margin = None) {
+                diffGstAmount >> field(showPlus = true, stretch = 100, visible = prev)
+                gstAmount >> field(showEmpty, stretch = 1)   
+              }
+            }
+            row {
+              label("Total incl GST", fontStyle = Label)
+              x(width = 0.18, margin = None) {
+                diffTotal >> field(showPlus = true, stretch = 100, visible = prev)
+                invoiceTotal >> field(showEmpty, stretch = 1, fontStyle = Bold) 
+              }
+            }
+          }
+          
+          grid (labels = None, align = Right, width = 0.8, spacing = false, margin = Right, visible = dueInvoices) {
+            dueInvoices >> list(mode = Static, frame = false) {
+              grid(margin = None, width = 0.8, labels = None) {
+                row {
+                  x (align = Right, spacing = false) {
+                    overdueState >> field(fontSize = 0.5)
+                    paymentState >> field(fontSize = 0.5, visible = paymentState != Unpaid)
+                    _ >> field(title = "$dueRate due by $(dueDate?.date?.format('L'))", fontStyle = Label)            
+                  }
+                  diffTotalDue >> field(width = 0.18)
+                }
+              }
+            }
+            row {
+              label("Total due", fontStyle = Label)
+              totalDue >> field(width = 0.18, editMode = AlwaysRead, showEmpty) 
+            }
+         }
+           
+         grid (labels = None, align = Right, width = 0.8, spacing = false, margin = Right, visible = invoicePaidAmount) {
+           invoicePayments >> list(frame = false) {
+             grid(margin = None, width = 0.8, labels = None) {
+               row {
+                 doc >> field(title = "Payment $(_.journalDate.date.format('L'))", fontStyle = Label)            
+                 -amount >> field(width = 0.18)
+               }
+             }
+           }
+           row {
+             label("Total paid", fontStyle = Label)
+             invoicePaidAmount >> field(width = 0.18) 
+           }
+         }
+          
+          grid (labels = None, align = Right, width = 0.8, spacing = false, margin = Right, visible = invoiceOffsetAmount) {
+           invoiceOffsets >> list(frame = false) {
+             grid(margin = None, width = 0.8, labels = None) {
+               row {
+                 doc >> field(title = _.as[Invoice]?.name.alt("Offset") + " $(_.journalDate.date.format('L'))", fontStyle = Label)            
+                 -amount >> field(width = 0.18)
+               }
+             }
+           }
+           row {
+             label("Total offset", fontStyle = Label)
+             invoiceOffsetAmount >> field(width = 0.18) 
+           }
+         }
+          
+          grid (labels = None, align = Right, width = 0.8, spacing = false, margin = Right, visible = !isQuote) {
+            row {
+              label("To pay", fontStyle = Label)
+              invoiceToPay >> field(width = 0.18, fontStyle = Bold, showEmpty) 
+            }
+            row (visible = invoiceToRefund) {
+              label("To refund", fontStyle = Label)
+              invoiceToRefund >> field(width = 0.18, fontStyle = Bold) 
+            }
+          }
+        }
+      }
+      extension
+      x (visible = isQuote && order.state in [Quote, Unaccepted] && order.invoices.last == this) {
+        space(stretch = 1)
+        button("Accept", color = "green", icon = "thumbs-up", fontSize = 1.5) {back {accept}}
+        button("Reject", color = "#c00" icon = "thumbs-down", fontSize = 1.5) {back {reject}}
+        space(stretch = 1)
+      }
+      x (visible = state) {
+        space(stretch = 1)
+        state >> field(fontSize = 1.5, compact = false)
+        space(stretch = 1)
+      }
+    }
+    generalLedgerButton
+    button("Send", icon = "paper-plane") {
+      let _ <- back {
+        NewInvoice.send(this)
+      }
+      order.form.open
+    }
+    }
+  }
+}

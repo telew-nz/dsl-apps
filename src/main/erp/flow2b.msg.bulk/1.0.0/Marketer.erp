@@ -1,0 +1,6 @@
+extend role Marketer {
+  extend view menu = menu("Bulk Messaging") {
+    SubscrList >> item(fastSearch)
+    BulkMsg >> item(fastAdd)
+  }
+}

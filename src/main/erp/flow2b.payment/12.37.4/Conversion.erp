@@ -1,0 +1,59 @@
+back object Conversion extends IConversion {
+  func convert(version: [Int?]): Future[Any] = {
+    if (version < [12,19,0]) {
+       CashMovement.all.foreach(m => recalcField(m, uploadState))
+    }
+    if (version < [12,20,0]) {
+      CashTransfer.all.foreach{t =>
+        t.dateIn = field(t, "date")
+        t.dateOut = field(t, "date")
+        t.save
+      } 
+      recreateAllRegisters
+    }
+    if (version < [12,21,0]) {
+      if (let ops = OutgoingPayment.all.filter(!payee && reasons*.as[PaymentExpense]).result.get) {
+        let unknown = Company.all.find(title == "Unknown").result.get.alt(Company(title = "Unknown").save)
+        ops.foreach{op => 
+          op.payee = unknown
+          op.save
+        }
+      }
+    } 
+    if (version < [12,28,0]) {
+      Payment.all
+        .filter(sReconState == OverRecon || sReconState == PartRecon)
+        .update(sReconState = reconState)
+      Payment.all.filter(reasons*.amount.sum > amount)*.reasons*.delete
+    }
+    if (version < [12,29,2]) {
+      DashboardItem.all.filter(issues)*.updateDashboard
+    }
+    if (version < [12,30,0]) {
+      FinanceService.debug = true
+      FinanceService.save
+    }
+    if (version < [12,31,0]) {
+      Vendor.all.foreach {v =>
+        if (let e = field[ExpenseType?](v, "flow2b.payment.expense")) {
+          v.legalEntity.expense = e
+          v.legalEntity.save
+        }
+      }
+      PaymentIncome.all.filter(nonTaxable && gstRate)*.touch
+    }
+    if (version < [12,33,0]) {
+      recreateAllRegisters
+    }
+    if (version < [12,36,0]) {
+      Payment.all.update(refNum = field(_, "refNum"))
+    }
+    if (version < [12,36,1]) {
+      recreateAllRegisters
+    }
+    if (version < [12,37,0]) {
+      ITaxPayment.all.update(trType = Payment)
+    }
+  }  
+}  
+ 

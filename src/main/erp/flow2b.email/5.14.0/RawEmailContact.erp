@@ -1,0 +1,10 @@
+entity RawEmailContact extends RawContact with IEmailContact {
+  singular = "Email"
+  plural = "Emails"
+  impl view form = nav{grid {
+    addressee >> field(editMode = AlwaysEdit)
+    addresseeName
+    email
+  }}
+  impl func actorContactType = EmailContact
+}

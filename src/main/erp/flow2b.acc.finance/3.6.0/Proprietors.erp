@@ -1,0 +1,34 @@
+account Capital(template = "Counterparty", number = 401, type = Equity, structureSpecific = true) 
+account AdditionalCapital(template = "Counterparty", number = 410, type = Equity, structureSpecific = true) 
+  
+extend entity Person {
+  func specificAccounts: [LedgerAccount] = [Capital, Withdrawals]
+  func canCloseIncomeSummary = true
+  func incomeSummaryClosing(journal: Journal, balance: Money[getCurrency]): [Ledger]? = {
+    [LCounterparty(account = Capital, journal = journal, trAmount = -balance, counterparty = this)]
+  }
+}
+
+inline trait ISoleTrader extends LegalStructure {
+  ref field person: Person
+  func legalName: String? = person.title
+  func canCloseIncomeSummary = true
+  func specificAccounts: [LedgerAccount] = [Capital, Withdrawals]
+  func incomeSummaryClosing(journal: Journal, balance: Money[currency]): [Ledger]? = {
+    [LCounterparty(account = Capital, journal = journal, trAmount = -balance, counterparty = person)]
+  }
+}
+
+inline trait IPartnership extends LegalStructure {
+  field legalName: String?
+  func specificAccounts: [LedgerAccount] = [Capital, AdditionalCapital, Withdrawals]
+  func canCloseIncomeSummary = false
+  //TODO:
+  func incomeSummaryClosing(journal: Journal, balance: Money[currency]): [Ledger]? = {
+    []
+    //LCapital.at(journal.journalDate - 1_millisecond)
+    //  .map(LCapital(journal = journal, owner = _.owner, trAmount = -balance))
+      //.distribute(balance, by = _.balance)
+      //.map(LCapital(journal = journal, owner = item.owner, trAmount = -value))
+  }
+}

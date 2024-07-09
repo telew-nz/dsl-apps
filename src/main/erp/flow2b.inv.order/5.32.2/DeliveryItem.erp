@@ -1,0 +1,138 @@
+inline trait IOrderDeliveryItem extends IDeliveryItem {
+  func itemDelivery = delivery
+  func storeRequired = false
+  func purchase: IPurchaseItem?
+  func sales: ISalesItem?
+ 
+  compute order: Order = (try? sales!)?.order?.as[Order].alt(purchase!.order)
+  func active = purchase?.active.alt(true) && sales?.active.alt(true)
+  field delivery: Delivery? by allItems {
+    default = order.deliveries.first
+    from = {
+      if (let s = sales) s.order.deliveries
+      else purchase!.order.deliveries
+    }
+    validate = if (!delivery && order.real) "Delivery should be selected for every item"
+    update = {
+      if (!sales || !delivery?.is[ISalesDelivery]) this.default(sales) 
+      if (!purchase || !delivery?.is[IPurchaseDelivery]) this.default(purchase)
+    }
+  }
+  func updateAmount(): Void = {}
+  func updateGst(): Void = {}
+}
+
+inline trait IDeliveryProductItem extends IOrderDeliveryItem {
+  func product: IProduct
+  func storeRequired = product.isTangible
+  func unit: ProductUnit
+  func needsRevision: Bool
+  func updateAmount(): Void = {
+    if (let s = sales) {
+      let currency = s.order.currency
+      let vendor = s.order.vendor
+      let customer = try? s.order.customer
+      let amount <- Query(vendor).map{
+        if (let pr = productPrice(product)) pr.salesAmount(currency, customer, qty, s.order.pricesIncludingGst)
+        else Future(0)
+      }.result
+      if (amount) s.amountEditor = amount
+    }
+    
+    if (let p = purchase) {
+      let currency = p.order.currency
+      let vendor = p.order.vendor
+      let customer = try? p.order.customer
+      let amount <- Query(vendor).map{
+        if (let pr = productPrice(product)) pr.salesAmount(currency, customer, qty, p.order.pricesIncludingGst)
+        else Future(0)
+      }.result
+      if (amount) p.amountEditor = amount
+    }
+    updateGst()
+  }
+  func updateGst(): Void = {
+    if (let s = sales?.as[OrderProductItem]) {
+      if (s.order.legalEntity.forceHasGst) {
+        s.gstRate = product.forceGstRate(s.order.vendor)
+      } else s.gstRate = null
+    }
+    if (let p = purchase?.as[OrderProductItem]) {
+      if (p.order.legalEntity.forceHasGst) {
+         p.gstRate = product.forceGstRate(p.order.vendor)
+      } else p.gstRate = null
+    }
+  }
+  func qty: Qty[unit]
+  compute baseQty: Qty[product.unit] = product.toBase(qty)
+}
+
+inline entity DeliveryItem extends IDeliveryProductItem with IOutgoingDeliveryItem {
+  field product: IProduct {
+    available(Ref).with(unit, altUnits, vendors)
+    from = IProduct.all.filter(superProduct.isValid)
+    update = {
+      this.silentUpdate(unit, new.unit)
+      this.qty = this.qty.as[Qty[this.unit]]!
+    }
+  }
+  field unit: ProductUnit {
+    from = product.units
+    update = {
+      updateAmount()
+    }
+  }
+  field qty: Qty[unit] {
+    default = 1
+    label = "Quantity"  
+    update = {
+      if (old) {
+        if (let s = sales) s.sAmount = s.sAmount*(new.as[Dec[12]]/old!)
+        if (let p = purchase) p.sAmount = p.sAmount*(new.as[Dec[12]]/old!)
+        updateAmount()
+      }
+    }
+  }
+  func needsRevision: Bool = updated(product) || updated(qty) || updated(unit)
+  func itemDelivery = delivery
+  func outcomeStockReg: StockRegister? = sales?.stock
+  
+  field sales: SalesItem? inline by deliveryItem {
+    default = if (let d = delivery?.as[ISalesDelivery]) {
+      SalesItem(deliveryItem = this, order = d.salesOrders.first)
+    }
+  }
+  field purchase: PurchaseItem? inline by deliveryItem {
+    default = if (let d = delivery?.as[IPurchaseDelivery]) {
+      PurchaseItem(deliveryItem = this, order = d.purchaseOrders.first)
+    }
+  }
+  
+  func clearSales: Void = sales = null
+  func clearPurchase: Void = purchase = null
+    
+  view form = grid(labels = None, width = 1.2, margin = TopBottom) {
+    row{product, x{qty, stockDesc >> field(visible = delivery?.is[SalesDelivery])}}
+    availableView >> field(visible = delivery?.is[SalesDelivery])
+  }
+  
+  func splitRest(qty: Qty): DeliveryItem = {
+    if (qty < 0 || qty >= this.qty) throw "Cannot split $qty from $(this.qty)"
+    let oldQty = this.qty
+    let rest = oldQty - qty
+    this.qty = qty
+    let di = DeliveryItem(product = product, unit = unit, qty = rest, sales = null, purchase = null, delivery = delivery).save()
+    sales.map{s => 
+      let a = s.amount
+      s.amount = a/oldQty*qty
+      SalesItem(order = s.order, invoice = s.invoice, deliveryItem = di, amount = a - s.amount).save()
+    }
+    purchase.map{s => 
+      let a = s.amount
+      s.amount = a/oldQty*qty
+      PurchaseItem(order = s.order, invoice = s.invoice, deliveryItem = di, amount = a - s.amount).save()
+    }
+    di
+  }
+}
+

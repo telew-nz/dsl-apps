@@ -1,0 +1,29 @@
+inline entity TaxPayment extends OPReason {
+  field tax: Tax
+  field amount: Money[payment.currency] =? payment.unreconAmount.abs
+  func cashFlows = [CashFlowAmount(cashFlow = Taxes, amount = amount)] 
+  
+  func ledgers: Future[[Ledger]?] = {
+    [LTax(tax = tax, currency = payment.currency, 
+          journal = payment, trAmount = amount, isTaxPayment = true)]
+  }
+  
+  view form = grid {
+    row{tax >> field(compact) amount }
+  }
+} 
+
+inline entity TaxReturn extends IPReason {
+  field tax: Tax
+  field amount: Money[payment.currency] =? payment.unreconAmount
+  func cashFlows = [CashFlowAmount(cashFlow = Taxes, amount = amount)] 
+  
+  func ledgers: Future[[Ledger]?] = {
+    [LTax(tax = tax, currency = payment.currency, 
+          journal = payment, trAmount = -amount, isTaxPayment = true)]
+  }
+  
+  view form = grid {
+    row{tax >> field(compact) amount }
+  }
+} 

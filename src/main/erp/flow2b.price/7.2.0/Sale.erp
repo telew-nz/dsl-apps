@@ -1,0 +1,28 @@
+entity SaleCampaign extends IDynamicPriceModel {
+  impl func priority: Dec[8]? = -0.5
+  impl ref field start: Date = now
+  impl ref field end: Date?
+  ref field name: String
+  field items: [SaleCampaignItem] inline by campaign
+
+  impl func title = "$name $start" + (" — " +?  end)
+  
+  impl func priceSales(product: IBaseProduct): IPriceSales? = {
+    items.find(i => i.filterProd(product)).map(i => SaleCampaignPrice(product = product, item = i))
+  }
+}
+
+entity SaleCampaignItem extends InlineEntity with IProdFilterOwner with IDiscountOwner  {
+  field campaign: SaleCampaign
+  
+}
+
+class SaleCampaignPrice extends IPriceSales {
+  impl field product: IBaseProduct
+  system field item: SaleCampaignItem
+  impl func model = item.campaign
+  
+  impl func salesPrice(currency: Currency, inclGst: Bool, level: PriceLevel?): Future[SalesPrice] = {
+    throw "Not implemented"
+  }
+}

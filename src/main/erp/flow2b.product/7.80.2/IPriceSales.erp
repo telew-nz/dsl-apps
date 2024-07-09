@@ -1,0 +1,20 @@
+interface IPriceSales extends IPrice {
+  list compute salesPrice: Future[SalesPrice] {
+    value = back{
+      salesPrice(PriceRequest(currency = currency, inclGst = vendor.pricesIncludingGst, level = model.mainPriceLevel))
+    }
+  }
+  back func salesPrice(request: PriceRequest): Future[SalesPrice]
+  impl back func amount(request: PriceRequest, item: PriceOrderItem): Future[SalesPrice] {
+    default value = {
+	  let p <- salesPrice(request)
+      p.mul(product.toBase(item.qty))
+    }
+  }
+  impl func has(type: PriceType): Bool = type == Sales
+  
+  impl view form = y{
+    levels >> field(visible = !IPriceLevel.onlyOne)
+    x {salesPrice >> field(frame = false) model >> field(title = fullTitle, stretch = 1, align = Right)}
+  }
+}

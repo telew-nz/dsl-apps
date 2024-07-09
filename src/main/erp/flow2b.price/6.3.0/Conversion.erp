@@ -1,0 +1,7 @@
+back object Conversion extends IConversion {
+  func do(version: [Int?]?) = {
+    if (version < [6,0,0]) {
+      PriceModel.all.update(vendor = conv(_).field[LegalEntity]("vendor").makeIVendor)
+    }
+  }
+}

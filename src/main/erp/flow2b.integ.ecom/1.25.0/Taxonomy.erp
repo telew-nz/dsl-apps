@@ -1,0 +1,66 @@
+extend trait IProductTaxonomy extends HasExtId {
+  field _seoName: String?
+  compute seoName: String {
+    value = _seoName.alt(name)
+    update = {
+      _seoName = if (new != name) new
+    }
+  }
+  field slug: String?
+  field seoDesc: PlainText? {label = "Seo Description"}
+  
+  impl event onSaveOrDelete = {
+    if (touched) {
+      ECommerceIntegration.all.map {service =>
+        if (service.userEnabled) {
+          if (let pc = this.as[IProductCategory]) {
+            service.uploadCategoryJobs(BatchChange.create(service, [pc]))*.enqueue
+          }
+          if (let pc = this.as[IBrand]) {
+            service.uploadBrandJobs(BatchChange.create(service, [pc]))*.enqueue
+          }
+          if (let pc = this.as[IProductTag]) {
+            service.uploadTagJobs(BatchChange.create(service, [pc]))*.enqueue
+          }
+          if (let pc = this.as[ShippingClass]) {
+            service.uploadShippingClassJobs(BatchChange.create(service, [pc]))*.enqueue
+          }
+        }
+      }.result
+    }
+  }
+}
+
+extend entity ProductCategory {
+  extend view form = seoName
+  extend view form = slug
+  extend view form = seoDesc
+}
+
+extend trait ECommerceIntegration {
+  back func uploadAllTaxonomies(): Void = { 
+    BatchChange.hierarchy(
+        this, 
+        if (let c = this.categories) c else IProductCategory.all.result.get, 
+        _.superCategory
+      )
+      .filter(!_.isEmpty)
+      .flatMap(uploadCategoryJobs(_))
+      *.enqueue()
+    
+    BatchChange.hierarchy(
+        this, 
+        if (let c = this.brands) c else IBrand.all.result.get, 
+        _.superCategory
+      )
+      .filter(!_.isEmpty)
+      .flatMap(uploadBrandJobs(_))
+      *.enqueue()
+    
+    let tags = BatchChange.create(this, IProductTag.all.result.get)
+    if (!tags.isEmpty) service.uploadTagJobs(tags)*.enqueue
+    
+    let shippingClasses = BatchChange.create(this, ShippingClass.all.result.get)
+    if (!shippingClasses.isEmpty) service.uploadShippingClassJobs(shippingClasses)*.enqueue
+  }
+}

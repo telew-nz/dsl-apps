@@ -1,0 +1,70 @@
+extend entity EmailContact {
+  func canSend: Bool = true
+  back object func send(activity: Activity, contacts: [EmailContact]): Void = {
+    if (let user = activity.user?.as[User]
+        let from = user.person.companies.filter(company.isOur)*.contacts*.as[EmailContact].first
+        let domain = from.email('@' .. ]
+    ) {
+      if (let service = MailService.all.filter(canSend && domains.contains(domain)).result.get.onlyOne) {
+        activity.from = from
+        MailSendJob(service = service, activity = activity, contacts = contacts).run
+      } else {
+        throw "Cannot send email: No mail service found capable to send mail for domain $(domain)"
+      }
+    } else {
+      throw "Cannot send email: No email found for user $(activity.user)"
+    }
+  }
+}
+ 
+class MailSendJob extends SystemJob {
+  field service: MailService 
+  field activity: Activity inline
+  field contacts: [EmailContact]
+  func do = {
+    let e = activity.entities.first
+    let chain = e.activities.filter(a => a.from.in(contacts))
+    let subject = if (!e.title.startsWith("Re: ") && chain) "Re: " + e.entitySubject else e.entitySubject
+    let txt: Html? = {
+      if (let template = service.template) {
+        template.apply(activity.from!.as[EmailContact]!, contacts, subject, activity.comment)
+      } else {
+	    activity.comment
+      }
+    }
+    let el = txt.parseHtml
+    el.select("a[data-href*=EmailContact]")*.delete
+    el.select("a[data-href]").foreach {a =>
+      if (let href = a.attr("data-href")) {
+        a.attr("href", "https://flow2b.com/s/$href")
+      }
+      a.attr("data-href", "")
+    }
+    el.select("body").first!.append(
+'<div style="color: #aaaaaa; font-size: 80%; margin: 10px 0 10px 0; padding-top: 10px; border-top: 1px solid #eeeeee;">
+Delivered by <a href="https://flow2b.com" style="color:black" target="_new">Flow2b</a>.
+ </div>')
+    let html = el.innerHtml
+    let attachments <- activity.files.map{file =>
+      let content <- file.content
+      MailSendAttachment(name = file.name, data = content.mimeBase64)
+    }.allCompleted
+    let request = MailSendRequest (
+	  to = [contacts.first.title],
+      cc = contacts.drop(1).map(title)
+      from = activity.from!.title,
+      subject = subject,
+      tag = e.id!.toString,
+      plainBody = html,
+      htmlBody = html,
+      headers = [
+        "References" -> e.activities*.messageId.map(mid => "<$mid>").join(" "),
+        "In-Reply-To" -> if (let mid = chain.last?.messageId) "<$mid>"
+      ],
+      attachments = attachments
+    )
+    let messageId <- service.send(request)
+    activity.messageId = messageId
+    activity.save
+  }
+}

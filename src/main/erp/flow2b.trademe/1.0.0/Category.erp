@@ -1,0 +1,40 @@
+entity TrademeCategory {
+  extFieldNaming = UpperCamelCase
+  
+  ref field name: String
+  field number: String?
+  ref field path: String?
+  field subcategories: [TrademeCategory]? by supercategory
+  field supercategory: TrademeCategory? by subcategories
+  field areaOfBusiness: AreaOfBusiness{
+    extMap[UInt?](apply = _.id, unapply = i => {AreaOfBusiness.all.find(id == i)!})
+  }
+  field hasClassifieds: Bool
+  field canHaveSecondCategory: Bool
+  field canBeSecondCategory: Bool
+  field count: Int?
+  impl func title = path.alt(name)
+  func all: [TrademeCategory]? = this + subcategories*.all
+  ref compute leaf = subcategories.isEmpty
+}
+
+enum AreaOfBusiness(id: UInt?) {
+  case All(id = 0)
+  case Marketplace(id = 1)
+  case Property(id = 2)
+  case Motors(id = 3)
+  case Jobs(id = 4)
+  case Services(id = 5)
+}
+
+class UpdateCategoriesJob extends SystemJob {
+  impl field service: ITrademeIntegration
+  impl func do = {
+    let response <- service.https("Categories.json").get
+    let numbers <- TrademeCategory.all*.number.result
+    let nums = numbers.toSet
+    response.body!.parseJson[TrademeCategory].all.filter(!nums.contains(number))*.save()
+  }
+}
+
+

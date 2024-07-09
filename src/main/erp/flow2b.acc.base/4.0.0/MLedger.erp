@@ -1,0 +1,78 @@
+trait MLedger extends InlineEntity {
+  field journal: MJournal by entries
+  func legalEntity: OurLegalEntity = journal.legalEntity
+  func currency: Currency
+  ref field account: LedgerAccount 
+  func needLedger: Bool = true
+  func calculatedAmount: Bool = false
+  field isDebit: Bool
+
+  func syncAnalit(fieldName: String, value: Any): Void = {
+    if (let contra = if (isDebit) journal.creditEntry else journal.debitEntry) {
+      if (!contra.needLedger || !(try? contra.get[Any](fieldName)) || fieldName == "qty") try? contra.update(fieldName, value)
+    }
+  }
+  compute contraAccount: LedgerAccount? = if (isDebit) journal.creditEntry?.account else journal.debitEntry?.account
+  compute debit: Money[currency]? {
+    value = if (isDebit) amount else 0
+    visible = needLedger
+    update = {
+      amount =? new
+      isDebit = new > 0
+      if (journal.creditEntry?.currency == currency) journal.creditEntry!.amount =? -new
+    }
+  }
+  compute credit: Money[currency]? {
+    value = if (isDebit) 0 else -amount
+    visible = needLedger
+    update = {
+      amount =? -new
+      isDebit = new < 0
+      if (journal.debitEntry?.currency == currency) journal.debitEntry!.amount =? new
+    }
+  }
+  compute accountEditor: LedgerAccount {
+    value = account
+    search = true
+    label = "Account"
+    from = legalEntity.ledgerAccounts
+    update = {
+      this.account = new
+      convertTo(Reflection.object[MLedger]("ML$(new.template)"))
+      journal.entries = journal.clear(entries)!       
+    }
+  }
+  ref field amount: Money[currency]?
+  compute cor = journal.cor
+    
+  func aview: Layout
+  func debitEditor: Layout
+  func creditEditor: Layout
+  view creditView = panel{grid(width = 0.5, labels = Top){
+    accountEditor >> field(placeholder = "Credit", label = "")
+    aview
+    creditEditor >> field(label = "Amount", visible = needLedger && !calculatedAmount)
+  }}
+  view debitView = panel{grid(width = 0.5, labels = Top) {
+    accountEditor >> field(placeholder = "Debit", label = "")
+    aview
+    debitEditor >> field(label = "Amount", visible = needLedger && !calculatedAmount)
+  }}
+}
+
+inline trait MLedgerCurrency extends MLedger {
+  field currency: Currency =? try? journal.legalEntity.getCurrency
+  view creditEditor = credit >> field(canEditUnit = true, unit = currency, placeholder = "", align = Left)  
+  view debitEditor = debit >> field(canEditUnit = true, unit = currency, placeholder = "", align = Left)  
+}
+
+inline trait MLedgerNoCurrency extends MLedger {
+  func currency: Currency = legalEntity.getCurrency
+  view creditEditor = credit >> field(placeholder = "", align = Left)  
+  view debitEditor = debit >> field(placeholder = "", align = Left)  
+}
+
+inline entity MEmptyLedger extends MLedgerNoCurrency {
+  func currency: Currency = journal.legalEntity.getCurrency
+  view aview = x{}
+}

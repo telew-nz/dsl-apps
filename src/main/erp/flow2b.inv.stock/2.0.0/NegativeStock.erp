@@ -1,0 +1,7 @@
+report NegativeStock {
+  view list = StockRegister.all.filter(fact < 0 && sort == 0).sortBy(date) >> nav{table(mode = Static){
+    document >> field (width = 0.8), date, good, legalEntity, store,
+    factualChange >> field(label = "Change")
+    fact
+  }}
+}

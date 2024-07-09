@@ -1,0 +1,10 @@
+trait Journal {
+  plural = "Journal"
+  func journalDate: Date
+  func legalEntity: LegalEntity
+  const system field ledgerEntries: [Ledger]? inline by journal
+  
+  compute balance: Money[legalEntity.getCurrency]? = {
+    ledgerEntries*.baseAmount.sum
+  } {isValid = balance == 0}
+}

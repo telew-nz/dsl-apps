@@ -1,0 +1,163 @@
+extend enum DashboardIssue {
+  case UnreconciledPayment(role = Accountant, priority = major)
+  case OverReconciledPayment(role = Accountant, priority = critical) 
+}
+
+trait Payment extends CashMovement with Debt with DebtOrigin {
+  background = "#d68400"
+  field status: PaymentStatus = Executed
+  func number: String
+  field refNum: String? {label = "Reference Number"} 
+  func entityNumbers = [number, refNum]
+  func cashFlows(date: Date, amount: Money): [CashFlowAmount]? = {
+    [CashFlowAmount(category = Errors, amount = amount)]
+  }
+  ref stored compute reconcileState: ReconcileState {
+    value = {
+      if (canceled) Canceled else if (counterparty) Reconciled else calcReconcileState
+    }
+    update = {
+      status = if (new == Canceled) PaymentStatus.Canceled else PaymentStatus.Executed
+    }
+    from = [calcReconcileState, Canceled]
+  }
+  
+  func canceled = status == Canceled
+  func issues = if (status != Canceled) {
+    let r = reconcileState
+    if (r == Unreconciled || r == PartiallyReconciled) [UnreconciledPayment] 
+    else if (r == OverReconciled) [OverReconciledPayment]
+  }
+  func fixes(issue: DashboardIssue) = {
+    if (issue == UnreconciledPayment) {
+      [Fix(text = "Add reason for the payment into the Origin field to match $amount")]
+    } else if (issue == OverReconciledPayment) {
+      [Fix(text = "Remove $(balance.abs) from the Origin field to match $amount")]
+    }
+  }
+  
+  func journalDate = date
+  func repaymentDate: Date = date
+  func debtDueDate: Date? = null
+  func journalPriority: Int? = 100
+  func definesDate: Bool = true
+  ref field amount: Money[currency] {
+    default =? try? origin?.balance!
+    label = "Paid Amount"
+    update = {
+      amountUpdated()
+    }
+  }
+  func amountUpdated(): Void
+  field bankData: BankData {
+    visible = hasBankAccount
+  }
+  func debtLedgers = ledgers*.as[LDebt]
+ 
+  func paidAmount = amount
+  
+  object field gen: Int?
+  const ref field n: Int? = increment(Payment.gen)
+  
+  ref field date: Date = now
+  func counterparty: LegalEntity?
+  ref field account: FinanceAccount {
+    default =? FinanceAccount.onlyOne
+    update = {
+      if (!try? this.currency) this.currency = new.currency
+    }
+  }
+  compute hasBankAccount: Bool = account.is[BankAccount]
+  ref field currency: Currency {
+    default =? try? (origin?.currency).alt(account.currency)
+    update = {
+      if (currency != account.currency && !accountAmount) {
+        if (let a = try? paidAmount) {
+          accountAmount = a.as[Money[account.currency]]
+        }
+      }
+    }
+  }
+  list compute recRefs: [RefEntity]? = additOrigins*.refs + credits*.credit + debits*.debit
+  field accountAmount: Money[account.currency]? {
+    visible = currency != account.currency
+  }   
+  compute accountAmountEditor: Money[account.currency] {
+    value = if (currency == account.currency) amount else accountAmount!
+    update = {
+      if (currency == account.currency) {
+        amount = new
+      } else {
+        accountAmount = new
+      }
+    }
+  }
+  func isIncoming: Bool
+   
+  func makeLedgers: Future[[Ledger]?] = {
+    let ms <- mainLedgers
+    let ls <- (
+      credits.filter(this.isJournal(credit)).map(credit.originLedgers(this, this.date, amount))
+      + debits.filter(this.isJournal(debit)).map(debit.originLedgers(this, this.date, -amount))
+    ).allCompleted
+    procLedgers(ms + ls.flatMap(_))
+  }
+  func cashLedgers(additionalFlows: [CashFlowAmount]?): [Ledger]? = {
+    let pb = startingBalance
+      + credits.filter(this.isJournal(credit)).map(try? amount).sum 
+      - debits.filter(this.isJournal(debit)).map(try? amount).sum 
+      
+    let unrec = if (let b = pb) {
+      if (let cp = counterparty) {
+        LDebt(account = if (cp.customer) AccountsReceivable else AccountsPayable, 
+              journal = this, date = date, isSetoff = false, origin = this, 
+              legalEntity = this.legalEntity, trAmount = -b, counterparty = cp, currency = currency)
+      } else {
+        let acc: LedgerAccount = 
+        LCurrency(account = if (b > 0) UnreconciledCredits else UnreconciledDebits, 
+                  contraAccount = account.ledgerAccount, currency = currency, journal = this, 
+                  trAmount = -b)
+      }
+    } else null
+    let ams =
+      credits.flatMap(i => i.credit.cashFlows(this.date, i.amount)) 
+      + debits.flatMap(i => i.debit.cashFlows(this.date, i.amount))
+      + (if (let b = pb) CashFlowAmount(category = if (let cp = counterparty) if (cp.customer) Sales else Purchases else Errors, amount = b.abs))
+      + additionalFlows
+    let am: Money = accountAmountEditor
+    let cashes = ams 
+      .groupBy(category).agg(amount.sum).toSeq
+      .distribute(am, by = amount)
+      .map{i =>
+         LCash(journal = this, account = account.ledgerAccount, legalEntity = account.legalEntity, cashFlowCategory = i.category, 
+               financeAccount = account, trAmount = if (isIncoming) i.value else -i.value)
+      }
+    cashes + unrec
+  }
+  func originLedgers(journal: Journal, date: Date, amount: Money): Future[[Ledger]?] = {
+    let acc: LedgerAccount = if (isIncoming) UnreconciledCredits else UnreconciledDebits
+    [LCurrency(account = acc, contraAccount = account.ledgerAccount, currency = currency, journal = journal, date = date, 
+               trAmount = amount)]
+  }
+  func additOrigins: [IAdditOrigin]?
+  
+  func mainLedgers: Future[[Ledger]?] = {
+    if (let exs = additOrigins) {
+	  let es <- exs*.ledgers.allCompleted
+      cashLedgers(
+        exs*.cashFlows
+        .groupBy(category).agg(amount.sum).toSeq
+        .map(CashFlowAmount(category = category, amount = amount!))
+      ) + es.flatMap(_) + exs*.gstLedger
+    } else cashLedgers([])
+  }
+}
+
+
+trait IAdditOrigin extends AnyEntity {
+  func cashFlows: [CashFlowAmount]?
+  func ledgers: Future[[Ledger]?]
+  func gstLedger: Ledger? = null
+  func refs: [RefEntity]? = []
+  func amount: Money?
+}

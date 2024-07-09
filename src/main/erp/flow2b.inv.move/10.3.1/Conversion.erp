@@ -1,0 +1,20 @@
+back object Conversion extends IConversion {
+  func convert(version: [Int?]): Future[Any] = {
+    if (version < [10,0,0]) {
+      renameField(Transfer, state, "status")
+      Transfer.all.foreach{t =>
+        let s = field[String?](t, "state")
+        if (s == "Delivered") {
+          t.state = Complete
+        } else if (s == "") {
+          t.state = Planned
+        }
+      }
+    }
+    if (version == [10,1,0] || version == [10,1,1]) {
+      IProdMoveOut.all*.updateDashboard
+    }
+  } 
+}      
+
+extend entity Ticket extends NewEngine

@@ -1,0 +1,51 @@
+account Cash(template = "Cash", debit = acc(Cash, 0), credit = acc(Payables, 0, "Overdrafts"))
+
+account PrepaidExpenses(template = "DeliveryDebt", debit = acc(PrepaidExpenses, 60))
+
+account RetainedEarnings(template = "Basic", credit = acc(Equity, 30), structureSpecific = true)
+account Dividends(template = "Counterparty", contra = true, debit = acc(DividendsPaid, 70), closeWithPeriod = true, structureSpecific = true) 
+account DividendsPayable(template = "Counterparty", credit = acc(Liability, 90), structureSpecific = true) 
+account UnearnedRevenues(template = "DeliveryDebt", credit = acc(UnearnedRevenues, 30))
+
+account MoneyDebt(
+  template = "MoneyDebt", money = true, 
+  debit = acc(Receivables, 10, "Receivables"), 
+  credit = acc(Payables, 10, "Payables") 
+)
+account InterDebts(
+  template = "InterDebts", money = true,
+  debit = acc(LoansProvided, 30, "IntercompanyDebtsReceivable"), 
+  credit = acc(LoansReceived, 30, "IntercompanyDebtsPayable")
+) 
+account CurrentAccounts(
+  template = "Cash", 
+  credit = acc(CurrentAccountsPayable, 20, "CurrentAccountsPayable"), 
+  debit = acc(CurrentAccountsReceivable, 21, "CurrentAccountsReceivable")
+) 
+account BadDebts(template = "Counterparty", debit = acc(BadDebts, 95))
+
+account OperatingExpenses(template = "Expenses", debit = acc(OperatingExpense, 10))
+account Overheads(template = "Expenses", debit = acc(Overhead, 20))
+account BankFees(template = "BankFees", debit = acc(Overhead, 25))
+
+
+account SalariesPayble(template = "Counterparty", credit = acc(Liability, 50))
+account SalaryExpenses(template = "SalaryExpenses", debit = acc(SalariesExpense, 30))
+account ExceptionalExpenses(template = "Expenses", debit = acc(ExceptionalExpense, 80))
+
+account Tax(template = "Tax", 
+   debit = acc(Receivables, 20, "TaxesRefundable"),
+   credit = acc(Payables, 20, "TaxesPayable")
+)
+account IncomeTaxExpense(template = "Basic", debit = acc(Expense, 85), taxable = 0)
+account Interest(template = "Counterparty", 
+   debit = acc(InterestExpense, 60, "InterestExpense"),
+   credit = acc(InterestRevenue, 60, "InterestRevenue")) 
+
+account Capital(template = "Counterparty", credit = acc(Equity, 0)) 
+account Withdrawals(template = "Counterparty", debit = acc(Withdrawals, 50), contra = true, closeWithPeriod = true) 
+account Sales(template = "Sales", credit = acc(Sales, 0)) 
+account OperatingRevenue(template = "Sales", credit = acc(OperatingRevenue, 10)) 
+account NonOperatingRevenue(template = "Sales", credit = acc(NonOperatingRevenue, 20)) 
+account ExceptionalRevenue(template = "Sales", credit = acc(ExceptionalRevenue, 30)) 
+

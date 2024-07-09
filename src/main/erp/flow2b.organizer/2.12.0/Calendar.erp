@@ -1,0 +1,9 @@
+report Calendar {
+  plural = "Calendar"
+  field of: Participant =? Person.current
+  field from: Date? = Date.now
+  field to: Date?  
+  view list = Event.all
+    .filter(contains(of) && period.end >=? from && period.start <=? to)
+    .sortBy(period.start)
+}

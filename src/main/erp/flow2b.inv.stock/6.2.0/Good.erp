@@ -1,0 +1,68 @@
+extend trait ISubProduct {
+  compute stocks: Future[[StockStore]?] = calcStocks
+  func calcStocks: Future[[StockStore]?] = {
+    let sts <- products.toSeq.map(#0.stocks).allCompleted
+    sts.flatMap(i => i).groupBy(store, legalEntity).toSeq.map{i =>
+      StockStore(
+        product = this, legalEntity = i.legalEntity, store = i.store,
+        stock = kitStock(i.#2)!
+      )
+    }
+  }
+  func kitStock(stockStores: [StockStore]?): Stock? = {
+    if (let ss = stockStores) {
+      Stock.min(
+        this.unit, 
+        products.leftJoin[Stock, Stock](
+          ss.map(product.as[IProduct]! -> stock).toMap, 
+          right.alt(Stock()).div(this.unit, left)
+        ).values
+      )
+    }
+  }
+  list compute stock: Future[Stock] = {
+    let sts <- stocks
+    Stock.sum(unit, sts*.stock)
+  }
+  func stock(legalEntity: LegalEntity, store: Store): Future[Stock?] = {
+    if (isTangible) {
+      let sts <- stocks
+      sts.find(i => i.legalEntity == legalEntity && i.store == store)?.stock
+    } else Future(null)
+  }
+  view stocksView = stocks >> list (mode = Static, visible = isTangible) {
+    grid(labels = None, width = 1) {
+      row{store >> field(width = 0.2) legalEntity  >> field(width = 0.2) 
+          stock.shortView  >> field(width = 0.6)}
+    }
+  }
+}
+extend trait IProduct {
+  func calcStocks: Future[[StockStore]?] = {
+    if (isTangible) StockRegister.current.filter(good == this)*.stockStore.result
+    else Future([])
+  }
+  func kitStock(stockStores: [StockStore]?): Stock? = stockStores.first?.stock
+  
+  view movementsButton = button("Movements" visible = isTangible) { GoodsMovement(good = this).list.open}
+  
+  func onStockUpdated(register: StockRegister): Void = {
+    touch
+    superProduct.touch
+  }
+  
+  func minStock: Qty? = 0
+  func minStock(store: Store): Qty? = 0
+}
+
+extend entity Good {
+  extend view form = stocksView >> field(label = "Stocks")
+  extend view form = extend("nav") {
+    movementsButton
+  }
+  extend view traitItem = stock.get.shortView
+}
+extend entity Kit {
+  extend view form = stocksView >> field(label = "Stocks")
+  extend view traitItem = stock.get.shortView
+}

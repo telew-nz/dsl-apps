@@ -1,0 +1,42 @@
+trait GoodMoveDoc {
+  func status: DeliveryStatus
+}
+
+inline trait GoodMove {
+  func movements: [Movement]?
+}
+
+interface Movement {
+  func document: GoodMoveDoc
+  func date: DateTime
+  func legalCompany: LegalCompany
+  func store: Store  
+  func good: IGood
+  func moveQty: Dec[2]?
+}
+
+class MovementData extends Movement {
+  system field document: GoodMoveDoc
+  field date: DateTime
+  field legalCompany: LegalCompany
+  field store: Store  
+  field good: IGood
+  field moveQty: Dec[2]?
+}
+
+report GoodsMovement {
+  object func movements(good: IGood?) = {
+    GoodMove.all*.movements
+      .filter(i => good.isEmpty || i.good == good)
+      .sortBy(date)
+      .groupBy(_.good, legalCompany, store).accum(stock = Stock.sum(_))
+      .map(key.document, key.document.status, key.date, key.good, key.legalCompany, key.store, 
+           quantity = if (key.document.status == Delivered || (key.document.status == InTransit && key.moveQty < 0)) key.moveQty else 0, 
+           reserve = if (key.document.status == Planned && key.moveQty < 0) -key.moveQty else 0,
+           expectation = if (key.document.status != Delivered && key.moveQty > 0) key.moveQty else 0,
+           stock
+          )
+  }
+  
+  object view list = movements(good = null)
+}

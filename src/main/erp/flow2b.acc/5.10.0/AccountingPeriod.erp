@@ -1,0 +1,66 @@
+entity AccountingPeriod extends Journal {
+  object field gen: Int?
+  system const ref field n: Int? = increment(gen)
+  compute number: String {
+    value = "PRD" + n
+    width = 0.15
+  }
+  impl compute journalDate: Date = end
+  impl func title = "$number $legalEntity $(start.as[Date[day]])"
+  impl ref field legalEntity: OurLegalEntity =? onlyOne
+  ref field start: Date = Date.now[Date[second]].start(year)
+  field end: Date = Date.now[Date[second]].end(year)
+  field status: PeriodStatus = Opened
+  
+  register register: PeriodClosingRegister? = {
+    if (status == Closed) PeriodClosingRegister(journal = this, date = end) 
+    else null
+  }
+  compute ledgerEntries: [Ledger]? = (register?.ledgers.filter(!_.is[LCurrencyTrading]) + register?.ledgers*.as[LCurrencyTrading]*.ledgers).sortBy(account.number)
+    
+  impl view form = nav{grid{
+    number
+    legalEntity
+    row{start, end}
+    status
+    generalLedgerButton
+  }}
+}
+
+register PeriodClosingRegister {
+  order field date: Date
+  field journal: AccountingPeriod
+  register ledgers: [Ledger]? = {
+    let trading: [Ledger]? = LCurrencyTrading.at(this.date, 0).filter(!isBase && legalEntity == this.journal.legalEntity).map{i =>
+       LCurrencyTrading(journal = this.journal, currency = i.currency, cor = 2).as[Ledger]!
+    }
+    let summary: Ledger = LIncomeSummary(journal = this.journal, cor = 2)
+    let others: [Ledger]? = LedgerAccount.all
+      .filter(closeWithPeriod && _ != CurrencyTrading)
+      .sortBy(number)
+      .flatMap(acc => 
+         if (!acc.template.analytic && !acc.template.hasCurrency) {
+           [Reflection.object[Ledger]("L$(acc.template.name)")
+             .new(journal = this.journal, account = acc, cor = 2, date = this.date, trAmount = 0)].query
+         } else {
+           Reflection.object[Ledger]("L$(acc.template.name)")
+             .at(this.date, 0)
+             .filter(account == acc && legalEntity == this.journal.legalEntity)
+             .sortBy(id)
+             .map{i =>
+                i.copy(journal = this.journal, cor = 2, date = this.date, trAmount = 0)
+             }
+         }
+      ) 
+      
+    others + trading + summary
+  }
+}
+
+enum PeriodStatus {
+  case Opened {background = "#ed9"} 
+  case Closed {
+    color = "white"
+    background = "#090"
+  }
+}

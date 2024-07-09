@@ -1,0 +1,53 @@
+entity ItemsImport extends Entity with SheetImportSchema {
+  impl func title = "MYOB: Items Import: $priceList"
+  ref field priceList: PriceList
+  impl back func process(file: File, data: [String?]?) = {
+    data.drop(2)
+      .map(split(rules = CSV))
+      .foreach{d =>
+        let p = ISuperProduct.all.find(refNum =%= d("A")).result.get.alt{
+          Good(refNum = d("A"), title = d("B")!).saveBy(refNum)
+        }
+        if (let sp = unum(d("X"))) { 
+          let price = priceList.newPrice(p).as[PriceListProduct]!
+          price.regular = sp
+          price.current = sp
+          var i = 34
+          /*PriceLevel.all.first(5).foreach{level =>
+            i += 1
+            if (let lp = unum(d(i)) where lp != sp) {
+              level.setPrice(price, lp)
+            }
+          }*/
+        }
+        p.as[Good]?.description = d("I")
+        let u = d("T").or(d("Y"))
+        p.as[ISuperProduct with IAltUnits]?.unit = ProductUnit.all.toSeq.find(name =%= u).alt(ProductUnit.Item)
+        if (let acc = d("F").toUNum) {
+          p.inventoryType = InventoryType(
+            myobNumber = acc
+            title = MyobAccount.all.find(number == acc).result.get.alt(throw "Account $acc not found").title
+          ).saveBy(myobNumber)
+        }
+        if (let acc = d("G").toUNum) {
+          p.revenueType = RevenueType(
+            myobNumber = acc
+            title = MyobAccount.all.find(number == acc).result.get.alt(throw "Account $acc not found").title
+          ).saveBy(myobNumber)
+        }
+      }
+  } 
+  
+  func unum(s: String?): UMoney? = {
+    s.dropSuffix(" ₽").replace(",", ".").replace(" ", "").toUNum
+  }
+  impl func header = 'Item Number,Item Name,Buy,Sell,Inventory,Asset Acct,Income Acct,Expense/COS Acct,Description,Use Desc. On Invoice,Custom List 1,Custom List 2,Custom List 3,Custom Field 1,Custom Field 2,Custom Field 3,Primary Supplier,Supplier Item Number,GST Code When Bought,Buy Unit Measure,No. Items/Buy Unit,Reorder Quantity,Minimum Level,Selling Price,Sell Unit Measure,GST Code When Sold,Sell Price Inclusive,No. Items/Sell Unit,Quantity Break 1,Quantity Break 2,Quantity Break 3,Quantity Break 4,Quantity Break 5,"Price Level A, Qty Break 1","Price Level B, Qty Break 1","Price Level C, Qty Break 1","Price Level D, Qty Break 1","Price Level E, Qty Break 1","Price Level F, Qty Break 1","Price Level A, Qty Break 2","Price Level B, Qty Break 2","Price Level C, Qty Break 2","Price Level D, Qty Break 2","Price Level E, Qty Break 2","Price Level F, Qty Break 2","Price Level A, Qty Break 3","Price Level B, Qty Break 3","Price Level C, Qty Break 3","Price Level D, Qty Break 3","Price Level E, Qty Break 3","Price Level F, Qty Break 3","Price Level A, Qty Break 4","Price Level B, Qty Break 4","Price Level C, Qty Break 4","Price Level D, Qty Break 4","Price Level E, Qty Break 4","Price Level F, Qty Break 4","Price Level A, Qty Break 5","Price Level B, Qty Break 5","Price Level C, Qty Break 5","Price Level D, Qty Break 5","Price Level E, Qty Break 5","Price Level F, Qty Break 5",Inactive Item,Standard Cost'
+  impl func headerRow = 2
+}
+
+extend trait IIncomeType {
+  field myobNumber: UInt?
+}
+extend trait InventoryType {
+  field myobNumber: UInt?
+}

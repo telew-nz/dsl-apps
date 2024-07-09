@@ -1,0 +1,11 @@
+extend access Accountant {
+  menu Accounting {
+    entity JournalEntry
+    entity GeneralLedger
+    entity AccountingPeriod
+    report TrialBalance
+    report IncomeStatement
+    report BalanceSheet
+  }
+}
+

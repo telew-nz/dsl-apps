@@ -1,0 +1,22 @@
+extend trait FinAccount {
+  func isPrecise: Bool = false
+  
+  /*back func isCounterparty(data: BankData, actor: LegalEntity): Bool = {
+    !actor.our && (
+         actor.isName(data.thierName) 
+      || actorContainsWords(data.fullMemo.flexWholeWords, actor)
+      || (
+           actorContainsForTrans(data.fullMemo.flexWholeWords, actor)
+        && DebtOrigin.all
+             .exists(debtCounterparty == actor && debtUnpaidAmount == data.amount)
+             .result.get
+      )
+    )
+  }*/
+ 
+}
+
+extend trait ICardAccount {
+  impl func isPrecise: Bool = true
+
+}

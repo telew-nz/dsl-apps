@@ -58,3 +58,4 @@ acctemplate Sales(defaultAccount = "revenueType?.account?.acc.alt(Sales)") {
     visible = product
   }  
 }
+

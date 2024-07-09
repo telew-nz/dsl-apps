@@ -1,0 +1,29 @@
+inline entity TaxPayment extends IPaymentExpense {
+  field tax: Tax
+  field amount: Money[payment.currency] =? payment.unreconciledAmount
+  func cashFlows = [CashFlowAmount(category = Taxes, amount = amount)] 
+  
+  func ledgers: Future[[Ledger]?] = {
+    let baseAmount <- amount.to[Money[payment.legalEntity.getCurrency]](payment.date)
+    [LTax(account = TaxesPayable, journal = payment, trAmount = baseAmount, isTaxPayment = true)]
+  }
+  
+  view form = grid {
+    row{tax >> field(compact) amount }
+  }
+} 
+
+inline entity TaxReturn extends IPaymentIncome {
+  field tax: Tax
+  field amount: Money[payment.currency] =? payment.unreconciledAmount
+  func cashFlows = [CashFlowAmount(category = Taxes, amount = amount)] 
+  
+  func ledgers: Future[[Ledger]?] = {
+    let baseAmount <- amount.to[Money[payment.legalEntity.getCurrency]](payment.date)
+    [LTax(account = TaxesPayable, journal = payment, trAmount = -baseAmount, isTaxPayment = true)]
+  }
+  
+  view form = grid {
+    row{tax >> field(compact) amount }
+  }
+} 

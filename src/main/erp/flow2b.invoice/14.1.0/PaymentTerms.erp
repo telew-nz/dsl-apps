@@ -1,0 +1,142 @@
+interface IIPaymentTerms {
+  func paymentDueDate(invoiceDate: Date, deliveryDate: Date?): Date?
+  func nextReminder(invoiceDate: Date, deliveryDate: Date?): Date? = {
+    paymentDueDate(invoiceDate, deliveryDate)
+  }
+  func deliveryPrepayment: Percent[2]?
+  func considerDebt = true
+  func canDispatch(order: IOrder): Future[Bool] = {
+    if (!order.total || order.paid) Future(true)
+    else {
+      Future((order.paidAmount.as[Percent[2]]/order.total!) >= deliveryPrepayment)
+    }
+  }
+}
+
+trait IPaymentTerms extends Entity with IIPaymentTerms {
+  background = "#d68400"
+}
+
+extend trait OurLegalEntity {
+  field customerCashPaymentTerms: IPaymentTerms? {label = "Default payment terms for cash customers"}
+  field customerAccountPaymentTerms: IPaymentTerms? {label = "Default payment terms for customers on trade account"}
+}
+extend entity OurCompany {
+  extend view form = customerCashPaymentTerms
+  extend view form = customerAccountPaymentTerms
+}
+extend entity OurPerson {
+  extend view form = customerCashPaymentTerms
+  extend view form = customerAccountPaymentTerms
+}
+extend entity Customer {
+  field paymentTerms: IPaymentTerms?
+}
+extend entity Vendor {
+  field paymentTerms: IPaymentTerms?
+}
+
+object DefaultPaymentTerms extends IIPaymentTerms {
+  func deliveryPrepayment: Percent[2]? = 1.0
+  func paymentDueDate(invoiceDate: Date, deliveryDate: Date?): Date? = null
+  func nextReminder(invoiceDate: Date, deliveryDate: Date?): Date? = null
+}
+
+entity PaymentTerms extends IPaymentTerms {
+  field title: String
+  ref field deliveryPrepayment: Percent[2]? {
+    label = "Prepayment required for delivery"
+  }
+  ref field paymentDueDate: PaymentDueDate = PaymentDueDateAfter()
+  field reminders: PaymentReminders {
+    label = "Remind to payer"
+  }
+  func paymentDueDate(invoiceDate: Date, deliveryDate: Date?): Date? = {
+    if (!deliveryPrepayment) {
+      if (let dd = deliveryDate) paymentDueDate.dueDate(dd)
+    } else paymentDueDate.dueDate(invoiceDate)
+  }
+  func nextReminder(invoiceDate: Date, deliveryDate: Date?): Date? = {
+    if (let dueDate = paymentDueDate(invoiceDate, deliveryDate)) {
+      reminders.nextReminder(dueDate)
+    }
+  }
+  event onSave = {
+    IOrder.all.filter(paymentTerms == this)*.touch
+  }
+  view form = nav{grid {
+    title >> field(fontStyle = H1, label = "")
+    deliveryPrepayment
+    paymentDueDate
+    reminders >> panel { 
+      form
+    }
+  }}
+}
+
+class PaymentReminders {
+  field before: [ReminderDuration]? {
+    label = "Before due date"
+    default = [ReminderDuration(unit = week, duration = 1.as[Duration[week]]!)]
+  }
+  field on: Bool {
+    default = true
+    label = "On a due date"
+  }
+  field afterEvery: ReminderDuration? {
+    label = "After due date every"
+    default = ReminderDuration(unit = week, duration = 1.as[Duration[week]]!)
+  }
+  view form = grid(labels = Top) {
+    before
+    on
+    afterEvery
+  }
+  func nextReminder(dueDate: Date): Date? = {
+    let now = Date.now
+    if (now < dueDate) {
+      if (let b = before.sortBy(duration.days.desc).map(dueDate - duration).find(i => i > now)) {
+        b
+      } else if (on) {
+        dueDate
+      }
+    } else if (let a = afterEvery) {
+      dueDate + a.duration*(((now - dueDate).days/a.duration).round(floor, 0) + 1)
+    }
+  }
+}
+
+class ReminderDuration {
+  field unit: DateUnit = day
+  field duration: Duration[unit] {canEditUnit}
+  view form = duration
+}
+
+interface PaymentDueDate {
+  func dueDate(invoiceDate: Date): Date
+}
+
+class PaymentDueDateAfter extends PaymentDueDate {
+  singular = "After Fixed Time"
+  field paymentDue: Duration[unit, 0] 
+  field unit: DateUnit = day
+  
+  func dueDate(invoiceDate: Date): Date = invoiceDate + paymentDue
+  view form = grid {
+    paymentDue >> field(canEditUnit = true)
+  }
+}
+class PaymentDueDateNextMonth extends PaymentDueDate {
+  singular = "Fixed Month Day"
+  field dayOfMonth: Int = 20
+  view form = grid {
+    dayOfMonth
+  }
+  
+  func dueDate(invoiceDate: Date): Date = {
+    let dof = dayOfMonth.as[Duration[day]]!
+    if (invoiceDate.day < dof) invoiceDate.start(of = month) + dof - 1_day
+    else invoiceDate.start(of = month) + 1_month + dof - 1_day
+  }
+}
+

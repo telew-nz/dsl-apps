@@ -1,0 +1,94 @@
+report IncomeStatement {
+  field legalEntity: OurLegalEntity? 
+  field from: Date = Date.now[Date[millisecond]].start(year)
+  field to: Date = Date.now[Date[millisecond]].end(year)
+  func baseCurrency = legalEntity?.getCurrency.alt(Currency.our)  
+  
+  func baseQuery = {
+    Ledger.between(from, to)*.items
+      .filter(
+            legalEntity ==? this.legalEntity
+        && (subAccount.type.isIncome && account != CurrencyTrading))
+      .groupBy(account = subAccount)
+      .aggFuture{(acc, iss) =>
+          let items <- iss.map{i =>
+            let amount <- i.amount.to[Money[baseCurrency]](i.date)
+            let taxableAmount <- i.taxableAmount.to[Money[baseCurrency]](i.date)
+            (amount, taxableAmount)
+          }.allCompleted
+          (-items*.amount.sum, -items*.taxableAmount.sum)
+       }
+      .sortBy(account.number) 
+      .unionFuture{
+        let start: Money[baseCurrency]? <- LCurrencyTrading.at(this.from)
+          .filter(legalEntity ==? this.legalEntity)
+          .map(balance.to[Money[baseCurrency]](this.from))
+          .agg{sum.as[Money[baseCurrency]]
+          }.result
+        let end : Money[baseCurrency]? <- (LCurrencyTrading.at(this.to)
+          .filter(legalEntity ==? this.legalEntity)
+          .map(balance.to[Money[baseCurrency]](this.to))
+          .agg{sum.as[Money[baseCurrency]]
+          }.result)
+        if (let a = start - end) {
+          [(account = 
+              if (a > 0) LedgerSubAccount.CurrencyExchangeGain 
+              else LedgerSubAccount.CurrencyExchangeLoss, amount = a, taxableAmount = a)]
+        }
+      }.query
+  }
+  back func netIncome: Future[Money[baseCurrency]?] = {
+    baseQuery.agg(amount.sum).result
+  }
+  back func taxIncome: Future[Money[baseCurrency]?] = {
+    baseQuery.agg(taxableAmount.sum).result
+  }
+  back func accountSubTypes: Future[[LedgerAccountSubType : Income]?] = {
+    let rs <- baseQuery.result
+    rs.groupBy(account.subType).agg(Income(amount = amount.sum, taxAmount = taxableAmount.sum))
+  }
+  
+  impl view list = 
+    baseQuery
+    .groupBy(profitType = account.subType.profit.alt(Net))
+    .subtotal(
+      revenue0 = _.filter(i => i.account.type != Expense || i.amount > 0)*.amount.sum,  
+      expense0 = _.filter(i => i.account.type != Revenue || i.amount < 0)*.amount.sum,
+      taxableAmount0 = taxableAmount.sum
+    )
+    .map(items, profitType, revenue0, expense0, taxableAmount0)
+    .sortBy(profitType)
+    .accum(revenue = revenue0.sum, expense = expense0.sum, taxableAmount = taxableAmount0.sum)
+    .map(profitType, profit = revenue + expense, taxableAmount, margin = if (let revenue) ((revenue + expense).as[Dec[8]]/revenue).as[Percent[2]], items)
+
+  >> nav{
+      subtotal {
+        group {
+          row(position = Tail) {
+            profitType.toString >> field(align = Right, background = ""), profit >> field(showPlus), taxableAmount >> field(showPlus)
+          }
+          row(position = Tail, visible = profitType.margin) {
+            profitType.margin >> field(align = Right), margin >> field(showPlus) space
+          }
+        }
+        table(action = {
+          if (account.template.analytic) {
+            Reflection.object[AnalitIncomeStatement]("IS$(account.template.name)")
+            .new(legalEntity = legalEntity, from = this.from, to = this.to, account = account)
+            .list.open
+          } else {
+            Ledger.Report(account = account, legalEntity = legalEntity, from = this.from, to = this.to)
+            .list.open
+          }
+        }) {
+          account >> field(width = 0.4, align = Right)
+          amount >> field(width = 0.3, showPlus, label = "Income")
+          taxableAmount >> field(width = 0.3, showPlus, label = "Taxable Income")
+        }
+  }}
+}
+
+class Income {
+  field amount: Money?
+  field taxAmount: Money?
+}

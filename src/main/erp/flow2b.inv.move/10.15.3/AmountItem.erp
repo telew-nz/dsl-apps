@@ -1,0 +1,216 @@
+trait IAmountItem extends InlineEntity {
+  func currency: Currency
+  func pricesIncludingGst: Bool
+  func considerGst: Bool
+  func defaultGstRate: UPercent[2]?? = null
+   
+  field sAmount: UMoney[currency]?
+  func gstRateK : UPercent[8] = 1.00000000 + gstRate.alt(0).noUnit
+  
+  compute amountNoGst: UMoney[currency]? {
+    value = if (storedWithGst) sAmount/gstRateK else sAmount
+    update = {
+      storedWithGst = false
+      sAmount = new
+    }
+  }
+  compute amountWithGst: UMoney[currency]? {
+    value = if (storedWithGst) sAmount else sAmount*gstRateK
+    update = {
+      storedWithGst = true
+      sAmount = new
+    }
+  }
+  compute amount = if (considerGst) amountNoGst else amountWithGst
+  
+  compute amountEditor: UMoney[currency]? {
+    label = "Amount"
+    value = if (pricesIncludingGst) amountWithGst else amountNoGst
+    update = {
+      if (pricesIncludingGst) this.amountWithGst = new 
+      else this.amountNoGst = new
+    }
+  }
+  compute gstAmount: Money[currency]? = {
+    amountWithGst - amountNoGst - discountWithGst + discountNoGst
+  }
+
+  func validateDiscount: String? = if (discountMoney > sAmount) "Discount cannot be more than amount"
+  
+  compute totalWithGst: Money[currency]? {
+    value = amountWithGst - discountWithGst
+  }
+  compute totalNoGst: Money[currency]? {
+    value = amountNoGst - discountNoGst
+  }
+  compute total: Money[currency]? {
+    value = if (pricesIncludingGst) totalWithGst else totalNoGst
+  }
+  func total(withGst: Bool): Money[currency]? = {
+    if (withGst) totalWithGst else totalNoGst
+  }
+  
+  field storedWithGst: Bool {
+    default = pricesIncludingGst
+    update = {
+      if (new) {
+        sAmount = sAmount*gstRateK
+        sDiscount = sDiscount*gstRateK
+      } else {
+        sAmount = sAmount/gstRateK
+        sDiscount = sDiscount/gstRateK
+      }
+    }
+  }
+  field _discountUnit: Unit? 
+  compute discountUnit: Unit {
+    value = _discountUnit.alt(currency)
+    from = [currency.as[Unit], PercentUnit].toSet
+    update = {
+      let du = _discountUnit
+      _discountUnit = new
+      if (_discountUnit == PercentUnit) {
+        sDiscount = sDiscount/100
+      } else if (du == PercentUnit) {
+        sDiscount = sDiscount*100
+      }
+    }
+  }
+  field sDiscount: Number[discountUnit]? {
+    label = "Discount"
+    validate = validateDiscount
+  }
+  
+  compute discountMoney: Money[currency]? {
+    value = calcDiscount
+    update = {
+      _discountUnit = null
+      storedWithGst = pricesIncludingGst
+      sDiscount = new
+    }
+  }
+  func calcDiscount: Money[currency]? = {
+    if (_discountUnit == PercentUnit) amountEditor*sDiscount
+    else if (pricesIncludingGst) {
+      if (storedWithGst) sDiscount/gstRateK else sDiscount 
+    } else {
+      if (storedWithGst) sDiscount else sDiscount*gstRateK
+    }
+  }
+  
+  compute discountNoGst: Money[currency]? {
+    value = calcDiscountNoGst
+    update = {
+      _discountUnit = null
+      storedWithGst = false
+      sDiscount = new
+    }
+  }
+  func calcDiscountNoGst: Money[currency]? = {
+    if (_discountUnit) {
+      if (pricesIncludingGst) discountMoney/gstRateK else discountMoney
+    } else {
+      if (storedWithGst) sDiscount/gstRateK else sDiscount
+    }
+  }
+  compute discountWithGst: Money[currency]? {
+    value = calcDiscountWithGst
+    update = {
+      _discountUnit = null
+      storedWithGst = true
+      sDiscount = new
+    }
+  }
+  func calcDiscountWithGst: Money[currency]? = {
+    if (_discountUnit) {
+      if (pricesIncludingGst) discountMoney else discountMoney*gstRateK
+    } else {
+      if (storedWithGst) sDiscount else sDiscount*gstRateK
+    }
+  }
+  compute discountEditor: Number[discountUnit]? {
+    canEditUnit
+    label = "Discount"
+    value = sDiscount
+  }
+  compute discount: Money[currency]? = if (considerGst) discountNoGst else discountWithGst
+  
+  field gstRate: UPercent[2]?? = try? defaultGstRate!
+  compute gstValue: UPercent[2]? {
+    label = "GST Rate"
+    value = gstRate.alt(0).as[UPercent[2]]
+    update = {
+      updateGst(new)
+    }
+    visible = hasGst
+  }
+  compute hasGst: Bool {
+    value = gstRate
+    update = {
+      updateGst(if (new) 0 else null)
+    }
+  }
+  func updateGst(new: UPercent[2]??): Void = {
+    if (storedWithGst || pricesIncludingGst) {
+      sAmount = amountWithGst
+      if (!_discountUnit) {
+        sDiscount = if (storedWithGst) sDiscount else sDiscount*gstRateK
+      }
+      storedWithGst = true
+    }
+    gstRate = new
+  }
+  
+  view gstEditor = x(label = if (pricesIncludingGst) "Including GST" else "Excluding GST", flow = false) {
+    hasGst >> field(label = "", stretch = 1) gstValue >> field(label = "Rate", align = Right)
+  }
+}
+
+trait IAmountQtyItem extends IAmountItem {
+  func qty: UQty
+  func priceQty: UQty = qty
+  compute priceNoGst: UMoney[currency]? {
+    value = amountNoGst/priceQty
+    update = {amountNoGst = new*priceQty}
+  }
+  compute priceWithGst: UMoney[currency]? {
+    value = amountWithGst/priceQty
+    update = {amountWithGst = new*priceQty}
+  }
+  compute priceEditor: UMoney[currency]? {
+    label = "Price"
+    value = if (pricesIncludingGst) priceWithGst else priceNoGst
+    update = {
+      if (pricesIncludingGst) this.priceWithGst = new 
+      else this.priceNoGst = new
+    }
+  }
+}
+
+trait IProdQtyItem extends InlineEntity {
+  func product: IBaseProduct
+  field unit: ProductUnit {
+    default =? (try? product)?.unit
+    from = product.units    
+  }
+  func pricesIncludingGst = true
+  func considerGst = true
+  func currency: Currency = default
+  field qty: UQty[unit] {
+    canEditUnit
+    default = 1
+    label = "Quantity"  
+  }
+  func productUpdated(): Void = {
+    this.silentUpdate(unit, product.unit)
+    this.qty = this.qty.as[UQty[this.unit]]
+  }
+}
+
+trait IProdAmountQtyItem extends IProdQtyItem with IAmountQtyItem {
+  override func productUpdated(): Void = {
+    super.productUpdated()
+    updateGstRate()
+  }
+  func updateGstRate(): Void 
+}

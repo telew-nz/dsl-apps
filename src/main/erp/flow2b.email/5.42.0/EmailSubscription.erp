@@ -1,0 +1,20 @@
+entity EmailSubscription {
+  impl field title: String
+  field emails: [String]?
+  system field listUnsubscribe: Url?
+  impl func canAttachReply: Bool = false
+  func containsAddress(address: Email?): Bool = {
+    if (let address) {
+      emails.exists(e => e =%= address || (e.startsWith("*") && address.endsWith(e( .. ])) )
+    }
+  }
+  impl view form = nav {
+    grid(labels = None){
+      title >> field(fontStyle = H1)
+      emails
+    }
+    button("Unsubscribe", visible = listUnsubscribe) {
+      UI.openUrl(listUnsubscribe!)
+    }
+  }
+}

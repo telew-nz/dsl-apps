@@ -1,0 +1,22 @@
+analytic Tax(dataType = "Tax")
+
+acctemplate Tax {
+  key field currency: Currency
+  key field tax: Tax
+  field rate: Percent[2]??
+  field taxedAmount: Money[currency]? 
+  field origin: Journal?
+}
+
+extend register LTax {
+  stored compute baseTaxedAmount: Money[legalEntity.getCurrency]? <- taxedAmount.to[Money[legalEntity.getCurrency]](date)
+}
+
+account TaxesPayable(template = "Tax", number = 220, type = Liability)
+account TaxesPaid(template = "Tax", number = 630, type = Expense)
+
+enum Tax {
+  case IncomeTax
+  case Gst = "GST"
+  case PayrollTax
+}

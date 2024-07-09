@@ -1,0 +1,1 @@
+account InterestRevenue(template = "Counterparty", credit = acc(Revenue, 10)) 

@@ -1,0 +1,5 @@
+report RecentItem {
+  field user: Person =? Person.current
+  view list = Person.load(user.id)*.subjects*.subject.sortBy(touchedOn.desc) 
+    >> nav(background = "#498898"){list(canAdd = false){traitItem}}
+}

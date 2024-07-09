@@ -1,0 +1,31 @@
+extend role Accountant {
+  entity Setoff = readWrite
+  entity IncomingPayment = readWrite
+  entity OutgoingPayment = readWrite
+  entity PaymentExpense = readWrite
+  entity CashTransfer = readWrite
+  entity Loan = readWrite
+  
+  extend view menu = menu("Finance") {
+    FinanceAccount >> item(label = "Accounts" fastSearch)
+    CashMovement >> item(fastAdd)
+    Loan >> item(fastAdd)
+    extension("Finance")
+  }
+}
+
+extend role BusAdmin {
+  entity Setoff = readWrite
+  entity IncomingPayment = readWrite
+  entity OutgoingPayment = readWrite
+  entity PaymentExpense = readWrite
+  entity CashTransfer = readWrite
+  entity Loan = readWrite
+  
+  extend view menu = menu("Finance") {
+    FinanceAccount >> item(label = "Accounts" fastSearch)
+    CashMovement >> item(fastAdd)
+    Loan >> item(fastAdd)
+    extension("Finance")
+  }
+}

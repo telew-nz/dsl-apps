@@ -1,0 +1,47 @@
+entity SaleCampaign extends IDynamicPriceModel with NewEngine {
+  impl func priority: Dec[8]? = -0.5
+  impl ref field start: Date = now
+  impl ref field end: Date?
+  ref field name: String
+  field rounding: Rounding? = Round()
+  field rules: [SaleCampaignRule] inline by campaign
+  ref field saleCategories: [IProductCategory]?
+  ref field saleTags: [IProductTag]?
+  impl func title = "$name $start" + (" — " +?  end)
+  
+  impl func price(level: IPriceLevel, type: PriceType, product: IBaseProduct): IPrice? = {
+    if (
+      let pp = rules.find(i => i.filterProd(product))
+      let prevModel = product.prevPriceModel(level, type, this)
+        .or(product.superProduct.prevPriceModel(level, type, this))
+      let prevPrice = prevModel.price(level type, product)
+    ) {
+      PriceModApplier(product = product, priceType = type, prevPrice = prevPrice, level = level, model = this, mod = pp, rounding = rounding)
+    }
+  }
+  
+  impl view form = nav{
+    tabs{
+      grid(label = "Rules") {
+        x{state name >> field(fontStyle = H3, stretch = 1)}
+        row {start end}
+        levels
+        rules >> list {grid{
+          filters >> list(frame = false)
+          mods >> list(frame = false)
+        }}
+      }
+      grid(label = "Settings") {
+        row {saleCategories saleTags}
+        rounding
+      }
+    }
+    pmNavButtons
+  }
+}
+
+entity SaleCampaignRule extends InlineEntity with IProdFilterOwner with IPriceModOwner  {
+  field campaign: SaleCampaign
+}
+
+

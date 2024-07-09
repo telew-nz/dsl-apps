@@ -1,0 +1,11 @@
+report SupplyRequirement {
+  view list = StockRegister.current.filter(reserve && outlook < good.minStock)
+    .map(good, good.minStock, legalEntity, store, stock) >> nav(background = "#2e8e67") {
+    table {
+      good, minStock >> field(label = "Minimum Stock"), legalEntity, store, stock >> group(label = "Stock") {
+        fact, reserve, available, expectation, outlook
+      }
+    }
+  }
+}
+

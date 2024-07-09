@@ -1,0 +1,27 @@
+extend entity SalesOrder {
+  func updateBond(): Future[Void] = {
+    guard (let rentItems = items*.orderDlvItem*.as[RentDeliveryItem].map(product, qty, rentPeriod)) else return {}
+    
+    let bond <- back {
+      let bonds <- rentItems.oneByOne{
+        if (let pp = vendor.priceRent(product)) {
+          pp.bond(currency, customer, qty, rentPeriod)
+        } else {
+          Future(0)
+        }
+      }
+      bonds.sum
+    }
+    
+    if (let bond) {
+      if (let bondItem = items*.as[SalesBondItem].first) {
+        bondItem.amountEditor = bond
+      } else {
+        SalesBondItem(order = this, amountEditor = bond)
+      }
+    } else {
+      items*.as[SalesBondItem]*.delete
+    }
+  }
+}
+ 

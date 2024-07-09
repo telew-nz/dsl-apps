@@ -1,0 +1,82 @@
+entity BankStatementUpload extends ImportTask with NewEngine {
+  background = "#d68400"
+  icon = "upload"
+  override compute number = "BSU$n"
+  impl func service = BSUService
+  
+  impl func itemRoles = [Accountant]
+  override func issueTypes = super.issueTypes + ITBankStatementUploadError + ITBSUSelectAccount
+    
+  field unknownAccount: Bool
+  field defineAccount: Bool
+  
+  field type: BankStatementType?
+  field account: FinAccount? {
+    label = "Account (please select carefully)"
+    visible = unknownAccount || defineAccount || account
+  }
+  field files: [File]
+  const field payments: [CashMovement]? by uploads {
+    cleanCascade = false
+  }
+  list compute paymentsCount { 
+    value = payments.count
+    label = "Payments Uploaded"
+  }
+  override func title = "$number $date"
+  impl view form = nav{grid{
+    issuesView
+    number
+    date
+    files >> field(editMode = AlwaysRead, visible = !created)
+    files >> field(visible = created)
+    
+    add("Set Account", visible = ui.edit && !unknownAccount && !defineAccount && !account) {
+      defineAccount = true
+    }
+    account
+    account >> field (editMode = AlwaysEdit, visible = !ui.edit && !account && (unknownAccount || defineAccount) )
+    
+    stateView
+    payments
+  }}
+  impl func createJob = StatementProcessJob(task = this)
+  impl view traitItem = x {
+    state number date account type paymentsCount
+  }
+  report Report {
+    field state: [ImportTaskState]? {auto}
+    impl view list = BankStatementUpload.all >> nav{table {
+      state number date account type paymentsCount
+    }}
+  }
+}
+
+object BSUService extends SystemService {
+  impl func title: String = "Bank Statement Service"
+  impl func roles: [Role]? = [Admin]
+  impl func defaultDebug = true
+  impl view form = nav{grid(labels = Top){
+    issuesView
+    serviceState
+    errorsCount >> field(editMode = AlwaysRead)
+  }}
+}
+
+
+object ITBankStatementUploadError extends IssueType[BankStatementUpload] {
+  impl func title = "Bank statement upload error"
+  impl func hasIssue(item: BankStatementUpload) = item.state == Error
+  impl func fixes(item: BankStatementUpload) = [
+    Fix(text = "Make sure that the file was downloaded from the bank and uploaded without modification"),
+    Fix(text = "If the file seems to be correct, please contact support"),
+    Fix(text = "If it was uploaded by mistake, delete the upload")
+  ]
+}
+object ITBSUSelectAccount extends IssueType[BankStatementUpload] {
+  impl func title = "Cannot recognize bank account"
+  impl func hasIssue(item: BankStatementUpload) = item.unknownAccount && !item.account
+  impl func fixes(item: BankStatementUpload) = [
+    Fix(text = "Select account in the account field")
+  ]
+}

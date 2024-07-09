@@ -1,0 +1,77 @@
+interface ISalesOrderImportProvider[ID] {
+  func service: ExtIdSource[ID]
+  func salesChannel: ISalesChannel
+  func legalEntity: OurLegalEntity
+  func stores: [IStore]?
+  func paymentMethodAccounts: [String -> FinanceAccount]?
+  func deliveryMethodProducts: [String -> IProduct]?
+  func deliveryPolicy: IDeliveryPolicy?
+  func paymentTerms: IPaymentTerms?
+  func defaultCurrency: Currency? = null
+}
+
+extend trait SalesOrder extends HasExtId
+extend trait ISalesItem extends HasExtId
+extend trait IncomingPayment extends HasExtId
+
+back interface ESalesOrder[ID] {
+  func extId: ID
+  func number: String?
+  func orderDate: UtcDate
+  
+  func currencyCode: String?
+  func billingAddress: EAddress?
+  func deliveryAddress: EAddress?
+  func customerExtId: ID?
+  func customer: ECustomer[ID] = EOrderCustomer[ID](order = this)
+  func payments: [EIncomingPayment[ID]]?
+  func items: [ESalesOrderItem[ID]]? 
+  func customerNote: String?
+  
+  func make(pr: ISalesOrderImportProvider[ID]): Future[SalesOrder] = {
+    let so: SalesOrder = pr.service.findExtId(extId, _.as[SalesOrder]).alt{
+      let customer = this.customer.make(pr.service)
+      let r = SalesOrder(
+        date = orderDate, referenceNumber = number, salesChannel = pr.salesChannel,
+        currency = Currency.all.find(code == currencyCode).or(pr.defaultCurrency).alt(throw "Cannot find currency for code $currencyCode")
+        vendor = pr.legalEntity,
+        customer = customer,
+        deliveries = []
+      )
+      Activity.setMainEntity(r)
+      if (let replyContact = this.customer.replyContact(customer)) {
+        if (replyContact.canSend) replyContact.join(r)
+      }
+      if (let fromContact = this.customer.fromContact(customer)) {
+        Activity.current!.from = fromContact
+      }
+      if (let cn = customerNote) Activity.current!.comment(cn)
+      r.invoices.first!.paymentTerms = pr.paymentTerms
+      r
+    }
+    
+    let sd: SalesDelivery = so.deliveries*.as[SalesDelivery].first.alt {
+      SalesDelivery(
+        salesOrders = [so],
+        primary = true, policy = pr.deliveryPolicy, 
+        source = pr.stores.first.alt(IStore.all.first.result.get!), 
+        shipTo = deliveryAddress?.make(so.customer!.legalEntity)
+      )
+    }
+    so.updateExtId(pr.service, extId)
+    items*.make(pr, so, sd)
+    payments*.make(pr, so)
+    so
+  }
+}
+
+back class EOrderCustomer[ID](order: ESalesOrder[ID]) extends ECustomer[ID] {
+  func extId = order.customerExtId
+  func personFullName = ""
+  func emails = []
+  func phones = []
+  func billingAddresses = order.billingAddress.toSeq
+  func deliveryAddresses = order.deliveryAddress.toSeq
+}
+
+

@@ -1,0 +1,21 @@
+back object Conversion extends IConversion {
+  func do(version: [Int?]?) = {
+    if (version < [11,0,0]) {
+      IncomingPayment.all.update(payee = conv(_).field[LegalEntity]("payee").our!)
+      OutgoingPayment.all.update(payer = conv(_).field[LegalEntity]("payer").our!)
+      Loan.all.update(legalEntity = conv(_).field[LegalEntity]("legalEntity").our!)
+      LegalEntity.all.foreach{le =>
+        if (let debtAllowance = conv(le).field[Money?]("debtAllowance")) {
+          if (!le.customer) le.customer = Customer()
+          le.customer!.debtAllowance = debtAllowance
+          le.save
+        }
+      }
+    }
+    if (version < [11,2,0]) {
+      PaymentExpense.all.filter(gstRate && payment.payee && !payment.payee!.vendor)*.payment.map(payee!)
+        .distinct.update(vendor = Vendor(gstStatus = Registered))
+      PaymentExpense.all.filter(gstRate && payment.payee).update(gstRate = null)
+    }
+  } 
+} 

@@ -1,0 +1,5 @@
+extend access Accountant {
+  menu Accounting {
+    report CashFlow
+  }
+}

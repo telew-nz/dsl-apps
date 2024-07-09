@@ -1,0 +1,38 @@
+trait ISalesInvoice extends IInvoice {
+  func isPurchase: Bool = false
+
+  compute vendor = legalEntity
+  func customer: Customer?
+  func payee = legalEntity
+  func debtAllowance: Money? = payer?.as[Customer]?.debtAllowance
+  
+  
+  back func isInstantPaid: Bool = {
+    if (let c = manLinks.onlyOne?.as[IncomingPayment]) c.amount == total && (c.date - this.date).abs <= 3600_second else false
+  }
+ 
+  
+  func cashFlow = Sales
+  
+  func getPaymentTerms = paymentTerms
+    .or(payer?.as[Customer]?.paymentTerms)
+    .or(if (debtAllowance) legalEntity.customerAccountPaymentTerms else legalEntity.customerCashPaymentTerms)?.as[IIPaymentTerms]
+    .alt(DefaultPaymentTerms)
+  //func debtLedger: LDebt = receivableLedger
+  //func isTheir = customer?.isTheir
+  
+  view statusesView = x {
+    issueState
+    paymentState
+    unpaidAmount 
+    overdueState
+  }  
+  
+  view paymentsView = y(label = "Payments", visible = ui.edit || debtOriginAmounts) {
+    manLinks >> list(visible = ui.edit, canAdd = false) {
+      posViewDebit
+    }
+    add("Payment", visible = ui.edit && fullReconState.isIssue) {addPayment()}
+    debtOriginsView >> field(visible = !ui.edit) 
+  }
+}

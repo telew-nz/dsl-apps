@@ -1,0 +1,123 @@
+trait StockCorrection extends Journal
+
+entity Stocktake extends StockCorrection {
+  background = "#2e8e67"
+  func journalDate = date
+  
+  //Fields
+  ref field date: Date = now
+  field type: StocktakeType = Partial
+  object field gen: Int?
+  const ref field n: Int? = increment(gen)
+  field legalEntity: LegalEntity {
+    default =? try? LegalEntity.ours.onlyOne!
+    from = LegalEntity.ours
+  }
+  ref field store: Store {
+    default =? Store.ours.onlyOne
+    from = Store.ours
+  }
+  field items: [StocktakeItem] inline by stocktake {
+    isValid = items.isUnique(product)
+  }
+  
+  //Compute
+  func number = "ST" + n
+  func title = number + " " + date.as[Date[day]]!
+  func fillWithCurrentStock: Void = {
+    let result <- StockRegister.at(0, date)
+      .filter(legalEntity == this.legalEntity && store == this.store && fact != 0)
+      .result
+    this.items =? result.map(StocktakeItem(product = good, unit = good.unit, qty = fact))
+  }
+  func addMissingItems: Void = {
+    let result <- StockRegister.at(0, date)
+      .filter(i => i.legalEntity == this.legalEntity &&  i.store == this.store &&  i.fact != 0 && !items.exists(product == i.good))
+      .result
+    result.foreach(StocktakeItem(stocktake = this, product = good, unit = good.unit, qty = 0))
+  }
+  //Views
+  object view list = Stocktake.all >> nav{list{grid(labels = None){
+    row{number date.as[Date[day]]! legalEntity store}
+  }}}
+   view form = nav{
+    grid {
+      row {number, date}
+      row {legalEntity, store}
+      type
+      edit {
+        actions
+      }
+      items
+    }
+    generalLedgerButton
+  }
+  
+  view actions = x{
+    add("Fill with Current Stock", visible = items.count == 1 && !(try? items.first.product)) {fillWithCurrentStock} 
+    add("Add Missing Items") {addMissingItems} 
+  }
+  
+  func onSave = {
+    store.touch
+  }
+}
+
+enum StocktakeType {
+  case Partial {background = "#ed9"}
+  case Initial {background = "#b6d7e2"}
+}
+
+extend entity Store {
+  func initialDate(legalEntity: LegalEntity): Date? = initialDates.apply(legalEntity)
+  system stored compute initialDates: [LegalEntity: Date]? <- {
+    let r <- Stocktake.all.filter(st => st.type == Initial && st.store == this).groupBy(legalEntity).agg(date.min).result
+    r.toMap
+  }
+}
+
+inline entity StocktakeItem {
+  field stocktake: Stocktake by items
+  field product: IProduct {
+    from = IProduct.all.filter(isTangible)
+    available(Ref).with(unit, altUnits)
+    update = {
+      this.unit = new.unit
+      this.qty = this.qty.as[Qty[this.unit]]
+    }
+  }
+  field unit: ProductUnit {from = product.units}
+  field qty: Qty[unit]? {
+    default = 1
+    label = "Quantity"
+  }
+  compute differenceCost: Money[currency]? {
+    value = differencePrice*difference
+    visible = difference
+  }
+  
+  field differencePrice: Money[currency]? {visible = difference}
+  
+  //Compute
+  func currency: Currency = stocktake.legalEntity.getCurrency
+  compute baseQty: Qty[product.unit]? = product.toBase(qty)
+  
+  compute difference: Qty[product.unit]? = stock.stocktakeDifference
+    
+  //Register
+  register stock {
+    value = StockRegister(
+      legalEntity = stocktake.legalEntity, store = stocktake.store, good = product,
+      sort = 0, isStocktake = true,
+      date = stocktake.date, document = stocktake,
+      factualQty = baseQty, differencePrice = differencePrice
+    )
+    autoRecalc = true
+  }
+  
+  //View
+  view form = grid  {
+    row{product >> field(width = 0.7) qty >> field(width = 0.3)}
+    row(visible = difference){difference >> field(width = 0.4), differencePrice >> field(width = 0.3), differenceCost >> field(width = 0.3) }
+  }
+}

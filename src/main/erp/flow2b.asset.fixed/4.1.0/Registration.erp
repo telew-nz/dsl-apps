@@ -1,0 +1,84 @@
+entity AssetRegistration extends IBaseOutgoingDelivery with AssetOperation {
+  background = "#649023"
+  ref field date: Date = now
+  func dispatchDate: Date = date
+  func deliveryDate: Date = date
+  func deliveryStatus: DeliveryStatus = Delivered
+  func journalDate = date
+  ref field asset: IFixedAsset inline by registration
+  func number = "FAC$(asset.n)"
+  system field adjustment: Bool
+  field cost: Money[legalEntity.getCurrency]?
+  field source: Store {
+    default =? {
+      if (let a = (try? asset)?.as[FixedAsset]) (a.startupProduct?.startup?.store).or(Store.ours.onlyOne)
+      else Store.ours.onlyOne
+    }
+    from = Store.ours
+  }
+  func legalEntity = asset.legalEntity
+  func hasInvIssues = !adjustment && availability.isIssue && !isBeforeInit
+  func active = true
+  
+  func title = "FAC$asset"
+  func itemDelivery: IDelivery? = this
+  func unit: ProductUnit = Item
+  func deliverySrc: Store? = source
+  func deliverySupplier: LegalEntity? = asset.legalEntity
+  func deliveryReceiver: LegalEntity? = asset.legalEntity
+  func qty: Qty[ProductUnit.Item] = 1
+  func items: [IRegistrationItem]? = asset.registrationItems
+  
+  register adjustmentProductLedgers = {
+    if (adjustment) LProduct(account = InventoryAdjustments, journal = this, contraAccount = FixedAssets, trAmount = -cost)
+  }
+  register adjustmentAssetLedgers = {
+    if (adjustment) LFixedAssets(journal = this, contraAccount = InventoryAdjustments, trAmount = cost, fixedAsset = asset)
+  }
+  compute unavailableItems: [IRegistrationItem]? = items.filter(isUnavailable)
+  compute assetRef {
+    label = "Asset"
+    value = asset
+  }
+  view form = nav{
+    grid{
+      row{number date}
+      row{source assetRef}
+      unavailableItems >> list{grid(labels = None) {
+        row {product qty}
+        stockDesc
+      }}
+    }
+    generalLedgerButton
+  }
+  object view list = AssetRegistration.all >> nav{list{grid(labels = None){
+    row{asset date source}
+    availability
+  }}}
+}
+
+inline trait IRegistrationItem extends IOutgoingDeliveryItem {
+  func registration: AssetRegistration
+  func product: IProduct
+  func asset: IFixedAsset
+  func active: Bool = true
+  func unit: ProductUnit = Item
+  func outStock(product: IProduct, baseQty: Qty): StockRegister? = {
+    if (!registration.adjustment) {
+      StockRegister(
+        legalEntity = registration.legalEntity, store = registration.source, good = product,
+        sort = 0, date = registration.date, document = registration, factualQty = -baseQty
+      )
+    }
+  } 
+  register inventoryLedger = {
+    LInventory(journal = registration, product = product, qty = qty, isDebit = false, 
+               contraAccount = FixedAssets, fixedAsset = asset)
+  }
+  register reg: FAReg? = {
+    FAReg(asset = asset, date = registration.date, autoProd = true, toAvailable = 1, toInUse = -1, 
+          toLegalEntity = asset.legalEntity, toStore = registration.source, document = registration)
+  }
+  
+}
+

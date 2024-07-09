@@ -1,0 +1,64 @@
+trait ECommerceIntegration[ID] extends SystemService with ExtIdSource[ID] {
+  ref field legalEntity: OurLegalEntity {
+    default =? onlyOne
+  }   
+  field currency: Currency = Currency.our
+      
+  field stores: [Store]?
+  field categories: [ProductCategory]?
+  field brands: [Brand]?
+  field productsWithPhotosOnly: Bool {label = "Syncronize Only Products with Photos"}  
+    
+  field updateProductsPricesEvery: Duration[hour, 0]?
+  //system field autoUpdateProductsPricesJob: AutoUpdateProductsPricesJob inline by service
+  //system field retrieveSoldItemsJob: RetrieveSoldItemsJob inline by service
+  field stockLevel: SyncStockLevel = Available
+     
+  func roles: [Role]? = [Admin]
+//  func apiBaseUrl: Url
+//  func apiUrl: Url = "$apiBaseUrl$ecwidStoreId/"
+//  func http(path: String): HttpRequest = HttpRequest(url = "$apiUrl$path")
+   
+//  func updatePhotoJobs(change: BatchChange[Image]): [SystemJob]? = [] 
+  back func updateProductJobs(change: BatchChange[ProductUpdate[ICustomerSuperProduct]]): [SystemJob]? = []
+  back func updateVariationJobs(change: BatchChange[ProductUpdate[ICustomerComplexProduct]]): [SystemJob]? = [] 
+  back func updateCategoryJobs(change: BatchChange[ProductCategory]): [SystemJob]? = [] 
+  back func updateBrandJobs(change: BatchChange[Brand]): [SystemJob]? = [] 
+  back func updateAttrJobs(change: BatchChange[ProductAttr]): [SystemJob]? = [] 
+  back func updateAttrTermJobs(change: BatchChange[ProductAttrTerm]): [SystemJob]? = [] 
+    
+  view settings = grid(labels = Top, label = "") {
+    serviceState
+    legalEntity 
+    currency
+    stockLevel >> field(compact = true)
+    productsWithPhotosOnly
+    updateProductsPricesEvery
+    stores
+    categories
+  } 
+    
+  event onSave = {
+    if (serviceState == Active && !deleted && (created || settingsUpdated)) {
+      updateAll()
+    }
+  }
+  back func settingsUpdated: Bool = {
+    updated(stockLevel) || updated(serviceState) || updated(productsWithPhotosOnly) || 
+      updated(stores) || updated(categories) || updated(legalEntity) || updated(currency)
+  }
+  
+  back func updateAll(): Future[Void] = {
+    updateAllAttrs()
+    updateAllAttrTerms()
+    updateAllCategories()
+    updateAllBrands()
+    let _ <- updateAllProducts()
+    updateAllVariations()
+  }
+}
+
+enum SyncStockLevel(get: Stock? => Qty?) {
+  case Available(get = (s: Stock?) => s?.available) = "Available = Fact - Reserve"
+  case Outlook(get = (s: Stock?) => s?.outlook) = "Outlook = Fact - Reserve + Expectation"
+}

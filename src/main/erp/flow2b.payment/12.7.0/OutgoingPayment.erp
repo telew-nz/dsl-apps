@@ -1,0 +1,138 @@
+entity OutgoingPayment extends Payment {
+  singularShort = "⬇︎ Out"
+  background = "#d68400"
+  func legalEntity = payer
+  func srcAccount: FinAccount? = account
+  func dstAccount: FinAccount? = null
+  func debtAmount = if (!isInstant) (amount - reasons*.amount.sum).max(0)
+  compute srcAmount: Number? {
+    value = -accountAmountEditor
+    update = {accountAmountEditor = -new!}
+  }
+  compute dstAmount: Number? {
+    value = 0
+    update = {}
+  }
+  compute dstBankData: BankData? {
+    value = null
+    update = {}
+  }
+  compute srcBankData: BankData?{
+    value = bankData
+    update = {bankData =? new}
+  }
+  func debtCashFlows = if (let debtAmount) [CashFlowAmount(cashFlow = SalesReturns, amount = debtAmount)]
+
+    
+  func title = "$number $payee"
+  view ref = x {title amount date}
+  func number: String = "OP" + n 
+  
+  compute debtCounterparty: LegalEntity? {
+    value = if (let source) source.debtCounterparty else payee
+    update = {
+      if (let n = new) this.payee = n
+    }
+  }
+  ref field payer: OurLegalEntity {
+    available(Ref).with(accounts)
+    default =? (try? origin!.legalEntity).or(OurLegalEntity.onlyOne)
+    update = {
+      this.account =? new.accounts.onlyOne
+    }
+  }
+  
+  func counterparty = debtCounterparty
+  ref field payee: LegalEntity? {
+    available(Ref).with(vendor, vendor.expense)
+    default = try? origin!.debtCounterparty!
+    update = {
+      if (let e = new?.vendor?.expense) {
+        if (!manLinks) {
+          PaymentExpense(payment = this, expense = e)
+        }
+      }
+    }
+  }
+  field paymentMethod: PaymentMethod? {
+    from = payee?.paymentMethods
+    visible = payee
+    init = {
+      new.legalEntity =? payee
+      if (let bm = new.as[PMBankAccount]) {
+        bankData.initMethod(bm)
+      }
+    }
+  }
+  list field reasons: [OPReason]? inline by payment {
+    visible = !source
+    default = {
+      if (let e = payee?.vendor?.expense) {
+        if (!manLinks) {
+          [PaymentExpense(payment = this, expense = e)]
+        }
+      }
+    }
+    singular = "Expense"
+  }
+  
+  func isTheir = payee?.isTheir
+  func isIncoming: Bool = false
+
+  event onSave = {
+    if (let p = payee) {
+      if (!paymentMethod && (created || !origin(payee))) {
+        paymentMethod = bankData.forcePaymentMethod(p)
+      }
+    }
+  }
+  object view list = OutgoingPayment.all >> nav{list{grid(labels = None){
+    row{number, date.as[Date[day]]!, payee, account, space }
+    row{stateView >> field(width = 0.6), -amount >> field(width = 0.2), space(width = 0.2)}
+    recRefs >> list(frame = false){_ >> field(title = title)}
+  }}}
+ 
+  func isPurchase = true
+
+  view form = nav{grid{
+      issuesView
+      number
+      refNum
+      date
+      stateView >> field(label = "State")
+      unreconAmount.abs >> field(label = "Unreconciled", visible = !source && unreconAmount)
+      payer
+      payee >> field(visible = !source)
+      debtCounterparty >> field(visible = source, label = "Payee")
+      paymentMethod >> field(visible = paymentMethod)
+      account
+      
+      amount >> field(canEditUnit = true)
+      accountAmount
+      source
+      reasons
+      manLinks >> field(visible = !source)
+      debtOriginsView >> field(label = "Origins")
+      bankData
+    }
+    button("Convert to Transfer", visible = !origin) {
+      let from = account
+      let outcome = amount
+      let d = bankData
+      let r = convertTo(CashTransfer)
+      r.srcBankData = d
+      r.from = from
+      r.outcome = outcome
+    }   
+    generalLedgerButton
+  }
+  view stateView = x{eReconState}
+  view posViewDebit = x{account mAmount}
+  view posViewCredit = x{account amount}  
+}
+
+trait OPReason extends InlineEntity with IReason {
+  field payment: OutgoingPayment
+  
+  func gstLedger: LTax? = null
+}

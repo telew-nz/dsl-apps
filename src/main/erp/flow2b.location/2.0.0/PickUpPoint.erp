@@ -1,0 +1,8 @@
+entity PickUpPoint extends IMutualLocation {
+  field title: String
+  view form = nav{grid(labels = Top){
+    title >> field(label = "", fontStyle = H1)
+    schedule
+    contacts
+  }}
+}

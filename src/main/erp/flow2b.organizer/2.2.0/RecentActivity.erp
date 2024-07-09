@@ -1,0 +1,11 @@
+report RecentActivity {
+  field user: Person? = Person.current
+  view list = Activity.all.filter(user ==? this.user || this.user.in(entities*.observers*.observer))
+    .sortBy(dateTime.desc)
+    .map(dateTime, entities, comment) >> 
+  nav{list(action = entities.first.form.open){grid(labels = None){
+    dateTime 
+    entities
+    comment
+  }}}
+}

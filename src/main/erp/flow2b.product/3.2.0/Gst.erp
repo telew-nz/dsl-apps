@@ -1,0 +1,10 @@
+enum GstRate(rate: Percent[2]??) {
+  case Exempt(rate = null) {background = "#999"}
+  case Special(rate = null)
+}
+
+extend trait Actor {
+  func hasGst: Bool = false
+  func pricesIncludingGst: Bool = true
+  func defaultGstRate: GstRate = Exempt
+}

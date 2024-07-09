@@ -1,0 +1,112 @@
+extend trait LegalEntity {
+  view debtStatement {
+    printable = true
+    label = "Debt Statement"
+    layout = nav{grid(labels = None){
+      h1("Debt Statement")
+      title
+      debtReport(money = true)
+    }}
+  }
+  back func unpaidAmount(origin: DebtOrigin): Money? = {
+     LMoneyDebt.current
+      .filter(balance && counterparty == this)
+      .flatMap(debtItems)
+      .filter(o => o.origin == origin)
+     *.amount.agg(sum)
+      .result.get
+  }
+  view debtReport(money: Bool) = LDebt.current
+    .filter(balance  
+       && money == account.money
+       && counterparty == this)
+    .flatMap(debtItems)
+    .map{
+      let baseAmount <- amount.to[Money[this.getCurrency]](Date.now)
+      (origin, dueDate = dueDate, debtOverdue, amount, baseAmount)
+    }
+    .total(amount = baseAmount.sum)
+  
+    >> total {
+      row(fontSize = 1) {label("Total"), space, amount}
+      table (action = origin?.form?.open) {
+        origin?.title >> field(width = 0.35, label = "") 
+        x(width = 0.4, label = "Due Date") {
+          dueDate?.date 
+          debtOverdue >> field(label = "Overdue", visible = debtOverdue > 0)
+          label ("overdue", fontStyle = Label, visible = debtOverdue > 0)
+        }
+        amount >> field(width = 0.25)
+      }
+    }
+  
+  field cptAccs: [CptAcc]? read by cpt {
+    label = "Customer Accounts"
+  }
+  
+  func cptAccs(le: OurLegalEntity, currency: Currency): [CptAcc]? = {
+    cptAccs.filter(a => a.legalEntity == le && a.currency == currency)
+  }
+  func debtBalance(le: OurLegalEntity, currency: Currency): DebtBalance = {
+    LMoneyDebt.current
+      .filter(l => l.counterparty == this && l.legalEntity == le && l.currency == currency)
+      .agg(balance.sum, balanceDue.sum)
+      .map{l =>
+        let accs = cptAccs(le, currency)
+        DebtBalance(currency = getCurrency, balance = l.balance, balanceDue = l.balanceDue, 
+                debitAllowance = accs*.debitAllowance.sum, 
+                creditAllowance = -accs*.creditAllowance.sum)
+      }
+  }
+  /*compute debtBalance {
+    value <- calcDebtBalance
+    views = []
+  }*/
+}
+
+
+
+
+extend entity Customer {
+  /*compute debtBalance {
+    value <- legalEntity.calcDebtBalance
+    views = []
+  }*/
+  extend view form = extend {
+    chargeType >> field(label = "")
+    legalEntity.cptAccs
+    
+    legalEntity.debtReport(money = true) >> field(label = "Money Debt")
+//    legalEntity.debtReport(money = false) >> field(label = "delivered")
+    extension("debt")
+  }
+  func calcChargeType: ChargeType = if (legalEntity.cptAccs.exists(debitAllowance)) Account else Cash
+  ref compute chargeType: ChargeType {
+    value = calcChargeType
+    views = [] 
+  }
+}
+
+
+extend entity Vendor {
+  /*compute debtBalance {
+    value <- legalEntity.calcDebtBalance
+    views = []
+  }*/
+  
+  extend view form = extend {
+    chargeType >> field(label = "")
+    legalEntity.cptAccs
+    legalEntity.debtReport(money = true) >> field(label = "Money Debt")
+    //legalEntity.debtReport(money = false) >> field(label = "Delivery Debt")
+    extension("debt")
+  }
+  func calcChargeType: ChargeType = if (legalEntity.cptAccs.exists(creditAllowance)) Account else Cash
+  ref compute chargeType: ChargeType {
+    value = calcChargeType
+    views = [] 
+  }
+  impl event onSave = {
+  }
+}
+ 

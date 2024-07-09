@@ -1,0 +1,72 @@
+entity KitPriceModel extends IDynamicPriceModel with NewEngine {
+  impl func title = "Kit Price Model"
+  impl func priority: Dec[8]? = 0.5
+  impl ref field start: Date = now
+  impl ref field end: Date?
+  
+  field rounding: Rounding? = Floor()
+  field discount: Percent[2]? {
+    validate = if (discount > 1.0000) "Discount cannot be more than 100%"
+  }
+  impl func price(level: IPriceLevel, type: PriceType, product: IBaseProduct): IPrice? = {
+    if (let kit = product.as[Kit]){
+      let prices = kit.products.toSeq.map {i =>
+        if (let p = vendor.price(level, type, i.#0)) {
+          KitItemPrice(prod = product, price = p, qty = i.#1)
+        }
+      }
+      if (prices.all(_)) {
+        KitPrice(model = this, level = level, type = type, kit = kit, prices = prices.map(_!), discount = discount.noUnit)
+      }
+    }
+  }
+  impl view form = nav {grid{
+    row {start end}
+    discount
+    rounding    
+  }}
+}
+  
+class KitPrice extends IPriceSalesRent {
+  impl field model: KitPriceModel
+  field kit: Kit
+  field prices: [KitItemPrice]
+  field discount: Dec[4]?
+  field type: PriceType
+  field level: IPriceLevel
+  impl func levels = [level]
+  impl func priceRent = prices*.price*.as[IPriceRent].first!
+  
+  impl func priceType: PriceType = if (prices*.price*.as[IPriceRent]) Rent else Sales
+  impl func product = kit
+  impl func salesPrice(request: PriceRequest): Future[SalesPrice] = {
+    amount(request, PriceOrderItem(prod = kit, qty = 1))
+  } 
+  impl func amount(request: PriceRequest, item: PriceOrderItem): Future[SalesPrice] = {
+    let ps <- prices.oneByOne{p => p.price.amount(request, PriceOrderItem(prod = p.prod, qty = p.qty*item.qty))}
+    SalesPrice.sum(ps).mul((1.0000 - discount).positive).round(model.rounding)
+  }
+  impl func rentPrices(request: PriceRequest): Future[[DurPrice]?] = {
+    let pss <- prices.filter(price.is[IPriceRent])!.oneByOne{p => 
+      let rentPrices <- p.price.as[IPriceRent]!.rentPrices(request)
+      (price = p, rentPrices)
+    }
+    pss.first.rentPrices.flatMap {ps =>
+      if (pss.all(_.rentPrices.exists(_.dur == ps.dur))) {
+        let sps: [SalesPrice] = pss.map(_.rentPrices.find(_.dur == ps.dur)!.price * _.price.qty)
+        let p: SalesPrice = SalesPrice.sum(sps) * (1.0000 - discount).positive
+        [DurPrice(
+          unit = ps.unit, dur = ps.dur
+          price = p.round(model.rounding)
+        )]
+      }
+    }
+  }
+  override func has(type: PriceType): Bool = type == this.type
+} 
+
+class KitItemPrice {
+  field prod: IBaseProduct
+  field price: IPrice
+  field qty: UQty
+}

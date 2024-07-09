@@ -1,0 +1,61 @@
+entity InventoryWriteDown extends Entity with IProdQtyItem with StockCorrection with IProdMoveOut with IProdMoveItemOut with FProductItems {
+  singular = "Write Down"
+  
+  impl func prodMoveOut = this
+  impl func moveOutItems = [this]
+  impl compute moveOutDate {
+    value = date
+    update = {this.date = new}
+  }
+  impl func moveOutState = Complete
+  impl func moveOutLE = legalEntity
+  impl func moveOutStore = store
+  impl func moveOutStockType = stockType
+  impl func moveItemActive = true
+  
+  impl ref field product: IProduct {
+    from = IProduct.all.filter(_.isTangible)
+    available(Ref).with(unit, altUnits)
+    update = {
+      productUpdated()
+    }
+  }
+  field stockType: StockType = Inventory
+  
+  impl compute number = "WD$n"
+  impl func title: String = "$number $product"
+  override func journalDate: Date = date
+  
+  compute baseQty: UQty[product.unit] = product.toBase(qty)
+  
+  register invLedgers = {
+    ProductItem.map(product, baseQty, productItems) {
+      stockType.obj.new(
+         journal = this, product = product, productItem = item, qty = -trQty,
+         contraAccount = InventoryAdjustments
+      )
+    }
+  }
+  
+  impl view form = nav{grid {
+      issuesView
+      date
+      number
+      refNum
+      availability
+      legalEntity
+      store
+      product
+      stockType
+      qty >> field(canEditUnit = true)
+      stockDesc
+      snView
+    }
+    generalLedgerButton
+  }
+  impl object view list = InventoryWriteDown.all >> nav{list{grid(labels = None){
+    row{fullNum date legalEntity store}
+    row{product qty space space}
+  }}}
+}
+  

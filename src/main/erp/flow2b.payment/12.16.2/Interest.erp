@@ -1,0 +1,35 @@
+inline entity IncomingInterest extends IPReason {
+  icon = "percent"
+  singular = "Interest"
+  field withholdingTax: UMoney[payment.currency]? 
+  impl field amount: UMoney[payment.currency] {
+    label = "Amount excl Tax"
+    default =? payment.unreconAmount.abs.positive
+  }
+  compute amountInclTax: UMoney[payment.currency] {
+    label = "Amount incl Tax"
+    value = amount + withholdingTax
+    update = {
+      withholdingTax = (new - amount).positive
+    }
+  }
+  impl func cashFlows = {
+    [CashFlowAmount(cashFlow = InterestRevenue, amount = amountInclTax)] 
+    + if (let w = withholdingTax) [CashFlowAmount(cashFlow = Taxes, amount = -w)]
+  }
+  impl func ledgers: Future[[Ledger]?] = {
+    let baseAmount <- amountInclTax.to[Money[payment.legalEntity.getCurrency]](payment.date)
+    let cp: Ledger = LCounterparty(account = Interest, journal = payment, counterparty = payment.payer, trAmount = -baseAmount)
+    if (let wt = withholdingTax) {
+      let bwt <- wt.to[Money[payment.legalEntity.getCurrency]](payment.date)
+      let tax: Ledger = LTax(tax = WithholdingTax, currency = payment.legalEntity.getCurrency, 
+         journal = payment, trAmount = bwt, taxedAmount = baseAmount)
+      [cp, tax]
+    } else Future([cp])
+  }
+  
+  impl view form = grid {
+    h3("Interest")
+    row{amountInclTax withholdingTax amount}
+  }
+}

@@ -1,0 +1,121 @@
+trait IBaseProduct extends HasNumber {
+  const system field skuGen: Int?
+   
+  func subTitle(superTitle: String): String //For Google merchant, seo titles and similar
+  
+  impl func canRead = forSale || rentStatus.forRent
+  
+  func isTangible: Bool
+  func sku: String
+  impl func number = sku
+  
+  impl func unit: ProductUnit = Item
+  func altUnits: [ProductAltUnit]? = []
+  func units: [ProductUnit] {
+    default value = (unit + altUnits*.unit).toSet
+  }
+  
+  func kits: [IKit]?
+  func photos: [Image]? = []
+  
+  func collectPhotos: [Image]?
+  
+  ref compute photo: Image? = collectPhotos.first
+  impl final func itemImage = photo
+  func expenseType: ExpenseType?
+  func revenueType: RevenueType?
+  func gstRate(vendor: IVendor?): UPercent[2]?? = if (vendor?.hasGst) {
+    if (let it = if (vendor?.as[OurLegalEntity]) revenueType?.as[IIncomeType] else expenseType) it.gstRate(vendor) 
+    else vendor!.defaultGstRate.rate
+  } 
+  func hasGst(vendor: IVendor?): Bool = gstRate(vendor)
+  
+  func weightSize: IWeightSize?
+  
+  func description: Text?
+  
+  func isValid: Bool
+  
+  var status: ProductStatus
+  var rentStatus: ProdRentStatus
+  func rentStockType: StockType = Asset
+  
+  func forSale = status.forSale
+  func forPurchase = status.forPurchase
+  func alwaysAvailable {
+    default value = status == AlwaysAvailableForSale || (!isTangible && status.forSale)
+  }
+  
+  func superProduct: ISuperProduct
+  func subProducts: [ISubProduct]?
+  
+  func productCost: ProductCost?
+  func productItems: [IProductItem]?
+  func trackItems: TrackItems?
+  view statusView = x{status rentStatus >> field(visible = canRent) }
+  func canRent = false
+ 
+  impl view traitItem = grid(labels = None){
+    row{
+      photo >> field(miniature = List, align = Center, width = 0.2)
+      y(width = 0.8) {
+        statusView
+        x{
+          title >> field(stretch = 1)
+          y(margin = None) {
+            salesPrice >> field(frame = false)
+            rentPrices >> field(frame = false)
+          }
+        }
+        extension
+      }
+    }
+  }
+  
+  view baseMainView = grid(labels = Top) {
+    productCost >> field(frame = false)
+    salesPrice >> field(frame = false, visible = !ui.edit || dynamicPrices)
+    edit{row{regularPrice currentPrice space}}
+    rentPrices >> field(frame = false)
+    ourPrices >> list(label = "Prices", visible = !OurLegalEntity.ours.onlyOne){ grid(labels = None) {
+      row {vendor model}
+      form >> field(frame = false)
+	}}
+  }
+  view customView {
+    default layout = group{}
+  }
+  view supplyView = grid(labels = Top, label = "Supply", visible = purchasePrices) {
+    purchasePrices >> list(label = "Purchase Prices"){ grid(labels = None) {
+      row {vendor model}
+      form >> field(frame = false)
+	}}
+  }
+}
+
+enum StockType {
+  case Inventory
+  case Asset{background = "#c4daa3"}
+}
+enum TrackItems {
+  case Sometimes {background = "#ed9"}
+  case Always {background = "#efd"}
+}
+
+enum ProductStatus(forSale: Bool, forPurchase: Bool, subs: [ProductStatus]) {
+  case Entered(forSale = false, forPurchase = false, subs = [Entered]) {background = "#ed9"}
+  case ForSale(forSale = true, forPurchase = true, subs = [Entered, ForSale, NotForSale, ForClearance, Obsolete]) {background = "#efd"}
+  case AlwaysAvailableForSale(forSale = true, forPurchase = true, subs = [Entered, ForSale, NotForSale, AlwaysAvailableForSale, ForClearance, Obsolete]) {background = "#dea"}
+  case NotForSale(forSale = false, forPurchase = true, subs = [Entered, NotForSale, Obsolete]) {background = "#ecd"}
+  case ForClearance(forSale = true, forPurchase = false, subs = [Entered, ForClearance, Obsolete]) {background = "#f99"}
+  case Obsolete(forSale = false, forPurchase = false, subs = [Obsolete]) {background = "#999"}
+  
+  object func default: ProductStatus = ForSale
+}
+
+
+enum ProdRentStatus(forRent: Bool) {
+  case ForRent(forRent = true) {background = "#efd"}
+  case NotForRent(forRent = false) {background = "#ecd"}
+  case AlwaysForRent(forRent = true) {background = "#dea" label = "Always Awailable For Rent"}
+}

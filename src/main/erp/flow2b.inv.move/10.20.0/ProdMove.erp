@@ -1,0 +1,78 @@
+trait IProdMove extends Entity {
+  plural = "Deliveries"
+  background = "#2e8e67"
+  func moveItems: [IProdMoveItem]?
+  func isProdMoveIn: Bool = false
+  func isProdMoveOut: Bool = false
+  
+  compute refItems {
+    availableFor = List
+    value = calcRefItems
+  }
+  func calcRefItems = RefProductItems.create(moveItems.map(RefProductQty(product = product, qty = qty)))
+  impl ref compute itemImage = refItems.photo
+
+  report Report {
+    field activeOnly = true
+    field store: Store? 
+    impl view list = 
+        IProdMoveIn.all.filter(
+            (!activeOnly || moveInState.active)
+          && store ?== moveInStore
+        ).map{
+          let in: IProdMoveIn? = _
+          (item = AvailableList[IProdMove](v = _), date = moveInDate, in, out = null[IProdMoveOut])
+        }
+      .union(
+        IProdMoveOut.all.filter(
+            (!activeOnly || moveOutState.active)
+          && store ?== moveOutStore
+        ).map{
+          let out: IProdMoveOut? = _
+          (item = AvailableList(v = _), date = moveOutDate, in = null[IProdMoveIn], out)
+        }
+      ).sortBy(date)
+      >> nav{
+        list(action = item.v.form.open) {
+          grid(labels = None, width = 1.3) {
+            row{
+              y(width = 0.3, align = Right) {
+                x { 
+                  label(icon = "arrow-right" color = "#090" visible = in, stretch = 1)
+                  label(icon = "arrow-left" color = "#c00" visible = out, stretch = 1)
+                  item.v.dslType.singular >> field(fontStyle = Label)
+                }
+                item.v.itemImage >> field(miniature = List)
+              }
+              y (spacing = false) {
+                in!.dashIn >> field(width = 1.0, margin = NoneInner)
+                out!.dashOut >> field(width = 1.0, margin = NoneInner)
+              }
+            }
+          }
+        }
+      }
+    }
+
+}
+
+interface IProdMoveItem {
+  func isRent = false
+  func isProdMove: Bool = true
+  func isMoveItemIn: Bool = isProdMove && prodMove.isProdMoveIn
+  func isMoveItemOut: Bool = isProdMove && prodMove.isProdMoveOut
+  
+  func prodMove: IProdMove
+  func product: ISubProduct
+  func unit: ProductUnit
+  func qty: UQty[unit]
+  func moveItemActive: Bool
+  func needProductItems: Bool
+  func productItems: [IProductItem]? 
+  
+  func moveDocItem: AnyEntity? = this.as[IProdMoveItem with AnyEntity]
+  compute baseQty: UQty[product.unit] = product.toBase(qty) 
+  func isTangible = product.isTangible
+  func itemsQty: UQty[unit]? = qty
+}
+

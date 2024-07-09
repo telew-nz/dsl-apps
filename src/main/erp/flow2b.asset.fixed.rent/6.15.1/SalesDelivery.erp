@@ -1,0 +1,16 @@
+extend entity SalesDelivery {
+  impl func updatedDispatchDate(): Future[Void] = {
+    salesOrders*.assetReturns*.updateDeliveryDate().allCompleted
+  }
+  extend field source: IStore? {
+    update = {
+      salesOrders*.assetReturns.foreach{ar =>
+        if (!(try? ar.destination) || (old && ar.destination == old!)) {
+          ar.destination =? new
+        }
+      }
+    }
+  }
+ 
+  impl func multiupdate = salesOrders + salesOrders*.assetReturns
+} 

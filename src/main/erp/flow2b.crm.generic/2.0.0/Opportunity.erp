@@ -1,0 +1,79 @@
+enum OpportunityStatus {
+  case Open {background = "#ed9"}
+  case Dormant {background = "#ccc"}
+  case Lost {background = "#fcc"}
+  case Won {color = "white" background = "#090"}
+}
+trait IOpportunity[Stage extends Enum] extends Todo {
+  singular = "Opportunity"
+  plural = "Opportunities"
+
+  object field generator: Int?
+  const system ref field n: Int =? increment(IOpportunity.generator)
+  compute number: String = prefix + n
+  func prefix: String
+  ref field status: OpportunityStatus = Open
+  field contacts: Contacts {
+    visible = actor.isEmpty
+  }
+  
+  ref field actor: Actor? inline by opportunities {
+    init = {
+      new.contacts.add(contacts)
+    }
+    update = {
+      roles = []
+      onLoad
+    }
+  }
+  
+  func onLoad: Void = {
+    peopleGroup?.people.filter(!_.id.isEmpty)
+      .filter(r => !roles.exists(_.companyPerson.person == r.person))
+      .foreach(r => OpportunityPersonRole(companyPerson = r, opportunity = this))
+  }
+
+  func estimatedAmount: Dec[2]?
+  func probability: Dec[2]?
+  list compute orderedAmount: Dec[2]? = salesOrders*.orderTotal.sum
+  list compute paidAmount: Dec[2]? = salesOrders*.orderPaidAmount.sum
+  field roles: [OpportunityPersonRole]? inline by opportunity {
+    visible = peopleGroup
+    singular = "Role"
+  }
+  func peopleGroup: WithPeople? = actor?.as[WithPeople]
+
+  field salesOrders: [ISalesOrder]? read by opportunity {
+    visible = actor.nonEmpty
+    init = {new.customer =? actor}
+  }
+
+  field source: OpportunitySource? 
+  func stage: Stage
+  func lost: Bool = status == Lost
+  func won: Bool = status == Won
+  func active: Bool = status == Open
+
+  func title: String = number + " " + actor
+
+  func rowStyle = if (lost) lostStyle else normalStyle
+  style lostStyle {
+    css = "opacity: 0.8; text-decoration: line-through"
+  }
+  style normalStyle
+
+  view actorView = grid(labels = Top) {
+    actor >> inline(frame = false){nav{shortForm}} //nav{inline(frame = false){shortForm}}
+    contacts
+  }
+}
+extend trait ISalesOrder {
+  field opportunity: IOpportunity? {
+    from = customer.opportunities
+    views = []
+  }
+  extend func customerSelected(): Void = {
+    opportunity = customer.opportunities.onlyOne
+  }
+  extend view formExt = row{opportunity space}
+}

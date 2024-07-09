@@ -1,0 +1,50 @@
+back class UploadOrdersStateJob extends SystemJob {
+  impl field service: WooCommerceIntegration
+  field orders: [SalesOrder]
+  impl func do: Future[Any] = {
+    let u = BatchOrderUpdate(
+      create = [],
+      update = orders.map(so => OrderUpdate.create(service, so)),
+      delete = []
+    )
+    let change: BatchChange[SalesOrder] = BatchChange[SalesOrder](updated = orders)
+    let response <- service.https("/orders/batch").post(u.json)
+    let r = response.body!.parseJson[BatchOrderUpdateResponse]
+    r.check(this, u, change, process = false)
+  }
+
+}
+
+back class BatchOrderUpdate {
+  field create: [OrderUpdate]?
+  field update: [OrderUpdate]?
+  field delete: [Int]?
+}
+
+back class BatchOrderUpdateResponse extends WooResponse[OrderData] {
+  impl field create: [OrderData]?
+  impl field update: [OrderData]?
+  impl field delete: [OrderData]?
+}
+
+back class OrderUpdate {
+  extFieldNaming = Underscore
+  field id: Int
+  field status: WooOrderStatus {
+    jsonMap(_.extName, n => WooOrderStatus.all.find(_.extName == n)!)
+  }
+   
+  object func create(service: WooCommerceIntegration, u: SalesOrder): OrderUpdate = {
+    OrderUpdate(id = service.extId(u)!, 
+      status = {
+        let ds = u.deliveryState
+        let ps = u.paymentState
+        if (u.canceled) cancelled
+        else if (ds == InTransit) processing
+        else if (ds == Delivered) completed
+        else if (ps == Paid) processing
+        else onHold
+      }
+    )
+  }
+}

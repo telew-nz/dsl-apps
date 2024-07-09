@@ -1,0 +1,64 @@
+class AsbCsvData extends BankStatementItem {
+  impl field date: Date {format = "yyyy/MM/dd"}
+  field transId: Int
+  field type: String
+  field chequeNumber: String?
+  field payee: String?
+  field memo: String?
+  impl field stmAmount: Dec[2]?
+  
+  impl func itemType = {
+    if (type == "BANK FEE") BankFee 
+    else if (type == "INT") Interest
+    else if (type == "DEBIT" && payee == "IRD:TAX ON INTEREST") Tax
+    else if (type == "D/C" && memo.endsWith("ASB ACCEPT")) CardTransfer
+    else if (type == "D/C" && payee == "D/C FROM Payment" && memo.startsWith("Payment Disbursement ")) CardTransfer
+    else Payment
+  }
+  impl func tax: Tax? = {
+    if (payee == "IRD:TAX ON INTEREST") WithholdingTax
+    
+  }
+  impl func data(account: FinAccount): BankData = {
+    BankData(
+      bankId = transId
+      type = type
+      memo = memo
+      thierAccount = {
+        if (type == "TFR OUT") memo.all(Regex("TO ([\d-]+\s[\d-]*)")).first?.group(1).trim.replace(" ", "")
+        else if (type == "TFR IN") memo.all(Regex("EX ([\d-]+\s[\d-]*)")).first?.group(1).trim.replace(" ", "")
+        else if (type == "DEBIT") memo.all(Regex("FC([\d-]+)")).first?.group(1).trim.replace(" ", "")
+      }
+      thierName = {
+        if (payee == "D/C FROM CO-OPERATIVE BANK") memo
+        else if (payee !in ["DEBIT","CREDIT", "MB TRANSFER"] && type !in ["BANK FEE", "TFR OUT", "TFR IN"]) {
+          (payee(" FROM ".last? .. ])(" TO ".last? .. ] 
+        }
+      }
+    )
+  }
+  
+  func curRegEx = memo.all(Regex("IMT (\S+) (\d+[.]\d+)")).onlyOne
+  impl func stmCurrency: Currency? = if (let curRegEx) Currency.all.find(name == curRegEx.group(1)!)
+  impl func amountInCurrency: Number? = if (let stmCurrency, let curRegEx) {
+    let a = curRegEx.group(2)!.toNum!.as[Money[stmCurrency]]
+    if (stmAmount < 0) -a else a
+  }
+}
+
+extend enum BankStatementType {
+  case AsbCsv(
+    canProcess = file.is("csv") && data.toString.lines(CSV).first(10).contains("Date,Unique Id,Tran Type,Cheque Number,Payee,Memo,Amount"), 
+    process = {
+      let lines = data.toString.lines(CSV)                                                                                                             
+      let a = lines.drop(1).first
+      ProcessResult(
+        accountNumber = "$(a[6 .. 7])-$(a[17 .. 20])-$(a[31 .. ' '))",
+        items = lines.dropWhile(_).drop(1).mapOpt(splitTo[AsbCsvData](CSV)),
+        start = Date(lines(3)("From date " .. ]!, "yyyyMMdd").start(day)
+        end = Date(lines(4)("To date " .. ]!, "yyyyMMdd").start(day)
+      )
+    }, 
+    knowOurAccount = true
+  )
+}

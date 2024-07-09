@@ -1,0 +1,126 @@
+trait FinAccount extends Entity {
+  singular = "Finance Account"
+  plural = "Finance Accounts"
+  background = "#d68400" 
+  func ledgerAccount: LedgerAccount
+    
+  ref field legalEntity: OurLegalEntity by accounts 
+  ref field currency: Currency
+  func cashFlow: CashFlow = Exchange
+     
+  ref compute balance: Money[currency]? = cashLedger?.balance
+  system compute lastTransactionDate = cashLedger?.date
+  system compute cashLedger: LCash? = LCash.current.find(finAccount == this)
+    
+  object view refList = FinAccount.all.sortBy(lastTransactionDate.alt(Date.min).desc) >> list{grid(labels = None, width = 0.4){
+    row{title >> field(width = 0.25) balance >> field(width = 0.15, align = Right)}
+  }}
+  object view list = FinAccount.all.sortBy(title) >> nav{list{grid(labels = None){
+    row{title >> field(width = 0.7) balance >> field(width = 0.3, align = Right)}
+  }}} 
+   
+  object view widget = FinAccount.all
+    .filter(balance)
+    .map{
+      let baseBalance <- balance.to[Money[legalEntity.getCurrency]](now)
+      (account = _, balance, baseBalance)
+     }
+     .sortBy(account.title)
+     .total(baseBalance.sum) 
+  >> nav(background = "#d68400", more = FinAccount.list.open){
+    total {
+      baseBalance >> field(align = Right)
+      list(action = account.form.open){grid(labels = None){
+         row{account.title >> field(width = 0.7) balance >> field(width = 0.3, align = Right)}
+      }}}}
+}
+
+extend entity OurLegalEntity {
+  field accounts: [FinAccount]? {label = "Finance Accounts"}
+}
+extend entity OurCompany {
+  extend view form = accounts
+}
+extend entity OurPerson {
+  extend view form = accounts
+}
+ 
+entity CashAccount extends FinAccount {
+  background = "#d68400"
+  func title = "$legalEntity: $name"
+  object func default: CashAccount? = onlyOne
+  object func onlyOne: CashAccount? = OurLegalEntity.ours*.accounts*.as[CashAccount].onlyOne
+  ref field name: String
+  func ledgerAccount: LedgerAccount = Cash
+  field location: IStore? by cashAccounts
+  view form = nav{grid{
+    legalEntity
+    name
+    currency
+    location
+    balance
+  }}
+}
+
+extend trait IStore {
+  field cashAccounts: [CashAccount]? read by location
+}
+extend entity Store {
+  extend view form = cashAccounts
+}
+  
+entity BankAccount extends FinAccount {
+  background = "#d68400"
+  func title = "$legalEntity: $name"
+  object func default: BankAccount? = onlyOne
+  object func onlyOne: BankAccount? = OurLegalEntity.ours*.accounts*.as[BankAccount].onlyOne
+  ref field name: String
+  func ledgerAccount: LedgerAccount = Bank
+  field number: String?
+  view form = nav{grid{
+    legalEntity
+    name
+    number
+    currency
+    balance
+  }}
+}
+
+entity CardAccount extends FinAccount {
+  singular = "Bank Card Account"
+  plural = "Bank Card Accounts"
+  background = "#d68400"
+  func title = "$legalEntity: $name"
+  object func default: CardAccount? = onlyOne
+  object func onlyOne: CardAccount? = OurLegalEntity.ours*.accounts*.as[CardAccount].onlyOne
+  ref field name: String
+  func ledgerAccount: LedgerAccount = Bank
+  field number: String?
+  view form = nav{grid{
+    legalEntity
+    name
+    number
+    currency
+    balance
+  }}
+}
+
+entity CurrentAccount extends FinAccount {
+  background = "#d68400"
+  object func default: CurrentAccount? = onlyOne
+  object func onlyOne: CurrentAccount? = OurLegalEntity.ours*.accounts*.as[CurrentAccount].onlyOne
+  func ledgerAccount: LedgerAccount = CurrentAccounts
+  func cashFlow = CurrentAccounts
+  func title = "$legalEntity: $(name.alt(counterparty))"
+  ref field counterparty: Actor
+  ref field name: String?
+  view form = nav{grid{
+    legalEntity
+    counterparty
+    name
+    currency
+    balance
+  }}
+}
+
+ 

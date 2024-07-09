@@ -1,0 +1,58 @@
+trait IInvoiceItem extends InlineEntity {
+  func invoice: IInvoice?
+  func currency: Currency
+  func gstAmount: Money[currency]?
+  func invoiceQty: Qty? = 0
+  func invoiceAmount: Money[currency]?
+  func ledgerAccount: LedgerAccount
+  func gstRate: Percent[2]?? 
+  func delivery: IDelivery?
+  func canceled: Bool
+  func delivered: Bool = !delivery || delivery?.deliveryStatus == Delivered
+  func rowView: Layout[IInvoiceItem]
+  func cashFlow: CashFlowCategory 
+  /*view revisionsView = revisions >> table{
+    header{label("Product", width = 0.55) 
+           label("Quantity", align = Right, width = 0.2) 
+           label("Price", align = Right, width = 0.2) 
+           label("Amount", align = Right, width = 0.25)}
+    body{row{rowView}}
+  }*/
+  func canBeDeleted = true
+  system field rollbacked: Bool
+  event onSave = {
+    if (deleted && !rollbacked && origin(revisions).filter(!deleted)) {
+      rollback
+      setActive(false)
+    } else if (active && canceled) {
+      setActive(false)
+      wasCanceled = true
+    } else if (wasCanceled && !active && !canceled) {
+      setActive(true)
+      wasCanceled = false
+    }
+  }
+  func revisionNotIssued = !revisions || (!active && revisions.last == invoice?.revisions.last)
+  func rowView(revision: InvoiceRevision): Layout[IInvoiceItem] = {
+    if (!revision.isNote) rowView
+    else if (!active && !revisions.contains(revision)) rowView.deletedLayout
+    else if (revisions.first == revision) {
+      if (let p = this.prev) rowView.modifiedLayout(p)
+      else rowView.createdLayout
+    } else rowView
+  }
+  func setActive(v: Bool): Void = {
+    active = v
+  }
+
+  func deliveryGroup: OrderDeliveryGroup = if (let d = delivery) ODGDelivery(delivery = d) else ODGEmpty
+  system field prev: IInvoiceItem? by next {deleteCascade = false}
+  system field next: IInvoiceItem? by prev {deleteCascade = false}
+  system field revisions: [InvoiceRevision]? by items
+  field active: Bool = true
+  field wasCanceled: Bool = false
+  func prev(revision: InvoiceRevision): this? = if (revision == revisions.first) prev else null
+  
+  func needsRevision: Bool
+  compute itemRevisions: [this]? = (prev?.itemRevisions + prev)*.as[this]
+}

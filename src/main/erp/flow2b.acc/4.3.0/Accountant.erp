@@ -1,0 +1,26 @@
+extend access Accountant {
+  extend view menu = menu("Financial Statements") {
+    BalanceSheet
+    IncomeStatement
+    CashFlow
+    TrialBalance
+    DebtReport
+    extension("Statements")
+  }
+  extend view menu = menu("Tax Returns") {
+    GstReturn
+    extension("Returns")
+  }
+  
+  extend view menu = menu("Journals") {
+    JournalEntry >> item(fastAdd)
+    BalanceCorrection
+    GeneralLedger
+    extension("Journals")
+  }
+  
+  extend view menu = menu("Settings") {
+    AccountingPeriod
+    extension("Settings")
+  }
+}

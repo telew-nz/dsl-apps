@@ -1,0 +1,92 @@
+entity PurchaseInvoice extends Invoice with IPurchaseInvoice {
+  background = "#d68400"
+    
+  field primary: Bool
+  const ref field n: Int? = if (primary) order.n else increment(Order.gen)
+  func orderVendor = orders.first.vendor
+  field orders: [PurchaseOrder] by invoices {
+    available(Inline)
+    from = PurchaseOrder.all.filter(i => i.vendor == orderVendor && i.customer == customer)
+  }
+  field allItems: [IPurchaseItem]? inline by invoice {deleteCascade = false}
+  compute items: [IPurchaseItem]? {
+    value = allItems.filter(active)
+    update = {
+      allItems = new + allItems.filter(!active)
+    }
+  }
+  ref compute number: String {
+    value = manualNumber.alt(if (primary) "PI" + orders.first.nakedN else "PI" + n.format(3, 0))
+    update = {manualNumber = new}
+  }
+  func entityNumbers = [number]
+  field sPayee: Vendor?
+  func orderCounterparty: LegalEntity? = vendor?.legalEntity
+  func debtCounterparty: LegalEntity? = payee?.legalEntity
+  func vendor = orders.first.vendor
+  
+  ref compute payee: Vendor? {
+    value = sPayee.or(orders.first.vendor)
+    update = {
+      sPayee = if (orders.first.vendor != new) new
+    }
+  }
+  view ref = y {
+    x{title total date }
+    statusesView
+  }
+  view dash = y {
+    x{title total date }
+    statusesView
+    refItems
+  }
+  
+  ref compute legalEntity = order.legalEntity
+  func title = "$number $(date.date) $(try? debtCounterparty?.title)"
+    
+  event onSave = {
+    if (primary) n = order.n 
+    else if (!n) n = increment(Order.gen)
+    orders*.forceTouch
+    debits*.debit*.touch
+  }
+  
+  view invoiceHeader = grid(width = 1.2){
+    statusesView
+    row {total  date payee}
+    row {gstAmount dueDate  paymentTerms}
+    row {totalWithoutGst  space space}
+    debits >> field(label = "Payments", singular = "Payment")
+    debtLinksView >> field(label = "Auto Payments")
+    revisionsView
+    items >> list(mode = Select, editMode = AlwaysRead){form}
+  }
+  view form = nav{grid(width = 1.2, labels = Top) {
+      issuesView
+      orders
+      row{number space customer}    
+      invoiceHeader    
+    }
+    invoiceButtons
+  } 
+  view posView = grid (labels = Top, width = 1.2) {
+    unpaidAmount >> field(fontStyle = H2, label = "Amount to Pay")  
+
+    debits >> list(label = "Payments", singular = "Payment", 
+                   canAdd = unpaidAmount
+                   add = Setoff(credit = this, debit = {
+                     if (unpaidAmount > 0) OutgoingPayment(payer = orders.first.customer, payee = payee?.legalEntity, amount = unpaidAmount!)
+                     else IncomingPayment(payer = payee?.legalEntity, payee = orders.first.customer, amount = -unpaidAmount!)
+                   })) {
+      posViewOp
+    }
+    revisionsView
+  }
+  
+  object view list = PurchaseInvoice.all >> nav{list(canAdd = false){grid(labels = None) {
+    row{number, date.as[Date[day]]!, vendor, total}
+    statusesView
+    refItems
+  }}}
+  
+}

@@ -1,0 +1,7 @@
+trait IPayment {
+  func currency: Currency
+  func paidAmount: Money[currency]
+}
+  
+trait IIncomingPayment extends IPayment
+trait IOutgoingPayment extends IPayment 

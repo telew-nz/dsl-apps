@@ -1,0 +1,16 @@
+extend role Accountant {
+  menu Finance {
+    trait IInvoice
+  }
+  
+  extend view dashboard =
+    IInvoice.all
+      .filter(reconcileState == OverReconciled).sortBy(journalDate) 
+    >> nav(limit = 5, label = "Overpaid Invoices", 
+           more = IInvoice.Report(accountant = User.current, state = [PaymentState.Overpaid]).list.open
+       ) { 
+         list(canAdd = false){}
+         button("Loans") {Loan.list.open}
+       }
+
+}

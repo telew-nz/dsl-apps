@@ -1,0 +1,76 @@
+entity InventoryWriteUp extends StockCorrection with IDelivery with IDeliveryItem {
+  field date: Date = now
+  const ref field n: Int? = increment(Stocktake.gen)
+  field legalEntity: LegalEntity {
+    default =? try? LegalEntity.ours.onlyOne!
+    from = LegalEntity.ours
+  }
+  ref field store: Store {
+    default =? Store.ours.onlyOne
+    from = Store.ours
+  }
+  ref field product: IProduct {
+    from = IProduct.all.filter(isTangible)
+    available(Ref).with(unit, altUnits)
+    update = {
+      this.unit = new.unit
+      this.qty = this.qty.as[Qty[this.unit]]
+    }
+  }
+  field unit: ProductUnit {
+    from = product.units
+  }
+  field qty: Qty[unit] {
+    default = 1
+    label = "Quantity"
+  }
+  compute price: Money[currency]? {
+    value = amount/qty
+    update = {
+      amount = qty*new
+    }
+  }
+  field amount: Money[currency]?
+  func currency = legalEntity.getCurrency
+  func deliverySupplier: LegalEntity = legalEntity
+  func deliveryReceiver: LegalEntity? = legalEntity
+  
+  compute number = "WU$n"
+  func title: String = "$number $product"
+  func journalDate: Date = date
+  func deliveryStore = store
+  func deliverySource = store
+  func items: [IDeliveryItem]? = [this]
+  func itemDelivery: IDelivery? = this
+  func outcomeStockReg: StockRegister? = stock
+  
+  compute baseQty: Qty[product.unit]? = product.toBase(qty)
+  register stock: StockRegister = StockRegister(
+    legalEntity = legalEntity, store = store, good = product,
+    date = date, document = this,
+    factualQty = baseQty
+  )
+  register inventoryLedger = {
+    LInventory(journal = this, product = product, qty = baseQty, isDebit = true, trAmount = amount,
+               contraAccount = InventoryAdjustments)
+    //LProduct(account = InventoryAdjustments, journal = this, product = product, qty = baseQty, trAmount = -amount)
+  }
+  
+  view form = nav{
+    grid {
+      date
+      legalEntity
+      store
+      product
+      qty >> field(canEditUnit = true)
+      price
+      amount
+    }
+    generalLedgerButton
+  }
+  object view list = InventoryWriteUp.all >> nav{list{grid(labels = None){
+    row{number date legalEntity store}
+    row{product qty price amount}
+  }}}
+}
+  

@@ -1,0 +1,75 @@
+trait IBaseProduct {
+  func isValid: Bool = true
+  func obsolete: Bool = false
+  func isTangible: Bool
+    
+  func subProducts: [IProduct]?
+  func superProduct: ISuperProduct
+  
+  func description: Text?
+  func unit: ProductUnit = Item
+  func altUnits: [ProductAltUnit]? = []
+  func units: [ProductUnit] = (unit + altUnits*.unit).toSet
+  func items: [IProductItem]?
+  func gstRate(vendor: LegalEntity): Percent[2]?
+  func hasGst(vendor: LegalEntity): Bool
+}
+
+trait ISuperProduct extends IBaseProduct {
+  plural = "Products"
+  singular = "Product"
+  width = 0.45
+  
+  object field gen: Int?
+  const field n: Int = increment(ISuperProduct.gen)
+  func superProduct: ISuperProduct = this
+  func description: Text? = ""
+  func sku: String = n
+    
+  field categories: [ProductCategory]? by products {
+    available(All).for(All)
+  }
+    
+  func forSale: Bool = true
+  func items: [IProductItem]? = subProducts*.items
+    
+  field gstRate: GstRate? = null
+  field specialGstRate: Percent[2]? = 0
+  ref compute getGstRate: Percent[2]? = {
+    if (gstRate == Special) specialGstRate
+    else if (gstRate) gstRate!.rate 
+    else -1
+  }
+  func gstRate(vendor: LegalEntity): Percent[2]? = {
+    if (vendor.hasGst) {
+      let r = getGstRate
+      if (r == -1) vendor.defaultGstRate(this).rate else r
+    }
+  }
+  func hasGst(vendor: LegalEntity): Bool = vendor.hasGst && (
+    (gstRate && gstRate != Exempt) || vendor.defaultGstRate(this) != Exempt)
+}
+
+
+trait IProduct extends IBaseProduct {
+  plural = "Products"
+  singular = "Product"
+  width = 0.45
+    
+  func subProducts: [IProduct]? = [this]
+  func description: Text? = superProduct.description
+  func items: [IProductItem]? = []
+  func gstRate(vendor: LegalEntity): Percent[2]? = superProduct.gstRate(vendor)
+  func hasGst(vendor: LegalEntity): Bool = superProduct.hasGst(vendor)
+}
+
+trait IBasicProduct extends IProduct with ISuperProduct {
+  func description: Text? = ""
+  func items: [IProductItem]? = []
+  func gstRate(vendor: LegalEntity): Percent[2]? = {
+    let r = getGstRate
+    if (r == -1) vendor.defaultGstRate(this).rate else r
+  }
+  func hasGst(vendor: LegalEntity): Bool = vendor.hasGst && (
+    (gstRate && gstRate != Exempt) || vendor.defaultGstRate(this) != Exempt)
+}

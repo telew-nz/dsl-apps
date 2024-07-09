@@ -1,0 +1,9 @@
+back object Conversion extends IConversion {
+  func do(version: [Int?]?) = {
+    if (version < [7,1,0]) {
+      User.all
+        .filter(conv(_).field[[String]?]("roles").contains("flow2b.commerce.Buyer"))
+        .update(roles = roles + Role.BusAdmin)
+    }
+  }
+}  

@@ -1,0 +1,31 @@
+entity AssetRentService extends PseudoEntity with IBasicProduct {
+  background = "#649023"
+  func title = "Rent $product"
+  func isTangible = false
+  func mainEntity = product
+  ref field product: ISubProduct by rentService {
+    from = ISubProduct.all.filter(isTangible && unit == Item)
+  }
+  field status: ProductStatus = default 
+  func unit: ProductUnit = ProductUnit.Item
+  field serviceDescription: Text? {
+    label = "Description"
+  }
+  func description: Text? = serviceDescription.or(product.description)
+  compute availableProdItems = product.productItems
+  view form = grid (labels = Top) {
+    status >> field(label = "", compact)
+    categories 
+    baseMainView
+    serviceDescription
+  }
+  
+  object view list = AssetRentService.all >> nav{list{grid(labels = None) {
+    row{title >> field(width = 0.8) salesPrice >> field(width = 0.2)}
+  }}}
+  view traitItem = grid(labels = None) {
+    row {title >> field(width = 0.8) salesPrice >> field(width = 0.2)}
+  }
+}
+
+ 

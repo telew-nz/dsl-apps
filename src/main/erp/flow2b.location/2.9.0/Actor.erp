@@ -1,0 +1,36 @@
+extend trait Actor {
+  field locations: [IActorLocation]? inline by actor {visible = !our}
+  
+  back func deliveryLocations: [ILocation]? = {
+    locations*.as[ILocation] + IMutualLocation.all.result.get
+  }
+  
+  back func addLocation(type: LocationType?, address: Address): Location? = {
+     if (!address.isEmpty) {
+       let s = address.title
+       if (let l = locations*.as[Location].find(a => a.address.title == s)) {
+         l.types = (l.types.toSeq + type.toSeq).toSet
+         l
+       } else {
+         Location(actor = this, address = address, types = type.toSeq.toSet)
+       }
+     }
+  }
+  
+  compute legalLocation: IActorLocation? = {
+    locations.find(types.contains(LocationType.Legal))
+      .or(locations.find(types.contains(LocationType.Post)))
+      .or(locations.first)
+  }
+  compute legalAddress = legalLocation?.locationAddress
+}
+
+extend entity Company {
+  extend view form = extend("main") {locations}
+}
+extend entity Person {
+  extend view form = extend("main") {locations}
+}
+extend entity CompanyGroup {
+  extend view form = extend("main") {locations}
+}

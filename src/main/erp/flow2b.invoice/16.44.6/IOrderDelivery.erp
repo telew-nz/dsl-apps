@@ -1,0 +1,28 @@
+trait IOrderDlv extends Entity {
+  func invTitle: String
+  func orders: [IOrder]
+  
+  func dlvReceiver: LegalEntity?
+  func shipTo: ILocation?
+  func dlvItems: [InlineEntity]?
+  func dlvPrePath: IProdMovePath?
+  var dlvState: DlvState
+  func dlvPostPath: IProdMovePath?
+  
+  //func dlvHasProgress: Bool
+  func dlvOrderStates: [OrderState]
+  func dlvInTransitDate: Date
+  func dlvInProgessDate: Date
+  func dlvRetInTransitDate: Date
+  func dlvCompleteDate: Date
+  
+  func reconDates: [Date] = [dlvInTransitDate, dlvInProgessDate, dlvRetInTransitDate, dlvCompleteDate].distinct
+  
+  impl func preComputeItems = orders
+  
+  func is(state: DlvState): Bool = state == dlvState || (dlvState != Canceled && state < dlvState)
+  func date(state: DlvState): Date? = if(is(state)) state.date(this)
+  func isAv(level: StockLevel): Bool = true
+  func calcedAv = true
+}
+

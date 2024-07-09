@@ -1,0 +1,4 @@
+interface DepreciationMethod {
+  background = "#56940b"
+}
+

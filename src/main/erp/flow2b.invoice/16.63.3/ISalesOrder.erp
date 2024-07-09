@@ -1,0 +1,35 @@
+trait ISalesOrder extends IOrder {
+  impl func isPurchase: Bool = false
+
+  func vendor = legalEntity
+  impl func payer: Customer?
+  func customer: Customer?
+  impl func payee = legalEntity
+  //override func debtBalance = payer?.debtBalance
+  impl func cpDebtAllowance = cptAcc?.debitAllowance
+  override func issueTypes = super.issueTypes + ITSOPaymentOverdue + ITOrderToRefund
+
+  impl func isInstantPaid: Bool = {
+    if (let c = payments.onlyOne?.as[IncomingPayment], let r = invoices.onlyOne.or(allRevisions.onlyOne)) {
+      c.amount == r.invoiceTotal && (c.date - r.date).abs <= 3600.as[UDuration[second]] && (!invoices || allItems.all(!invoiceNotIssued))
+    }
+  }
+  
+  impl func cashFlow = Sales
+  impl func instantCashFlows = if (let invoiceTotal) [CashFlowAmount(cashFlow = Sales, amount = invoiceTotal)]
+  
+  view paymentsView = y(label = "Payments", visible = ui.edit || debtOriginAmounts) {
+    payments >> list(visible = ui.edit, canAdd = false) {
+      posViewDebit
+    }
+    addPaymentView
+    debtOriginsView >> field(visible = !ui.edit) 
+  }
+  
+  system compute overdueActivities: [Invoice]? {
+    availableFor = Inline
+    value = activities
+       .filter(template?.as[NotifyTemplate] == OverdueInvoice && (Date.now - dateTime) < 1_day)
+      *.templateEntity*.as[Invoice]
+  }
+}

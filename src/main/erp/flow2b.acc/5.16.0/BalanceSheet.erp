@@ -1,0 +1,45 @@
+report BalanceSheet {
+  plural = "Balance Sheet"
+  field legalEntity: OurLegalEntity? 
+  field date: Date?
+  func baseCurrency = legalEntity?.getCurrency.alt(Currency.our)
+  func baseQuery = Ledger.at(date)
+    .filter(
+      legalEntity ==? this.legalEntity
+    )
+    .flatMap(subBalances) 
+    .groupBy(account = if ((account.type.isIncome && account.type.isError) || account.closeWithPeriod  || account == CurrencyTrading) LedgerSubAccount.IncomeSummary else account, currency)
+    .agg(balance = amount.sum)
+    .sortBy(account.number)
+    .groupBy(account)
+    .map{i => 
+      let balances  <- (i.#1*.balance*.to[Money[baseCurrency]](this.date.alt(now)).allCompleted)
+      (i.account, balance = balances.sum)
+     }
+     .query
+  back func balances: Future[[SubAccountAmount]?] = {
+    baseQuery.map {i =>
+      SubAccountAmount(account = i.account, amount = i.balance, currency = baseCurrency)
+    }.result
+  }
+  impl view list = baseQuery 
+     .groupBy(account.type).subtotal(balance.sum)
+    >> 
+  nav (newEngine) {
+    subtotal {
+      row (background = type.props.background){type, balance}
+      table(action = {
+        if (account.template.analytic) {
+          Reflection.object[AnalitTrialBalance]("TB$(account.template.name)")
+            .new(legalEntity = legalEntity, date = this.date, account = account)
+            .list.open
+        } else {
+           Ledger.Report(account = account, legalEntity = legalEntity, to = date)
+            .list.open
+        }
+      }) {
+         account >> field(width = 0.5, background = ""), balance  >> field(width = 0.3)
+      }
+    }
+  }
+}

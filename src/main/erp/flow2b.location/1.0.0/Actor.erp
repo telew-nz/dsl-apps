@@ -1,0 +1,33 @@
+extend entity Actor {
+  func collectLocations = locations
+  field locations: [ILocation]? inline by actor {views = []}
+  view locationsView = group {
+    read {
+      locations.map(_) >> field(label = "Locations")
+    }
+    edit {
+      locations >> list {form.unnav}
+    }
+  }
+  func oneLocation = collectLocations.onlyOne
+}
+extend trait LegalEntity {
+  func collectLocations = locations + group?.locations
+}
+
+extend entity Person {
+  
+  extend view form = extend("main") {
+    locationsView
+  }
+}
+
+extend entity Company {
+  extend view form = extend("main") {
+    locationsView
+  }
+}
+
+extend entity CompanyGroup {
+  extend view form = locationsView
+}

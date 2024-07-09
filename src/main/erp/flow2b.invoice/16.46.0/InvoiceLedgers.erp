@@ -1,0 +1,120 @@
+extend entity Invoice  {
+  impl func debtLedgers = moneyLedger.toSeq
+  impl func debtAmount = if (order.isPurchase) prev?.debtTotal - debtTotal else debtTotal - prev?.debtTotal
+  ref system stored compute overdueState: PaymentOverdueState {
+    visible = overdueState == PaymentOverdue
+  }
+  register gstLedgers: [LTax]?
+  register moneyLedger: LMoneyDebt?
+  register deliveryLedgers: [LDeliveryDebt]? 
+  back func updateLedgers(): Void = {
+    let cr = !isInstant
+    moneyLedger = if (cr) {
+      let t = (if (!canceled) invoiceTotal) - prev?.invoiceTotal
+      let tDue = (if (canceled) 0 else debtTotal) - prev?.totalDue
+      if (t || tDue) LMoneyDebt(
+        journal = this, dueDate = dueDate, 
+        amountDue = if (order.isPurchase) -tDue else tDue,
+        trAmount = if (order.isPurchase) -t else t, 
+        counterparty = order.debtCounterparty!, 
+        currency = currency)
+    }
+    if (!moneyLedger) {
+      debtAllowance = 0
+    }
+    gstLedgers = if (cr) {
+      gstLedgers(this, journalDate)
+    }
+    deliveryLedgers = if (cr) {
+      if (let cp = order.deliveryCounterparty) {
+        deliveryMap.fullJoin(prev?.deliveryMap, left.alt(0) - right.alt(0)).toSeq
+          .mapOpt{
+            LDeliveryDebt(account = ledgerAccount, origin = _.itemDlv?.as[IOrderDlv with Journal].alt(order), journal = this, 
+                  trAmount = if (order.isPurchase) #2 else -(#2), 
+                  counterparty = cp, currency = currency)
+          }
+      }
+    }
+  }
+  
+  back func gstMap = if (order.legalEntity.hasGst) {
+    let m = items0
+      .filter(!distributeGst)
+      .groupBy(rate = gstRate)
+      .agg(gstAmount.sum, invoiceAmount = invoiceAmountNoGst.sum)
+    if (let da = items0.filter(distributeGst)*.invoiceAmountNoGst.sum) {
+      m.toSeq
+        .distribute(da, by = invoiceAmount)
+        .map(rate, gstAmount = if (let rate) gstAmount + value*rate else gstAmount, invoiceAmount = invoiceAmount + value)
+        .groupBy(rate)
+        .agg(gstAmount.sum, invoiceAmount.sum)
+    } else {
+      m
+    }
+  }
+  back func gstLedgers(journal: Journal, date: Date): [LTax]? = {
+    gstMap.fullJoin(prev?.gstMap, (
+      gstAmount = left?.gstAmount - right?.gstAmount, 
+      invoiceAmount = left?.invoiceAmount - right?.invoiceAmount
+    )).toSeq.filter(gstAmount || invoiceAmount).map {
+      LTax(tax = Gst, currency = this.currency, journal = journal, date = date, 
+           rate = #0,
+           trType = if (isNote) Adjustment else Accrual,
+           trAmount = if (order.isPurchase) gstAmount else -gstAmount, 
+           taxedAmount = if (order.isPurchase) invoiceAmount else -invoiceAmount
+          )
+    }
+  }
+  back func deliveryMap = {
+    items0
+    	.groupBy(itemDlv, ledgerAccount)
+        .agg{
+           _*.invoiceAmount(noGst = this.order.legalEntity.hasGst).sum 
+        }
+  }
+  
+  impl back func debtCashFlows: [CashFlowAmount]? = if (let debtAmount) {
+    if (let ams = items0.groupBy(cashFlow).agg(invoiceAmountWithGst.sum).toSeq) {
+      ams.distribute[Money](debtAmount, by = invoiceAmountWithGst)
+        .filter(value)
+        .map(i => CashFlowAmount(cashFlow = i.cashFlow, amount = i.value!))
+    } else {
+      [CashFlowAmount(cashFlow = order.cashFlow, amount = debtAmount)]
+    }
+  }
+  
+  func moneyCalced: Bool = {
+    (if (totalDue != prev?.totalDue) moneyLedger?.calced else true) && (if (let prev) prev.moneyCalced else true)
+  }
+  impl event onSave = {
+    //if (order.invoices.last == this) {
+    //  order.updateDue()
+    //  order.processInvoice()
+      //gstAmount = items*.gstAmount.sum.positive
+      //totalNoGst = items*.invoiceAmountNoGst.sum.positive
+    //}
+    //isInstant = !prev && invoice.calcInstant
+    order.processInvoice()
+    if (registerUpdated) {
+      updateLedgers()
+    }
+    order.touch
+    if (created && !order.isPurchase && FinanceNotificator.sendInvoiceToCustomers && (Date.now - date) < 7_day ) {
+      if (let c = order.payer?.billingContact) {
+        sendOut()
+      }
+    }
+
+    if (moneyCalced) {
+      overdueState = {
+        if (reconState == Recon) Paid
+        else if (let dd = dueDate) {
+          if (dd < now) PaymentOverdue else NoPaymentOverdue
+        }
+        else NoPaymentOverdue
+      }
+    } else if (!try? overdueState) {
+      overdueState = if (isInstant) Paid else NoPaymentOverdue
+    }
+  }
+}

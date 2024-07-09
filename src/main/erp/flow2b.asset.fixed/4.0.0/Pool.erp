@@ -1,0 +1,58 @@
+entity AssetsPool extends IFixedAsset {
+  singular = "Pool"
+  func numberPrefix: String = "AP"
+  field depreciation: DepreciationMethod?
+  func title: String = number
+  system field startup: AssetsStartup?
+  field items: [AssetsPoolProduct] inline by pool
+  func products: [IProduct : Qty] = items.map(p => p.product -> p.qty).toMap
+  func registrationItems: [IRegistrationItem]? = items
+  
+  view form = nav {
+    grid(labels = Right) {
+      number
+      legalEntity
+      registration >> grid{
+        row{date source}
+      }
+      items >> list{grid(labels = None){
+        row {product qty}
+        stockDesc
+      }}
+      depreciation
+      extension
+      
+      disposal
+    }
+  }
+  
+  object view list = AssetsPool.all >> nav{list{grid(labels = None){
+    row{number space legalEntity }
+  }}}
+}
+
+inline entity AssetsPoolProduct extends IRegistrationItem {
+  system field startupProduct: AssetsStartupProduct?
+  
+  field pool: AssetsPool by items
+  compute poolEditor: AssetsPool {
+    label = "Pool"
+    value = pool
+    update = {
+      pool = new
+      pool.registration.source = startupProduct!.startup.store
+      pool.items = pool.items.filter(try? product)!
+    }
+    from = startupProduct?.startup?.pools
+  }
+  ref field product: IProduct by poolProduct {
+    from = IProduct.all.filter(isTangible && unit == Item)
+  }
+  field qty: Qty[ProductUnit.Item] {
+    default = 1 
+    label = "Quantity"
+  }
+  func itemDelivery: IDelivery? = pool.registration
+  func registration: AssetRegistration = pool.registration
+  func asset: IFixedAsset = pool
+}

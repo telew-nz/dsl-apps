@@ -1,0 +1,37 @@
+analytic StockType(dataType = "StockType")
+entity StockType {
+  field title: String
+}
+
+account Stocks(number = 300, type = Equity, structureSpecific = true) {
+  key field owner: LegalEntity
+  key field stockType: StockType?
+}
+
+account RetainedEarnings(number = 330, type = Equity, structureSpecific = true)
+  
+account TreasuryStocks(number = 340, type = Equity, structureSpecific = true) {
+  key field owner: LegalEntity
+  key field stockType: StockType?
+}
+
+  
+account Dividends(number = 370, type = Equity, closeWithPeriod = true, structureSpecific = true) {
+  key field owner: LegalEntity
+}
+
+extend register LDividends {
+  func closeToIncomeSummary: Bool = true
+}
+
+account DividendsPayable(number = 235, type = Liability, structureSpecific = true) {
+  key field owner: LegalEntity
+}
+
+inline trait ICorporation extends LegalStructure {
+  func specificAccounts: [LedgerAccount] = [Stocks, AdditionalCapital, RetainedEarnings, Dividends, DividendsPayable, TreasuryStocks]
+  func canCloseIncomeSummary = true
+  func incomeSummaryClosing(journal: Journal, balance: Money[currency]): [Ledger]? = {
+    [LRetainedEarnings(journal = journal, trAmount = -balance)]
+  }
+}

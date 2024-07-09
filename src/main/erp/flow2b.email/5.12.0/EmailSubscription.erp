@@ -1,0 +1,13 @@
+entity EmailSubscription {
+  field title: String
+  field domain: String?
+  system field listUnsubscribe: Url?
+  
+  view form = nav(fullScreenComments){grid(labels = None){
+    title >> field(fontStyle = H1)
+    domain
+    button("Unsubscribe", visible = listUnsubscribe) {
+      UI.openUrl(listUnsubscribe!)
+    }
+  }}
+}

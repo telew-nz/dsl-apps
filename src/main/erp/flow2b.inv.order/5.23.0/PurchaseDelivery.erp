@@ -1,0 +1,80 @@
+trait IPurchaseDelivery extends Delivery {
+  background = "#2e8e67"
+  //func receiver: LegalEntity
+  func vendor: LegalEntity
+  ref field supplier: LegalEntity {
+    default =? try? purchaseOrders.first.vendor
+    update = updateSupplier()
+  }
+  field purchaseOrders: [PurchaseOrder] by deliveries {
+    available(All)
+    default =? defaultPurchaseOrders
+  }
+  func deliveryHeader: Layout
+    
+  func defaultPurchaseOrders: [PurchaseOrder]? = []
+  func updateSupplier(): Void = {}
+}
+
+entity PurchaseDelivery extends IPurchaseDelivery with IIncomingDelivery with RoutePath {
+  background = "#2e8e67"
+  field primary: Bool
+  const ref field n: Int? = if (primary) order.n else increment(Order.gen)
+  func deliverySource: Store? = null
+  func deliveryStore: Store? = destination
+  func pathSrc = pickUpLocation
+  func pathDst = destination
+  ref field destination: Store? {
+    default = Store.our
+    from = Store.ours
+    isValid = destination || items.all(!storeRequired)
+  }
+  field pickUpLocation: Location? {
+    from = Location.all.filter(l => l.actor == supplier || l.actor == supplier.top || l.mutual)
+    init = {new.actor = supplier}
+  }
+  field policy: IDeliveryPolicy?
+  func debtDueDate = dueDate
+  stored compute dueDate: Date? = dueDate(purchaseOrders, policy)
+  
+  ref compute number: String {
+    value = manualNumber.alt(if (primary) "PD" + orders.first.nakedN else "PD" + n)
+    update = {manualNumber = new}
+  }
+  func orders: [Order] = purchaseOrders
+  list compute receiver: LegalEntity = order.customer
+  compute vendor: LegalEntity = order.vendor
+    
+  func deliverySupplier: LegalEntity = supplier
+  func deliveryReceiver: LegalEntity = receiver
+  func legalEntity = receiver
+  func title = "$number $(try? supplier?.title)"
+  
+  view deliveryHeader = grid(width = 1.2){
+    statusesView
+    row {supplier, destination, dispatchDate}
+    row {pickUpLocation, policy,  deliveryDate}
+  }
+  view form = nav{grid(width = 1.2, labels = Top) {
+    number
+    deliveryHeader
+    purchaseOrders
+    items >> list(editMode = AlwaysRead){form}
+    
+  } generalLedgerButton } 
+  
+  view ref = x{title status}
+  func onSave = {
+    if (primary) n = order.n 
+    else if (!n) n = increment(Order.gen)
+    purchaseOrders*.touch
+  }
+  
+  view statusesView = x{status, overdueState}
+  
+  object view list = PurchaseDelivery.all >> nav{list{grid(labels = None){
+    row{number >> field(width = 0.2) deliveryDate >> field(visible = true, width = 0.3) supplier >> field(width = 0.25) destination  >> field(width = 0.25)}
+    pickUpLocation
+    statusesView
+  }}}
+}

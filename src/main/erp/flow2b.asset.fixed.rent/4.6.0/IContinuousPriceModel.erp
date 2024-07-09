@@ -1,0 +1,113 @@
+interface IContinuousPriceModel extends IPriceModel {
+  func night: NightDesc?
+  func currency: Currency
+  func pricesIncludingGst: Bool
+  func durations: [RentDuration]
+  func rentDurationUnits: [RentDurationUnit]? = durations*.rentUnit.toSet
+  private func calcDuration(deliveryDate: Date, returnDate: Date): Duration? = {
+    let p = Period(start = deliveryDate, end = returnDate)
+    p.duration - _durNextDate(deliveryDate.date, returnDate, p)
+  }
+  private func _durNextDate(date: UtcDate[day], end: UtcDate[day], period: Period): Duration? = {
+    if (date < end) period.intersection(night!.closed.addDate(date)).duration + _durNextDate(date + 1_day, end, period)
+  }
+  private func addNights(date: UtcDate[day], start: Date, ret: Date): Date = {
+    if (date <= ret.date) {
+      let n = night!.closed.addDate(date)
+      if (ret > n.start) {
+        addNights(date + 1_day, start, ret + Period(start = start.as[UtcDate]!, end = n.end).intersection(n).duration)
+      } else ret
+    } else ret
+  }
+  
+  func rentDuration(delivery: RentDeliveryDesc, assetReturn: RentDeliveryDesc, unit: RentDurationUnit?): Qty[RentDurationUnit]? = {
+    if (
+      let dd = calcDuration(delivery.dispatchDate, assetReturn.deliveryDate)    
+    ) {
+      let u = durations.find(d => d.rentUnit == unit) 
+        .or(durations.sortBy(duration.desc).find(_.duration <= dd))
+        .alt(durations.first)
+      (dd.to[Duration[u.duration.unit!]]/u.duration).as[Qty[u.rentUnit]]
+    } else {
+      0.as[Qty[unit.alt(durations.first.rentUnit)]]!
+    }
+  }
+  
+  func rentReturnDate(delivery: RentDeliveryDesc, returnSchedule: Schedule?, qty: Qty[RentDurationUnit]?): Date = {
+    let date = delivery.dispatchDate + toDuration(qty)
+    adjustToSchedule(delivery, returnSchedule, qty, if (night) {
+      addNights(delivery.dispatchDate.date, delivery.dispatchDate, date)
+    } else date).max(delivery.dispatchDate)
+  }
+  
+  func nightsCount(deliveryDate: Date, returnDate: Date): Qty[Night]? = {
+    if (night) {
+      (returnDate.date - deliveryDate.date).days.as[Qty[Night]]
+    }
+  }
+  
+  private func adjustNightSlot(date: Date): Date = {
+    if (let nightSlot = night?.slot?.period(date)) nightSlot.end.as[Date]! else date
+  }
+  
+  private func adjustToSchedule(delivery: RentDeliveryDesc, returnSchedule: Schedule?, qty: Qty[RentDurationUnit]?, date: Date) = {
+    let d = date.as[Date]!
+    if (let shedule = returnSchedule) {
+      if (let n = night?.slot?.period(d)) {
+        if (qty && chargeOvernight(delivery)) shedule.workingOrPrevPeriod(n.start.as[Date]!).end
+        else if (shedule.isWorkingDate(n.end.as[Date]!)) n.end
+        else shedule.prevPeriod(n.end.as[Date]!).end
+      } else if (shedule.isWorkingDate(d)) {
+        d
+      } else {
+        shedule.prevPeriod(d).end
+      }
+    } else d
+  }
+  
+  func toDuration(qty: Qty[RentDurationUnit]?): Duration? = {
+    if (qty) duration(qty.unit!.as[RentDurationUnit]!)*qty
+  }
+  func duration(unit: RentDurationUnit): Duration? = {
+    durations.find(u => u.rentUnit == unit)?.duration
+  }
+}
+
+class RentDuration {
+  field rentUnit: RentDurationUnit = default
+  field unit: DateUnit = day
+  field duration: Duration[unit] {
+    canEditUnit
+    default = 1
+  }
+  view form = grid(labels = None) {
+    row {rentUnit >> field(compact = true) duration >> field(align = Right)}
+  }
+}
+
+interface IContinuousProductPrice extends IPrice {
+  func model: IContinuousPriceModel
+  func chargeOvernight = model.night?.charge
+  func currency = model.currency
+  func overnightCharge: Money[currency]? = if (let oc = model.night?.charge) durationPrice(oc)
+  func prices: [DurationPrice]
+  func gstRate: Percent[2]?
+  
+  protected func durationPrice(duration: Qty[RentDurationUnit]?): Money[currency]? = {
+    if (let dur = model.toDuration(duration)) {
+      let ps = prices.map(price, duration = model.toDuration(_.duration)).sortBy(duration.desc)
+      let pp = ps.find(dur >= _.duration).alt(ps.last)
+      pp.price*dur/pp.duration
+    }
+  }
+  func rentSalesAmount(currency: Currency, customer: LegalEntity?, itemsQty: Qty, duration: Qty[RentDurationUnit]?, nightsCount: Qty[Night]?, inclGst: Bool): Future[RentAmount] = {
+    let am = durationPrice(duration)
+    let a <- (am*itemsQty).to[Money[currency]](now)
+    let nm = overnightCharge*nightsCount*itemsQty
+    let n <- nm.to[Money[currency]](now)
+    RentAmount(dayAmount = a, nightAmount = n)
+  }
+  func salesPrice(currency: Currency, inclGst: Bool): Future[Money?] = {
+    convertGst(gstRate, prices.find(unit.isFirst)?.price, model.pricesIncludingGst, inclGst).to[Money[currency]](now)
+  }
+}

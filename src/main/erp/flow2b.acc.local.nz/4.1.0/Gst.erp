@@ -1,0 +1,8 @@
+extend enum GstRate {
+  case Zero(rate = 0.00) = "Zero - 0%"
+  case Standard(rate = 0.15) = "Standard - 15%"
+}
+
+extend trait IVendor {
+  override func defaultGstRate: GstRate = Standard
+}
