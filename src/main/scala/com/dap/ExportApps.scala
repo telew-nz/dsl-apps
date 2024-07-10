@@ -97,7 +97,7 @@ object ExportApps {
                         case (k, v) => appSourceDoc.field(k, v)
                     }
                 appSourceDoc.field("files", "")
-                Files.list(appSourceDir).filter(Files.isDirectory(_)).forEach { appFile =>
+                Files.list(appSourceDir).filter(_.getFileName.toString != appPropertiesFilename).forEach { appFile =>
                     val name = appFile.getFileName.toString.dropRight(4)
                     val content = Files.readAllLines(appFile).asScala.mkString("\n")
                     val fileDoc = new ODocument("name", name)
