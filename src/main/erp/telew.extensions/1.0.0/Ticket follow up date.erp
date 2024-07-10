@@ -1,0 +1,12 @@
+extend entity Ticket {
+
+	override view dash = grid(labels = None) {
+    	grid(spacing = false, labels = None) {
+        	if (let d = followUpDate) d >> field(fontStyle = Label)
+        	row{number >> field(fontStyle = Label width = 0.09)  contraObs >> field(fontStyle = Label)}
+          	row{state >> field(editMode = AlwaysEdit, width = 0.09, compact) title}
+        }
+        
+    }
+
+}
