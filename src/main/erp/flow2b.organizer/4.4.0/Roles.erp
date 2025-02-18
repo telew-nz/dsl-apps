@@ -1,5 +1,0 @@
-extend role UserRole {
-  extend view menu = extend("Empty"){
-    Event >> item("Calendar", fastAdd)
-  }
-} 

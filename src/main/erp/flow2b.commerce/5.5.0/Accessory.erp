@@ -1,4 +1,0 @@
-inline entity Accessory {
-  field product: ISuperProduct by accessories
-  ref field accessory: ISuperProduct by principals
-}

@@ -1,7 +1,0 @@
-back object Conversion extends IConversion {
-  func do(version: [Int?]?) = {
-    //if (version < [2,0,0]) {
-      
-    //}
-  }
-} 

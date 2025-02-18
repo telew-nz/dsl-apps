@@ -1,8 +1,0 @@
-extend entity Vendor {
-  event onSave = {
-    if (updated(gstStatus) && gstStatus == NotRegistered) {
-      PaymentExpense.all.filter(gstRate && payment.payee == this.legalEntity)
-        .update(gstRate = null) 
-    }
-  }
-}

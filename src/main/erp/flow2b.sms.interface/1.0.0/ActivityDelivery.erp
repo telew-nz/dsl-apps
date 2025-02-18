@@ -1,3 +1,0 @@
-extend class ActivityDelivery {
-  field messageId: String?
-}

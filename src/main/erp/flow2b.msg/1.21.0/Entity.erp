@@ -1,5 +1,0 @@
-extend entity Activity {
-   back event onDeliveryEvent(delivery: ActivityDelivery, event: ActivityDeliveryEvent): Void = {
-     
-   }
-}

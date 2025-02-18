@@ -1,7 +1,0 @@
-trait ISMSClientService extends SystemService {
-  field smsServerWorkspaceID = 1256
-
-  func pinpointClientConfig: PinpointClientConfig
-  
-  func updateDeliveryStatus(messageID: String, newStatus: ActivityDeliveryStatus): Future[Any]
-}

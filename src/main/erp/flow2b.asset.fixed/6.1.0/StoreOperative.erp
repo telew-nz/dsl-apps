@@ -1,4 +1,0 @@
-extend role StoreOperative {
-  entity Maintenance = readWrite
-}
-  

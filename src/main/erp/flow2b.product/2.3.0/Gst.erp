@@ -1,9 +1,0 @@
-enum GstRate(rate: Percent[2]?) {
-  case Exempt(rate = 0) {background = "#999"}
-  case Zero(rate = 0) {label = "Zero - 0%"}
-  case Special(rate = 0)
-}
-
-extend trait LegalEntity {
-  func defaultGstRate(product: ISuperProduct): GstRate = Exempt
-}

@@ -1,5 +1,0 @@
-extend trait ISuperProduct {
-  list compute salesPrice: Money? <- {
-    if (let a = Actor.our) a.superProductSalesPrice(this) else Future.apply(0)
-  }
-}

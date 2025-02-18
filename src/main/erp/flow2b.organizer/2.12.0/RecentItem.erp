@@ -1,5 +1,0 @@
-report RecentItem {
-  field user: User =? User.current
-  view list = User.load(user.id!).flatMap(subjects*.subject.filter(touchedOn)).sortBy(touchedOn!.desc) 
-    >> nav(background = "#498898"){list(canAdd = false){traitItem}}
-}

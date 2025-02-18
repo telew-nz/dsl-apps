@@ -1,8 +1,0 @@
-object MailRouter extends WorkspaceRouter[MailHttpData] {
-  back func parse(request: IncomingHttpRequest): MailHttpData = {
-    request.body.as[Data]!.parseJson[MailHttpData]
-  }
-  back func keys(request: IncomingHttpRequest, data: MailHttpData): [String]? = {
-    if (let e = (data.rcptTo('@' .. ]).lower.dropPrefix("psrp.")) [e] else []
-  }
-}

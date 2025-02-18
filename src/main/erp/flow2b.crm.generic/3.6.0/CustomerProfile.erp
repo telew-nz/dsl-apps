@@ -1,4 +1,0 @@
-entity CustomerProfile {
-  field title: String
-  field description: Text?
-}

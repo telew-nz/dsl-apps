@@ -1,6 +1,0 @@
-extend trait OurLegalEntity { 
-  func ledgerAccounts: [LedgerAccount] = LedgerAccount.all.filter(!structureSpecific).toSet + specificAccounts
-  func specificAccounts: [LedgerAccount] = [IncomeSummary]
-  func canCloseIncomeSummary = false
-  func incomeSummaryClosing(journal: Journal, balance: Money[getCurrency]): [Ledger]? = throw "not implemented incomeSummaryClosing"
-}

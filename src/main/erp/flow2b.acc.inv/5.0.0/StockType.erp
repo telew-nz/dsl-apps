@@ -1,5 +1,0 @@
-enum StockType(obj: LInvBase.object, acc: LedgerAccount) {
-  case Inventory(obj = LInventory, acc = LedgerAccount.Inventory){
-    background = "#b4eacc"
-  }
-}

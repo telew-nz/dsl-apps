@@ -1,5 +1,0 @@
-trait ICounterparty extends PseudoEntity {
-  func getCurrency: Currency
-  func legalEntity: LegalEntity
-  func isTheir: Bool
-}

@@ -1,1 +1,0 @@
-account Rent(template = "Sales", credit = acc(RentRevenue, 10))

@@ -1,9 +1,0 @@
-back object Conversion extends IConversion {
-  func do(version: [Int?]?) = {
-    if (version < [6,7,0]) {
-      ISuperProduct.all
-        .filter(field[String](_, "flow2b.asset.fixed.rent.rentStatus") == "ForRent")
-        .update(rentStatus = ForRent)
-    }
-  }   
-}   

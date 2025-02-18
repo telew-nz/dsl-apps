@@ -1,5 +1,0 @@
-account IncomeSummary(template = "Basic", number = 480, type = Equity) 
-
-extend register LIncomeSummary {
-  register closingLedgers: [Ledger]? = if (isClosing) legalEntity.incomeSummaryClosing(journal, -prev?.balance) else []
-}

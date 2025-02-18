@@ -1,6 +1,0 @@
-extend trait IInvoice {
-  func assetReturned: Bool = allItems.all(!active || _.assetReturned)
-}
-extend trait IInvoiceItem {
-  func assetReturned: Bool = true
-}

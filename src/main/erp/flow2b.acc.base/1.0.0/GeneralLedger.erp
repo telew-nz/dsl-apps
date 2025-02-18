@@ -1,8 +1,0 @@
-register GeneralLedger {
-  key field legalEntity: LegalEntity
-  key field account: LedgerAccount
-  key field currency: Currency
-  order field date: Date
-  field amount: Money[currency]
-  stored compute balance: Money[currency]? = prev?.balance + amount
-}

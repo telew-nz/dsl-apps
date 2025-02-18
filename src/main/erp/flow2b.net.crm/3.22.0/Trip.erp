@@ -1,3 +1,0 @@
-extend entity Trip{
-  field opportunity: [IOpportunity]? 
-}

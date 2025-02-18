@@ -7,7 +7,7 @@ import scala.annotation.{tailrec, unused}
 
 
 @unused
-object KeepLatestApps {
+object KeepLatestApps extends App {
 
     private val dslDir = Paths.get("src/main/erp")
 

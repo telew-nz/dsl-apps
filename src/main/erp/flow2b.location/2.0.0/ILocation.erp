@@ -1,5 +1,0 @@
-trait ILocation extends Entity with ContactAddressee with ScheduleAssignee {
-  background = "#2e8e67"
-  ref compute address: IStreetAddress? = contacts*.as[IStreetAddress].onlyOne
-}
-trait IMutualLocation extends ILocation
